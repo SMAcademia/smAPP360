@@ -39,6 +39,7 @@ function doGet(e) {
       case 'SUBMIT_VERIFACTU':      result = submitVerifactu(rowP);            break;
       case 'GET_AMPA_DATA':         result = getAmpaData();                    break;
       case 'AMPA_APPEND':           result = ampaAppend(sheetP, rowP);         break;
+      case 'SETUP_AMPA_SHEETS':     result = setupAmpaSheets();                break;
       default:
         result = { ok: false, error: 'Acción desconocida: ' + action };
     }
@@ -849,4 +850,50 @@ function ampaAppend(sheetName, rowObj) {
   var r = appendRow(sheetName, rowObj);
   if (r.ok) r.id = newId;
   return r;
+}
+
+function setupAmpaSheets() {
+  var spreadsheet = ss_();
+  var created = [];
+  var existing = [];
+
+  var SOCIOS_HEADERS  = ['ID','NOMBRE','NIF','EMAIL','TELEFONO','CUOTA','PAGADA','FECHA_ALTA','NOTAS','AMPA'];
+  var ALUMNOS_HEADERS = ['ID','NOMBRE','FECHA_NAC','CURSO','SOCIO_ID','ACTIVIDADES','NOTAS_SALUD','AUTORIZA_IMAGEN','FECHA_ALTA','AMPA'];
+
+  var shSocios = spreadsheet.getSheetByName('AMPA_SOCIOS');
+  if (!shSocios) {
+    shSocios = spreadsheet.insertSheet('AMPA_SOCIOS');
+    shSocios.getRange(1, 1, 1, SOCIOS_HEADERS.length).setValues([SOCIOS_HEADERS]);
+    shSocios.getRange(1, 1, 1, SOCIOS_HEADERS.length)
+      .setFontWeight('bold')
+      .setBackground('#1b5e20')
+      .setFontColor('#ffffff');
+    shSocios.setFrozenRows(1);
+    created.push('AMPA_SOCIOS');
+  } else {
+    existing.push('AMPA_SOCIOS');
+  }
+
+  var shAlumnos = spreadsheet.getSheetByName('AMPA_ALUMNOS');
+  if (!shAlumnos) {
+    shAlumnos = spreadsheet.insertSheet('AMPA_ALUMNOS');
+    shAlumnos.getRange(1, 1, 1, ALUMNOS_HEADERS.length).setValues([ALUMNOS_HEADERS]);
+    shAlumnos.getRange(1, 1, 1, ALUMNOS_HEADERS.length)
+      .setFontWeight('bold')
+      .setBackground('#1b5e20')
+      .setFontColor('#ffffff');
+    shAlumnos.setFrozenRows(1);
+    created.push('AMPA_ALUMNOS');
+  } else {
+    existing.push('AMPA_ALUMNOS');
+  }
+
+  return {
+    ok: true,
+    created: created,
+    existing: existing,
+    message: created.length
+      ? 'Hojas creadas: ' + created.join(', ') + (existing.length ? '. Ya existían: ' + existing.join(', ') : '')
+      : 'Las hojas ya existían: ' + existing.join(', '),
+  };
 }
