@@ -481,8 +481,8 @@ tbody tr:hover { background: #fafafa; }
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <div class="login-logo-icon" style="padding:0;overflow:hidden;background:#000">
-        <img src="https://academiasmfutbol.github.io/sistema/img/logo.png"
+      <div class="login-logo-icon" style="padding:0;overflow:hidden;background:#fff">
+        <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp"
              alt="SM" style="width:100%;height:100%;object-fit:contain"
              onerror="this.style.display='none';this.parentElement.textContent='SM'">
       </div>
@@ -558,7 +558,7 @@ tbody tr:hover { background: #fafafa; }
 <!-- ═══════════════ LOADING SCREEN (post-login) ═══════════════ -->
 <div id="loading-screen">
   <div class="ls-logo">
-    <img src="https://academiasmfutbol.github.io/sistema/img/logo.png" alt="SM"
+    <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" alt="SM"
          onerror="this.style.display='none'">
   </div>
   <div class="ls-title">SM Academia</div>
@@ -581,8 +581,8 @@ tbody tr:hover { background: #fafafa; }
   <nav class="sidebar">
     <div class="sidebar-header">
       <div class="brand">
-        <div class="brand-icon" style="padding:0;overflow:hidden;background:#000">
-          <img src="https://academiasmfutbol.github.io/sistema/img/logo.png"
+        <div class="brand-icon" style="padding:0;overflow:hidden;background:#fff">
+          <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp"
                alt="SM" style="width:100%;height:100%;object-fit:contain"
                onerror="this.style.display='none';this.parentElement.textContent='SM'">
         </div>
@@ -1001,7 +1001,7 @@ function gasRequest(action, data = {}, timeoutMs = 25000) {
 }
 
 // Logo oficial SM Academia (compartido desde Google Drive)
-const LOGO_URL = 'https://academiasmfutbol.github.io/sistema/img/logo.png';
+const LOGO_URL = 'https://academiasmfutbol.github.io/sistema/img/logo.webp';
 const IMG_BASE   = 'https://academiasmfutbol.github.io/img';
 const GITHUB_IMG = IMG_BASE + '/';
 function normalizarDB(raw) {
@@ -4875,7 +4875,7 @@ async function descargarFacturaPdf(fid) {
     '.footer{margin-top:1rem;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:.75rem}' +
     '</style></head><body>' +
     '<div style="display:flex;align-items:center;gap:14px;margin-bottom:1rem">' +
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:55px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:55px;object-fit:contain" onerror="this.style.display=\'none\'">' +
       '<div><h1>SM Academia · Factura ' + fid + '</h1><div style="font-size:11px;color:#666">academiasmfutbol.com</div></div>' +
     '</div>' +
     '<p style="font-size:12px;color:#666;margin:.25rem 0">Antonio Samuel Martín Rivera · NIF 45766626F<br>' +
@@ -5087,7 +5087,9 @@ function futbol() {
     const hoy = new Date().toISOString().split('T')[0];
     document.getElementById('page-content').innerHTML = `
       <div class="card" style="text-align:center;padding:2rem">
-        <div style="font-size:40px;margin-bottom:.5rem">⚽</div>
+        <img src="https://academiasmfutbol.github.io/sistema/img/logo-futbol.jpg"
+             alt="SM Fútbol" style="height:70px;object-fit:contain;margin-bottom:.75rem;display:block;margin-left:auto;margin-right:auto"
+             onerror="this.style.display='none'">
         <div style="font-size:16px;font-weight:600;margin-bottom:.25rem">Pase de lista · ${fmtDate(hoy)}</div>
         <div style="font-size:13px;color:var(--grey-2);margin-bottom:1.5rem">Solo puedes registrar la asistencia del día de hoy</div>
         <button class="btn btn-primary" onclick="modalPaseListaMonitor()">📋 Registrar asistencia de hoy</button>
@@ -5102,6 +5104,11 @@ function futbol() {
   const topCamino = [...DB.alumnos].filter(a=>a.activo&&(a.actividad==='TECNIFICACIÓN')).sort((a,b)=>b.camino-a.camino);
 
   document.getElementById('page-content').innerHTML = `
+    <div style="text-align:center;margin-bottom:1rem">
+      <img src="https://academiasmfutbol.github.io/sistema/img/logo-futbol.jpg"
+           alt="SM Fútbol" style="height:80px;object-fit:contain"
+           onerror="this.style.display='none'">
+    </div>
     <div class="tabs">
       <div class="tab active" onclick="switchTab('futbol-sesiones',this)">Sesiones</div>
       <div class="tab" onclick="switchTab('futbol-alumnos',this)">Alumnos</div>
@@ -5759,6 +5766,11 @@ function extraescolares() {
     }).join('');
 
     document.getElementById('page-content').innerHTML =
+      '<div style="text-align:center;margin-bottom:1rem">' +
+        '<img src="https://academiasmfutbol.github.io/sistema/img/logo-extraescolares.jpg"' +
+             ' alt="SM Extraescolares" style="height:70px;object-fit:contain"' +
+             ' onerror="this.style.display=\'none\'">' +
+      '</div>' +
       '<div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">' +
         '<div class="kpi-card" style="flex:1;min-width:100px;margin:0">' +
           '<div class="kpi-label">Registros hoy</div>' +
@@ -5825,6 +5837,11 @@ function extraescolares_listado(filtroActividad, alumnosExtra, inscrExtra, resum
   }
 
   document.getElementById('page-content').innerHTML =
+    '<div style="text-align:center;margin-bottom:1rem">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo-extraescolares.jpg"' +
+           ' alt="SM Extraescolares" style="height:80px;object-fit:contain"' +
+           ' onerror="this.style.display=\'none\'">' +
+    '</div>' +
     '<div class="kpi-grid">' +
     resumen.map(r =>
       '<div class="kpi-card">' +
@@ -8771,7 +8788,7 @@ async function generarInformeHorarioPdf() {
     '.footer{margin-top:2rem;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:.5rem}'+
     '@media print{body{margin:1cm}}</style></head><body>'+
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.5rem">'+
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
       '<div><h1>Informe de Registro Horario</h1>'+
       '<div style="font-size:12px;color:#666">'+meses[mesIdx]+' '+anyo+(filtroTrab?' · '+filtroTrab:'')+'</div>'+
       '<div style="font-size:12px;color:#666">SM Extraescolares · CEIP Escaleritas</div></div>'+
@@ -8974,7 +8991,7 @@ function informeTecnificacionPdf(alumnoId) {
   const html =
     '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe Tecnificación · ' + al.nombre + '</title>' + css + '</head><body>' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1rem">' +
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
       '<div>' +
         '<h1>Informe de Tecnificación</h1>' +
         '<div style="font-size:11px;color:#666">' + al.nombre + ' · ' + (al.curso||'') + ' · ' + (al.grupo||'') + '</div>' +
@@ -9055,7 +9072,7 @@ function informeMensualFamilia(mes, anyo) {
   const mesLabel = fmtMonth(mes);
   const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe ' + mesLabel + ' ' + anyo + '</title>' + css + '</head><body>' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.2rem">' +
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
       '<div><h1>Resumen mensual · ' + mesLabel + ' ' + anyo + '</h1>' +
         '<h2>' + (cliente.nombre||currentUser.name) + ' · academiasmfutbol.com</h2></div>' +
     '</div>' +
@@ -9261,7 +9278,7 @@ function informes() {
     </style></head><body><div class="page">
 
     <div class="header">
-      <img src="https://academiasmfutbol.github.io/sistema/img/logo.png" class="header-logo" onerror="this.style.display='none'">
+      <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" class="header-logo" onerror="this.style.display='none'">
       <div class="header-title">
         <h1>Informe mensual · Tecnificación SM</h1>
         <p>${mesLabel} ${anyo} · Metodología MEC · academiasmfutbol.com</p>
@@ -9468,7 +9485,7 @@ function informes() {
 
     const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe Trimestral '+LABEL_TRIM[q]+' '+anyo+'</title>'+css+'</head><body>'+
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.2rem">'+
-        '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
+        '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
         '<div><h1>Informe Trimestral · SM Academia</h1>'+
           '<div style="font-size:11px;color:#666">'+LABEL_TRIM[q]+' '+anyo+' · Generado el '+new Date().toLocaleDateString('es-ES')+'</div>'+
           '<div style="font-size:11px;color:#666">Antonio Samuel Martín Rivera · DNI 45766626F · academiasmfutbol.com</div></div></div>'+
