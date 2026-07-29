@@ -46,6 +46,10 @@
   --orange-bg: #fff3e0;
   --blue: #1565c0;
   --blue-bg: #e3f2fd;
+  --primary: #2e7d32;
+  --border: #e0e0e0;
+  --warning: #e65100;
+  --success: #4caf50;
   --radius: 10px;
   --radius-sm: 6px;
   --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
@@ -470,8 +474,8 @@ tbody tr:hover { background: #fafafa; }
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <div class="login-logo-icon" style="padding:0;overflow:hidden;background:#000">
-        <img src="https://academiasmfutbol.github.io/sistema/img/logo.png"
+      <div class="login-logo-icon" style="padding:0;overflow:hidden;background:#fff">
+        <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp"
              alt="SM" style="width:100%;height:100%;object-fit:contain"
              onerror="this.style.display='none';this.parentElement.textContent='SM'">
       </div>
@@ -547,7 +551,7 @@ tbody tr:hover { background: #fafafa; }
 <!-- ═══════════════ LOADING SCREEN (post-login) ═══════════════ -->
 <div id="loading-screen">
   <div class="ls-logo">
-    <img src="https://academiasmfutbol.github.io/sistema/img/logo.png" alt="SM"
+    <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" alt="SM"
          onerror="this.style.display='none'">
   </div>
   <div class="ls-title">SM Academia</div>
@@ -570,8 +574,8 @@ tbody tr:hover { background: #fafafa; }
   <nav class="sidebar">
     <div class="sidebar-header">
       <div class="brand">
-        <div class="brand-icon" style="padding:0;overflow:hidden;background:#000">
-          <img src="https://academiasmfutbol.github.io/sistema/img/logo.png"
+        <div class="brand-icon" style="padding:0;overflow:hidden;background:#fff">
+          <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp"
                alt="SM" style="width:100%;height:100%;object-fit:contain"
                onerror="this.style.display='none';this.parentElement.textContent='SM'">
         </div>
@@ -637,6 +641,17 @@ tbody tr:hover { background: #fafafa; }
         </div>
 
 
+      </div>
+
+      <!-- AMPA -->
+      <div class="nav-section" id="nav-ampa">
+        <div class="nav-section-label">AMPA</div>
+        <div class="nav-item" onclick="navigate('ampa-socios')" data-page="ampa-socios">
+          <span class="nav-icon">👨‍👩‍👧</span><span>Socios</span>
+        </div>
+        <div class="nav-item" onclick="navigate('ampa-alumnos')" data-page="ampa-alumnos">
+          <span class="nav-icon">🎒</span><span>Alumnos AMPA</span>
+        </div>
       </div>
 
       <!-- Admin only section 2 -->
@@ -905,6 +920,8 @@ function loadDemoData() {
     {id:'PRE001',clienteId:'C003',fecha:'2026-03-01',descripcion:'Presupuesto 2 sesiones/semana',total:110,estado:'PENDIENTE'},
   ];
   DB.extraescolares = []; // Se construye desde inscripciones CEIP Escaleritas
+  DB.ampaSocios  = [];
+  DB.ampaAlumnos = [];
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -978,7 +995,7 @@ function gasRequest(action, data = {}, timeoutMs = 25000) {
 }
 
 // Logo oficial SM Academia (compartido desde Google Drive)
-const LOGO_URL = 'https://academiasmfutbol.github.io/sistema/img/logo.png';
+const LOGO_URL = 'https://academiasmfutbol.github.io/sistema/img/logo.webp';
 const IMG_BASE   = 'https://academiasmfutbol.github.io/img';
 const GITHUB_IMG = IMG_BASE + '/';
 function normalizarDB(raw) {
@@ -1585,6 +1602,41 @@ function normalizarDB(raw) {
   } else {
     DB.preinscripciones = DB.preinscripciones || [];
   }
+
+  // AMPA_SOCIOS
+  if (raw.socios) {
+    DB.ampaSocios = raw.socios.map(s => ({
+      id:         s.ID || '',
+      ampa:       (s.AMPA || 'ESCALERITAS').toUpperCase(),
+      nombre:     s.NOMBRE || '',
+      nif:        s.NIF || '',
+      email:      s.EMAIL || '',
+      telefono:   s.TELEFONO || '',
+      cuota:      parseFloat(s.CUOTA) || 0,
+      pagada:     String(s.PAGADA || 'NO').toUpperCase() === 'SÍ' || String(s.PAGADA || 'NO').toUpperCase() === 'SI',
+      fechaAlta:  s.FECHA_ALTA || '',
+      notas:      s.NOTAS || '',
+      _raw: s,
+    }));
+  }
+
+  // AMPA_ALUMNOS
+  if (raw.ampaAlumnos) {
+    DB.ampaAlumnos = raw.ampaAlumnos.map(a => ({
+      id:            a.ID || '',
+      ampa:          (a.AMPA || 'ESCALERITAS').toUpperCase(),
+      nombre:        a.NOMBRE || '',
+      fechaNac:      a.FECHA_NAC || '',
+      curso:         a.CURSO || '',
+      socioId:       a.SOCIO_ID || '',
+      actividades:   a.ACTIVIDADES || '',
+      notasSalud:    a.NOTAS_SALUD || '',
+      autorizaImagen:String(a.AUTORIZA_IMAGEN || 'NO').toUpperCase() === 'SÍ' || String(a.AUTORIZA_IMAGEN || '').toUpperCase() === 'SI',
+      fechaAlta:     a.FECHA_ALTA || '',
+      _raw: a,
+    }));
+  }
+
 
   // ACTIVIDADES — catálogo de actividades Escaleritas
   if (raw.actividades && raw.actividades.length) {
@@ -2239,7 +2291,7 @@ async function doLogin() {
     err.textContent = 'Rol no válido.';
     return;
   }
-  currentUser = { role, name, initials: name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase(), ts: Date.now() };
+  currentUser = { role, name, initials: name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase(), ts: Date.now(), ampaId: role === 'AMPA' ? 'ESCALERITAS' : null };
   localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
   window.gaEvent('login', { rol: role });
   // Mostrar pantalla de carga y sincronizar antes de entrar
@@ -2388,6 +2440,7 @@ function startApp() {
   const isAmpa   = currentUser.role === 'AMPA';
   document.getElementById('nav-admin').style.display   = isAdmin ? '' : 'none';
   document.getElementById('nav-admin-2').style.display = isAdmin ? '' : 'none';
+  document.getElementById('nav-ampa').style.display    = (isAdmin || isAmpa) ? '' : 'none';
 
   if (isMonitor) {
     // Buscar la monitora: primero por email (más fiable), luego por nombre normalizado
@@ -2537,6 +2590,8 @@ const PAGE_META = {
   configuracion:  { title: 'Configuración', sub: 'Sistema y conexión Google Sheets' },
   familia:        { title: 'Mi portal', sub: 'Seguimiento de tus alumnos' },
   'registro-horario': { title: 'Registro Horario', sub: 'Control de entradas y salidas del personal' },
+  'ampa-socios':  { title: 'Socios AMPA', sub: 'Gestión del padrón de socios' },
+  'ampa-alumnos': { title: 'Alumnos AMPA', sub: 'Fichas de alumnos vinculados al AMPA' },
 };
 
 function navigate(page) {
@@ -2578,7 +2633,9 @@ function renderCurrentPage() {
     dashboard, clientes, alumnos, inscripciones, pagos, facturas,
     futbol, extraescolares, personal, incidencias, informes, configuracion,
     'registro-horario': registroHorario,
-    nominas: nominas
+    nominas: nominas,
+    'ampa-socios':  ampaSocios,
+    'ampa-alumnos': ampaAlumnos,
   };
   if (pages[currentPage]) pages[currentPage]();
 }
@@ -2838,6 +2895,7 @@ async function _syncOpcionales() {
     { action: 'GET_REGISTRO_HORARIO',  data: {},                          extract: r => ({ 'registro horario': r.registros }),             check: r => r.ok && Array.isArray(r.registros) },
     { action: 'GET_ASISTENCIAS_EXTRA', data: {},                          extract: r => ({ asistencias_extra: r.asistencias }),            check: r => r.ok && Array.isArray(r.asistencias) },
     { action: 'GET_SHEET',             data: { sheet: 'CONFIG_NOMINAS' }, extract: r => ({ configNominas: r.rows }),                       check: r => r.ok && Array.isArray(r.rows) && r.rows.length > 0 },
+    { action: 'GET_AMPA_DATA',         data: {},                          extract: r => ({ socios: r.socios, ampaAlumnos: r.ampaAlumnos }),  check: r => r.ok },
   ];
   for (const paso of pasos) {
     try {
@@ -2883,6 +2941,13 @@ function closeModal(e) {
   if (!e || e.target === document.getElementById('modal-overlay')) {
     document.getElementById('modal-overlay').classList.remove('open');
   }
+}
+// Variante de openModal que acepta array de botones [{label, action, type}]
+function showModal(title, bodyHTML, buttons) {
+  const btns = (buttons || []).map(b =>
+    `<button class="btn ${b.type || 'btn-secondary'}" onclick="${b.action}">${b.label}</button>`
+  ).join('');
+  openModal(title, bodyHTML, btns);
 }
 
 function addTopbarBtn(label, fn, type = 'btn-primary', icon = '') {
@@ -4868,7 +4933,7 @@ async function descargarFacturaPdf(fid) {
     '.footer{margin-top:1rem;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:.75rem}' +
     '</style></head><body>' +
     '<div style="display:flex;align-items:center;gap:14px;margin-bottom:1rem">' +
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:55px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:55px;object-fit:contain" onerror="this.style.display=\'none\'">' +
       '<div><h1>SM Academia · Factura ' + fid + '</h1><div style="font-size:11px;color:#666">academiasmfutbol.com</div></div>' +
     '</div>' +
     '<p style="font-size:12px;color:#666;margin:.25rem 0">Antonio Samuel Martín Rivera · NIF 45766626F<br>' +
@@ -5080,7 +5145,9 @@ function futbol() {
     const hoy = new Date().toISOString().split('T')[0];
     document.getElementById('page-content').innerHTML = `
       <div class="card" style="text-align:center;padding:2rem">
-        <div style="font-size:40px;margin-bottom:.5rem">⚽</div>
+        <img src="https://academiasmfutbol.github.io/sistema/img/logo-futbol.jpg"
+             alt="SM Fútbol" style="height:70px;object-fit:contain;margin-bottom:.75rem;display:block;margin-left:auto;margin-right:auto"
+             onerror="this.style.display='none'">
         <div style="font-size:16px;font-weight:600;margin-bottom:.25rem">Pase de lista · ${fmtDate(hoy)}</div>
         <div style="font-size:13px;color:var(--grey-2);margin-bottom:1.5rem">Solo puedes registrar la asistencia del día de hoy</div>
         <button class="btn btn-primary" onclick="modalPaseListaMonitor()">📋 Registrar asistencia de hoy</button>
@@ -5094,6 +5161,11 @@ function futbol() {
   const alumnosFutbol = [...DB.alumnos].filter(a=>a.activo&&(a.actividad==='TECNIFICACIÓN')).sort((a,b)=>a.nombre.localeCompare(b.nombre));
 
   document.getElementById('page-content').innerHTML = `
+    <div style="text-align:center;margin-bottom:1rem">
+      <img src="https://academiasmfutbol.github.io/sistema/img/logo-futbol.jpg"
+           alt="SM Fútbol" style="height:80px;object-fit:contain"
+           onerror="this.style.display='none'">
+    </div>
     <div class="tabs">
       <div class="tab active" onclick="switchTab('futbol-sesiones',this)">Sesiones</div>
       <div class="tab" onclick="switchTab('futbol-alumnos',this)">Alumnos</div>
@@ -5721,6 +5793,11 @@ function extraescolares() {
     }).join('');
 
     document.getElementById('page-content').innerHTML =
+      '<div style="text-align:center;margin-bottom:1rem">' +
+        '<img src="https://academiasmfutbol.github.io/sistema/img/logo-extraescolares.jpg"' +
+             ' alt="SM Extraescolares" style="height:70px;object-fit:contain"' +
+             ' onerror="this.style.display=\'none\'">' +
+      '</div>' +
       '<div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">' +
         '<div class="kpi-card" style="flex:1;min-width:100px;margin:0">' +
           '<div class="kpi-label">Registros hoy</div>' +
@@ -5787,6 +5864,11 @@ function extraescolares_listado(filtroActividad, alumnosExtra, inscrExtra, resum
   }
 
   document.getElementById('page-content').innerHTML =
+    '<div style="text-align:center;margin-bottom:1rem">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo-extraescolares.jpg"' +
+           ' alt="SM Extraescolares" style="height:80px;object-fit:contain"' +
+           ' onerror="this.style.display=\'none\'">' +
+    '</div>' +
     '<div class="kpi-grid">' +
     resumen.map(r =>
       '<div class="kpi-card">' +
@@ -7691,6 +7773,9 @@ function portalAmpa(tab) {
     ? 'padding:.5rem 1rem;border-bottom:2px solid var(--primary);color:var(--primary);font-weight:600;cursor:pointer;background:none;border-top:none;border-left:none;border-right:none;font-size:14px'
     : 'padding:.5rem 1rem;border-bottom:2px solid transparent;color:var(--grey-2);cursor:pointer;background:none;border-top:none;border-left:none;border-right:none;font-size:14px';
 
+  const sociosCount = _ampaFilter(DB.ampaSocios).length;
+
+
   pc.innerHTML = `
     <div class="card" style="margin-bottom:1rem;text-align:center;padding:1.2rem 1rem">
       <div style="font-size:28px;margin-bottom:.3rem">🏫</div>
@@ -7713,20 +7798,24 @@ function portalAmpa(tab) {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Socios AMPA</div>
-        <div class="kpi-value" style="color:var(--success)">${socios}</div>
+        <div class="kpi-value" style="color:var(--success)">${sociosCount}</div>
       </div>
     </div>
 
     <div class="card" style="margin-bottom:1rem">
-      <div style="display:flex;border-bottom:1px solid var(--border);padding:0 1rem">
+      <div style="display:flex;border-bottom:1px solid var(--border);padding:0 1rem;overflow-x:auto">
         <button style="${tabStyle('preinscripciones')}" onclick="portalAmpa('preinscripciones')">Preinscripciones</button>
         <button style="${tabStyle('inscritos')}" onclick="portalAmpa('inscritos')">Inscritos</button>
         <button style="${tabStyle('actividades')}" onclick="portalAmpa('actividades')">Actividades</button>
+        <button style="${tabStyle('socios')}" onclick="portalAmpa('socios')">Socios</button>
+        <button style="${tabStyle('alumnos-ampa')}" onclick="portalAmpa('alumnos-ampa')">Alumnos AMPA</button>
       </div>
       <div id="ampa-tab-content" style="padding:0">
         ${tab === 'preinscripciones' ? _ampaTabPreinscripciones(preinscr) : ''}
         ${tab === 'inscritos'        ? _ampaTabInscritos(inscrEsc) : ''}
         ${tab === 'actividades'      ? _ampaTabActividades() : ''}
+        ${tab === 'socios'           ? _portalAmpaSocios() : ''}
+        ${tab === 'alumnos-ampa'     ? _portalAmpaAlumnos() : ''}
       </div>
     </div>
 
@@ -7878,6 +7967,319 @@ async function _ampaRechazarPreinscripcion(id) {
     if (res.ok) { showToast('Preinscripción rechazada', 'success'); await syncAll(); portalAmpa('preinscripciones'); }
     else showToast('Error: ' + res.error, 'error');
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AMPA — Socios y Alumnos (admin views + portal tabs)
+═══════════════════════════════════════════════════════════ */
+
+function _ampaFilter(arr) {
+  if (!arr) return [];
+  if (!currentUser || currentUser.role === 'ADMIN') return arr;
+  const id = (currentUser.ampaId || '').toUpperCase();
+  return arr.filter(r => (r.ampa || '').toUpperCase() === id);
+}
+
+// ── Admin: página Socios AMPA ──────────────────────────────────────────────
+function ampaSocios() {
+  const isAdmin = currentUser && currentUser.role === 'ADMIN';
+  if (!isAdmin) { document.getElementById('page-content').innerHTML =
+    '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-title">Acceso restringido</div></div>'; return; }
+
+  addTopbarBtn('+ Nuevo socio', () => _socioModal(null), 'btn-primary', '👤 ');
+  addTopbarBtn('🔄 Recargar', async () => {
+    showToast('Recargando…', 'info');
+    try {
+      const r = await gasRequest('GET_AMPA_DATA', {}, 20000);
+      if (r.ok) { normalizarDB({ socios: r.socios, ampaAlumnos: r.ampaAlumnos }); ampaSocios(); }
+      else showToast('Error: ' + r.error, 'error');
+    } catch(e) { showToast(e.message, 'error'); }
+  }, 'btn-secondary');
+
+  const socios = DB.ampaSocios || [];
+  const pc = document.getElementById('page-content');
+
+  if (!socios.length) {
+    pc.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">👨‍👩‍👧</div>
+        <div class="empty-title">Sin socios registrados</div>
+        <div class="empty-desc">Crea las hojas AMPA_SOCIOS y AMPA_ALUMNOS en Google Sheets y recarga.</div>
+      </div>`;
+    return;
+  }
+
+  const pagadas = socios.filter(s => s.pagada).length;
+  const filas = socios.map(s => `
+    <tr onclick="_socioModal(${JSON.stringify(s).replace(/"/g,'&quot;')})" style="cursor:pointer">
+      <td><strong>${s.nombre || '—'}</strong></td>
+      <td style="font-size:12px">${s.nif || '—'}</td>
+      <td>${s.email || '—'}</td>
+      <td>${s.telefono || '—'}</td>
+      <td style="text-align:right">${s.cuota ? s.cuota + '€' : '—'}</td>
+      <td>${s.pagada ? '<span class="badge badge-green">Pagada</span>' : '<span class="badge badge-yellow">Pendiente</span>'}</td>
+      <td style="font-size:12px;color:var(--grey-2)">${s.ampa || ''}</td>
+    </tr>`).join('');
+
+  pc.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1rem">
+      <div class="kpi-card"><div class="kpi-label">Total socios</div><div class="kpi-value">${socios.length}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Cuota pagada</div><div class="kpi-value" style="color:var(--success)">${pagadas}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Pendientes</div><div class="kpi-value" style="color:var(--warning)">${socios.length - pagadas}</div></div>
+    </div>
+    <div class="card">
+      <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border)">
+        <input class="field-input" placeholder="Buscar socio…" oninput="_filtrarTabla(this,'tbl-socios')" style="max-width:300px">
+      </div>
+      <table class="data-table" id="tbl-socios">
+        <thead><tr><th>Nombre</th><th>NIF</th><th>Email</th><th>Teléfono</th><th style="text-align:right">Cuota</th><th>Estado</th><th>AMPA</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+}
+
+function _socioModal(s) {
+  const es = s || {};
+  const title = es.id ? 'Editar socio — ' + es.nombre : 'Nuevo socio';
+  openModal(title, `
+    <div class="field-group"><label class="field-label">Nombre completo <span style="color:var(--red)">*</span></label>
+      <input class="field-input" id="sm-nombre" value="${es.nombre || ''}" placeholder="Nombre y apellidos"></div>
+    <div class="field-group"><label class="field-label">NIF / NIE</label>
+      <input class="field-input" id="sm-nif" value="${es.nif || ''}" placeholder="12345678A"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field-group"><label class="field-label">Email</label>
+        <input class="field-input" id="sm-email" value="${es.email || ''}" placeholder="nombre@email.com"></div>
+      <div class="field-group"><label class="field-label">Teléfono</label>
+        <input class="field-input" id="sm-telefono" value="${es.telefono || ''}" placeholder="600000000"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field-group"><label class="field-label">Cuota (€/año)</label>
+        <input class="field-input" id="sm-cuota" type="number" step="0.01" value="${es.cuota || ''}"></div>
+      <div class="field-group"><label class="field-label">Cuota pagada</label>
+        <select class="field-input" id="sm-pagada">
+          <option value="NO" ${!es.pagada ? 'selected' : ''}>No</option>
+          <option value="SÍ" ${es.pagada ? 'selected' : ''}>Sí</option>
+        </select></div>
+    </div>
+    <div class="field-group"><label class="field-label">Fecha de alta</label>
+      <input class="field-input" id="sm-fecha" type="date" value="${es.fechaAlta || new Date().toISOString().slice(0,10)}"></div>
+    <div class="field-group"><label class="field-label">Notas</label>
+      <textarea class="field-input" id="sm-notas" rows="2">${es.notas || ''}</textarea></div>
+    <input type="hidden" id="sm-id" value="${es.id || ''}">`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="_socioGuardar()">💾 Guardar</button>`);
+}
+
+async function _socioGuardar() {
+  const id     = document.getElementById('sm-id').value;
+  const nombre = document.getElementById('sm-nombre').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio', 'warning'); return; }
+  const row = {
+    NOMBRE:      nombre,
+    NIF:         document.getElementById('sm-nif').value.trim(),
+    EMAIL:       document.getElementById('sm-email').value.trim(),
+    TELEFONO:    document.getElementById('sm-telefono').value.trim(),
+    CUOTA:       document.getElementById('sm-cuota').value,
+    PAGADA:      document.getElementById('sm-pagada').value,
+    FECHA_ALTA:  document.getElementById('sm-fecha').value,
+    NOTAS:       document.getElementById('sm-notas').value.trim(),
+    AMPA:        currentUser.ampaId || 'ESCALERITAS',
+  };
+  try {
+    let res;
+    if (id) {
+      res = await gasRequest('UPDATE', { sheet: 'AMPA_SOCIOS', id, row });
+    } else {
+      res = await gasRequest('AMPA_APPEND', { sheet: 'AMPA_SOCIOS', row });
+    }
+    if (!res.ok) { showToast('Error: ' + res.error, 'error'); return; }
+    showToast(id ? 'Socio actualizado' : 'Socio creado (' + res.id + ')', 'success');
+    closeModal();
+    const r2 = await gasRequest('GET_AMPA_DATA', {}, 20000);
+    if (r2.ok) normalizarDB({ socios: r2.socios, ampaAlumnos: r2.ampaAlumnos });
+    ampaSocios();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Admin: página Alumnos AMPA ─────────────────────────────────────────────
+function ampaAlumnos() {
+  const isAdmin = currentUser && currentUser.role === 'ADMIN';
+  if (!isAdmin) { document.getElementById('page-content').innerHTML =
+    '<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-title">Acceso restringido</div></div>'; return; }
+
+  addTopbarBtn('+ Nuevo alumno', () => _alumnoAmpaModal(null), 'btn-primary', '🎒 ');
+  addTopbarBtn('🔄 Recargar', async () => {
+    showToast('Recargando…', 'info');
+    try {
+      const r = await gasRequest('GET_AMPA_DATA', {}, 20000);
+      if (r.ok) { normalizarDB({ socios: r.socios, ampaAlumnos: r.ampaAlumnos }); ampaAlumnos(); }
+      else showToast('Error: ' + r.error, 'error');
+    } catch(e) { showToast(e.message, 'error'); }
+  }, 'btn-secondary');
+
+  const alumnos = DB.ampaAlumnos || [];
+  const pc = document.getElementById('page-content');
+
+  if (!alumnos.length) {
+    pc.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🎒</div>
+        <div class="empty-title">Sin alumnos AMPA registrados</div>
+        <div class="empty-desc">Crea la hoja AMPA_ALUMNOS en Google Sheets y recarga.</div>
+      </div>`;
+    return;
+  }
+
+  const filas = alumnos.map(a => {
+    const socio = (DB.ampaSocios || []).find(s => s.id === a.socioId);
+    return `
+    <tr onclick="_alumnoAmpaModal(${JSON.stringify(a).replace(/"/g,'&quot;')})" style="cursor:pointer">
+      <td><strong>${a.nombre || '—'}</strong></td>
+      <td>${a.curso || '—'}</td>
+      <td style="font-size:12px">${a.fechaNac || '—'}</td>
+      <td>${socio ? socio.nombre : (a.socioId || '—')}</td>
+      <td style="font-size:12px">${a.actividades || '—'}</td>
+      <td>${a.autorizaImagen ? '<span class="badge badge-blue">Sí</span>' : '<span class="badge badge-grey">No</span>'}</td>
+      <td style="font-size:12px;color:var(--grey-2)">${a.ampa || ''}</td>
+    </tr>`;
+  }).join('');
+
+  pc.innerHTML = `
+    <div class="kpi-card" style="margin-bottom:1rem;display:inline-block;padding:.75rem 1.5rem">
+      <div class="kpi-label">Total alumnos</div><div class="kpi-value">${alumnos.length}</div>
+    </div>
+    <div class="card">
+      <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border)">
+        <input class="field-input" placeholder="Buscar alumno…" oninput="_filtrarTabla(this,'tbl-ampa-alumnos')" style="max-width:300px">
+      </div>
+      <table class="data-table" id="tbl-ampa-alumnos">
+        <thead><tr><th>Nombre</th><th>Curso</th><th>Nacimiento</th><th>Socio tutor</th><th>Actividades</th><th>Imagen</th><th>AMPA</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+}
+
+function _alumnoAmpaModal(a) {
+  const ea = a || {};
+  const socioOpts = (DB.ampaSocios || []).map(s =>
+    `<option value="${s.id}" ${ea.socioId === s.id ? 'selected' : ''}>${s.nombre} (${s.id})</option>`
+  ).join('');
+  const title = ea.id ? 'Editar alumno — ' + ea.nombre : 'Nuevo alumno AMPA';
+  openModal(title, `
+    <div class="field-group"><label class="field-label">Nombre completo <span style="color:var(--red)">*</span></label>
+      <input class="field-input" id="aa-nombre" value="${ea.nombre || ''}" placeholder="Nombre y apellidos"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field-group"><label class="field-label">Fecha de nacimiento</label>
+        <input class="field-input" id="aa-fechanac" type="date" value="${ea.fechaNac || ''}"></div>
+      <div class="field-group"><label class="field-label">Curso escolar</label>
+        <input class="field-input" id="aa-curso" value="${ea.curso || ''}" placeholder="1º EP"></div>
+    </div>
+    <div class="field-group"><label class="field-label">Socio / tutor responsable</label>
+      <select class="field-input" id="aa-socio"><option value="">— Sin asignar —</option>${socioOpts}</select></div>
+    <div class="field-group"><label class="field-label">Actividades</label>
+      <input class="field-input" id="aa-actividades" value="${ea.actividades || ''}" placeholder="Inglés, Baile…"></div>
+    <div class="field-group"><label class="field-label">Notas de salud <small style="color:var(--grey-2)">(dato sensible)</small></label>
+      <textarea class="field-input" id="aa-salud" rows="2">${ea.notasSalud || ''}</textarea></div>
+    <div class="field-group"><label class="field-label">Autoriza cesión de imagen</label>
+      <select class="field-input" id="aa-imagen">
+        <option value="NO" ${!ea.autorizaImagen ? 'selected' : ''}>No</option>
+        <option value="SÍ" ${ea.autorizaImagen ? 'selected' : ''}>Sí</option>
+      </select></div>
+    <input type="hidden" id="aa-id" value="${ea.id || ''}">`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="_alumnoAmpaGuardar()">💾 Guardar</button>`);
+}
+
+async function _alumnoAmpaGuardar() {
+  const id     = document.getElementById('aa-id').value;
+  const nombre = document.getElementById('aa-nombre').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio', 'warning'); return; }
+  const row = {
+    NOMBRE:          nombre,
+    FECHA_NAC:       document.getElementById('aa-fechanac').value,
+    CURSO:           document.getElementById('aa-curso').value.trim(),
+    SOCIO_ID:        document.getElementById('aa-socio').value,
+    ACTIVIDADES:     document.getElementById('aa-actividades').value.trim(),
+    NOTAS_SALUD:     document.getElementById('aa-salud').value.trim(),
+    AUTORIZA_IMAGEN: document.getElementById('aa-imagen').value,
+    AMPA:            currentUser.ampaId || 'ESCALERITAS',
+    FECHA_ALTA:      id ? '' : new Date().toISOString().slice(0,10),
+  };
+  if (id) delete row.FECHA_ALTA;
+  try {
+    let res;
+    if (id) {
+      res = await gasRequest('UPDATE', { sheet: 'AMPA_ALUMNOS', id, row });
+    } else {
+      res = await gasRequest('AMPA_APPEND', { sheet: 'AMPA_ALUMNOS', row });
+    }
+    if (!res.ok) { showToast('Error: ' + res.error, 'error'); return; }
+    showToast(id ? 'Alumno actualizado' : 'Alumno creado (' + res.id + ')', 'success');
+    closeModal();
+    const r2 = await gasRequest('GET_AMPA_DATA', {}, 20000);
+    if (r2.ok) normalizarDB({ socios: r2.socios, ampaAlumnos: r2.ampaAlumnos });
+    ampaAlumnos();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+function _filtrarTabla(input, tableId) {
+  const q = input.value.toLowerCase();
+  const rows = document.querySelectorAll('#' + tableId + ' tbody tr');
+  rows.forEach(tr => { tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+}
+
+// ── Portal AMPA — tabs Socios y Alumnos (junta directiva) ──────────────────
+function _portalAmpaSocios() {
+  const socios = _ampaFilter(DB.ampaSocios);
+  if (!socios.length) return `
+    <div class="empty-state" style="padding:2rem">
+      <div class="empty-icon">👨‍👩‍👧</div>
+      <div class="empty-title">Sin socios registrados</div>
+      <div class="empty-desc">Cuando se den de alta socios aparecerán aquí.</div>
+    </div>`;
+  const pagadas = socios.filter(s => s.pagada).length;
+  const filas = socios.map(s => `
+    <tr>
+      <td><strong>${s.nombre || '—'}</strong></td>
+      <td style="font-size:12px">${s.nif || '—'}</td>
+      <td>${s.email || '—'}</td>
+      <td>${s.cuota ? s.cuota + '€' : '—'}</td>
+      <td>${s.pagada ? '<span class="badge badge-green">Pagada</span>' : '<span class="badge badge-yellow">Pendiente</span>'}</td>
+    </tr>`).join('');
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;padding:.75rem 1rem;border-bottom:1px solid var(--border)">
+      <div style="text-align:center"><div style="font-size:22px;font-weight:700">${socios.length}</div><div style="font-size:11px;color:var(--grey-2)">Total</div></div>
+      <div style="text-align:center"><div style="font-size:22px;font-weight:700;color:var(--success)">${pagadas}</div><div style="font-size:11px;color:var(--grey-2)">Pagadas</div></div>
+      <div style="text-align:center"><div style="font-size:22px;font-weight:700;color:var(--warning)">${socios.length - pagadas}</div><div style="font-size:11px;color:var(--grey-2)">Pendientes</div></div>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Nombre</th><th>NIF</th><th>Email</th><th>Cuota</th><th>Estado</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>`;
+}
+
+function _portalAmpaAlumnos() {
+  const alumnos = _ampaFilter(DB.ampaAlumnos);
+  if (!alumnos.length) return `
+    <div class="empty-state" style="padding:2rem">
+      <div class="empty-icon">🎒</div>
+      <div class="empty-title">Sin alumnos registrados</div>
+      <div class="empty-desc">Cuando se den de alta alumnos aparecerán aquí.</div>
+    </div>`;
+  const filas = alumnos.map(a => {
+    const socio = _ampaFilter(DB.ampaSocios).find(s => s.id === a.socioId);
+    return `<tr>
+      <td><strong>${a.nombre || '—'}</strong></td>
+      <td>${a.curso || '—'}</td>
+      <td style="font-size:12px">${a.actividades || '—'}</td>
+      <td>${socio ? socio.nombre : '—'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <table class="data-table">
+      <thead><tr><th>Alumno</th><th>Curso</th><th>Actividades</th><th>Tutor socio</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -8387,7 +8789,7 @@ async function generarInformeHorarioPdf() {
     '.footer{margin-top:2rem;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:.5rem}'+
     '@media print{body{margin:1cm}}</style></head><body>'+
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.5rem">'+
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
       '<div><h1>Informe de Registro Horario</h1>'+
       '<div style="font-size:12px;color:#666">'+meses[mesIdx]+' '+anyo+(filtroTrab?' · '+filtroTrab:'')+'</div>'+
       '<div style="font-size:12px;color:#666">SM Extraescolares · CEIP Escaleritas</div></div>'+
@@ -8590,7 +8992,7 @@ function informeTecnificacionPdf(alumnoId) {
   const html =
     '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe Tecnificación · ' + al.nombre + '</title>' + css + '</head><body>' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1rem">' +
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
       '<div>' +
         '<h1>Informe de Tecnificación</h1>' +
         '<div style="font-size:11px;color:#666">' + al.nombre + ' · ' + (al.curso||'') + ' · ' + (al.grupo||'') + '</div>' +
@@ -8667,7 +9069,7 @@ function informeMensualFamilia(mes, anyo) {
   const mesLabel = fmtMonth(mes);
   const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe ' + mesLabel + ' ' + anyo + '</title>' + css + '</head><body>' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.2rem">' +
-      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+      '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">' +
       '<div><h1>Resumen mensual · ' + mesLabel + ' ' + anyo + '</h1>' +
         '<h2>' + (cliente.nombre||currentUser.name) + ' · academiasmfutbol.com</h2></div>' +
     '</div>' +
@@ -8869,7 +9271,7 @@ function informes() {
     </style></head><body><div class="page">
 
     <div class="header">
-      <img src="https://academiasmfutbol.github.io/sistema/img/logo.png" class="header-logo" onerror="this.style.display='none'">
+      <img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" class="header-logo" onerror="this.style.display='none'">
       <div class="header-title">
         <h1>Informe mensual · Tecnificación SM</h1>
         <p>${mesLabel} ${anyo} · Metodología MEC · academiasmfutbol.com</p>
@@ -9072,7 +9474,7 @@ function informes() {
 
     const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe Trimestral '+LABEL_TRIM[q]+' '+anyo+'</title>'+css+'</head><body>'+
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.2rem">'+
-        '<img src="https://academiasmfutbol.github.io/sistema/img/logo.png" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
+        '<img src="https://academiasmfutbol.github.io/sistema/img/logo.webp" style="height:50px;object-fit:contain" onerror="this.style.display=\'none\'">'+
         '<div><h1>Informe Trimestral · SM Academia</h1>'+
           '<div style="font-size:11px;color:#666">'+LABEL_TRIM[q]+' '+anyo+' · Generado el '+new Date().toLocaleDateString('es-ES')+'</div>'+
           '<div style="font-size:11px;color:#666">Antonio Samuel Martín Rivera · DNI 45766626F · academiasmfutbol.com</div></div></div>'+
@@ -9204,6 +9606,25 @@ function configuracion() {
         </div>
       </div>
 
+      <!-- Configuración AMPA -->
+      <div class="card" style="grid-column:span 2">
+        <div class="card-header"><span>🏫</span><div class="card-title">Configuración AMPA</div></div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--grey-3);margin-bottom:1rem">
+            Crea las hojas <strong>AMPA_SOCIOS</strong> y <strong>AMPA_ALUMNOS</strong> en el spreadsheet de Google Sheets.
+            Si las hojas ya existen no se modifican.
+          </p>
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="setupAmpaSheets()">🏫 Crear hojas AMPA en Sheets</button>
+            <span id="setup-ampa-result" style="font-size:13px"></span>
+          </div>
+          <div style="margin-top:1rem;font-size:12px;color:var(--grey-2);line-height:1.7">
+            <strong>AMPA_SOCIOS:</strong> ID · NOMBRE · NIF · EMAIL · TELEFONO · CUOTA · PAGADA · FECHA_ALTA · NOTAS · AMPA<br>
+            <strong>AMPA_ALUMNOS:</strong> ID · NOMBRE · FECHA_NAC · CURSO · SOCIO_ID · ACTIVIDADES · NOTAS_SALUD · AUTORIZA_IMAGEN · FECHA_ALTA · AMPA
+          </div>
+        </div>
+      </div>
+
       <!-- Metodología MEC -->
       <div class="card" style="grid-column:span 2">
         <div class="card-header"><span>📚</span><div class="card-title">Filosofía y Metodología MEC</div></div>
@@ -9233,6 +9654,25 @@ function configuracion() {
     showToast('URL guardada. Sincronizando…', 'success');
     syncAll();
   };
+}
+
+async function setupAmpaSheets() {
+  if (!GAS_URL) { showToast('Primero configura la URL del GAS', 'warning'); return; }
+  const el = document.getElementById('setup-ampa-result');
+  if (el) el.textContent = '⏳ Creando hojas…';
+  try {
+    const res = await gasRequest('SETUP_AMPA_SHEETS', {}, 30000);
+    if (res.ok) {
+      showToast(res.message, 'success', 5000);
+      if (el) el.innerHTML = '<span style="color:var(--success)">✅ ' + res.message + '</span>';
+    } else {
+      showToast('Error: ' + res.error, 'error');
+      if (el) el.innerHTML = '<span style="color:var(--red)">❌ ' + res.error + '</span>';
+    }
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+    if (el) el.innerHTML = '<span style="color:var(--red)">❌ ' + e.message + '</span>';
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

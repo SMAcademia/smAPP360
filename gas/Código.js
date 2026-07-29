@@ -37,8 +37,11 @@ function doGet(e) {
       case 'NUEVA_INSCRIPCION':     result = nuevaInscripcion(rowP);           break;
       case 'SEND_ALERTS_IMPAGOS':   result = sendAlertsImpagos(rowP);          break;
       case 'SUBMIT_VERIFACTU':      result = submitVerifactu(rowP);            break;
-      case 'GET_FACTURAS':          result = getFacturasData();               break;
-      case 'MARCAR_FACTURA_PAGO':  result = marcarFacturaPago(idP, rowP);     break;
+      case 'GET_AMPA_DATA':         result = getAmpaData();                    break;
+      case 'AMPA_APPEND':           result = ampaAppend(sheetP, rowP);         break;
+      case 'SETUP_AMPA_SHEETS':     result = setupAmpaSheets();                break;
+      case 'GET_FACTURAS':          result = getFacturasData();                break;
+      case 'MARCAR_FACTURA_PAGO':   result = marcarFacturaPago(idP, rowP);     break;
       default:
         result = { ok: false, error: 'Acción desconocida: ' + action };
     }
@@ -544,9 +547,9 @@ function nuevaPreinscripcion(body) {
     'NIF_TUTOR2':        v('nif_tutor2',         'NIF/DNI tutor 2'),
     'TELEFONO_TUTOR2':   v('telefono_tutor2',    'Teléfono tutor 2'),
     'EMAIL_TUTOR2':      v('email_tutor2',       'Email tutor 2').toLowerCase(),
-    'AUTORIZA_IMAGEN':   v('autoriza_imagen',    'Cesión de imágenes')           ? 'SÍ' : 'NO',
-    'ACEPTA_DATOS':      v('acepta_datos',       'Política de datos')             ? 'SÍ' : 'NO',
-    'ACEPTA_DATOS_SALUD':v('acepta_datos_salud', 'Consentimiento datos salud')    ? 'SÍ' : 'NO',
+    'AUTORIZA_IMAGEN':   v('autoriza_imagen',    'Cesión de imágenes').toUpperCase().startsWith('S') ? 'SÍ' : 'NO',
+    'ACEPTA_DATOS':      v('acepta_datos',       'Política de datos').toUpperCase().startsWith('S') ? 'SÍ' : 'NO',
+    'ACEPTA_DATOS_SALUD':v('acepta_datos_salud', 'Consentimiento datos salud').toUpperCase().startsWith('S') ? 'SÍ' : 'NO',
     'SOCIO_AMPA':        v('socio_ampa',         '¿Desea hacerse socio del AMPA?').toUpperCase().startsWith('S') ? 'SÍ' : 'NO',
     'IBAN':              v('iban',               'IBAN para domiciliación'),
     'ACTIVIDADES':       String(actividades),
@@ -907,4 +910,81 @@ function xmlEscape_(s) {
   return String(s || '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  AMPA — Socios y Alumnos
+// ══════════════════════════════════════════════════════════════════════════
+function getAmpaData() {
+  return {
+    ok:          true,
+    socios:      sheetToObjects_('AMPA_SOCIOS'),
+    ampaAlumnos: sheetToObjects_('AMPA_ALUMNOS'),
+  };
+}
+
+function ampaAppend(sheetName, rowObj) {
+  if (!sheetName) return { ok: false, error: 'Parámetro "sheet" requerido' };
+  var prefix = sheetName === 'AMPA_SOCIOS' ? 'SOC' : 'ALU';
+  var sh = ss_().getSheetByName(sheetName);
+  if (!sh) return { ok: false, error: 'Hoja no encontrada: ' + sheetName + '. Créala con las cabeceras indicadas.' };
+  var max = 0;
+  if (sh.getLastRow() >= 2) {
+    var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().flat();
+    ids.forEach(function(id) {
+      var n = parseInt(String(id).replace(/\D/g, '')) || 0;
+      if (n > max) max = n;
+    });
+  }
+  rowObj['ID'] = prefix + '-' + String(max + 1).padStart(3, '0');
+  var newId = rowObj['ID'];
+  var r = appendRow(sheetName, rowObj);
+  if (r.ok) r.id = newId;
+  return r;
+}
+
+function setupAmpaSheets() {
+  var spreadsheet = ss_();
+  var created = [];
+  var existing = [];
+
+  var SOCIOS_HEADERS  = ['ID','NOMBRE','NIF','EMAIL','TELEFONO','CUOTA','PAGADA','FECHA_ALTA','NOTAS','AMPA'];
+  var ALUMNOS_HEADERS = ['ID','NOMBRE','FECHA_NAC','CURSO','SOCIO_ID','ACTIVIDADES','NOTAS_SALUD','AUTORIZA_IMAGEN','FECHA_ALTA','AMPA'];
+
+  var shSocios = spreadsheet.getSheetByName('AMPA_SOCIOS');
+  if (!shSocios) {
+    shSocios = spreadsheet.insertSheet('AMPA_SOCIOS');
+    shSocios.getRange(1, 1, 1, SOCIOS_HEADERS.length).setValues([SOCIOS_HEADERS]);
+    shSocios.getRange(1, 1, 1, SOCIOS_HEADERS.length)
+      .setFontWeight('bold')
+      .setBackground('#1b5e20')
+      .setFontColor('#ffffff');
+    shSocios.setFrozenRows(1);
+    created.push('AMPA_SOCIOS');
+  } else {
+    existing.push('AMPA_SOCIOS');
+  }
+
+  var shAlumnos = spreadsheet.getSheetByName('AMPA_ALUMNOS');
+  if (!shAlumnos) {
+    shAlumnos = spreadsheet.insertSheet('AMPA_ALUMNOS');
+    shAlumnos.getRange(1, 1, 1, ALUMNOS_HEADERS.length).setValues([ALUMNOS_HEADERS]);
+    shAlumnos.getRange(1, 1, 1, ALUMNOS_HEADERS.length)
+      .setFontWeight('bold')
+      .setBackground('#1b5e20')
+      .setFontColor('#ffffff');
+    shAlumnos.setFrozenRows(1);
+    created.push('AMPA_ALUMNOS');
+  } else {
+    existing.push('AMPA_ALUMNOS');
+  }
+
+  return {
+    ok: true,
+    created: created,
+    existing: existing,
+    message: created.length
+      ? 'Hojas creadas: ' + created.join(', ') + (existing.length ? '. Ya existían: ' + existing.join(', ') : '')
+      : 'Las hojas ya existían: ' + existing.join(', '),
+  };
 }
