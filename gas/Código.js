@@ -37,6 +37,8 @@ function doGet(e) {
       case 'NUEVA_INSCRIPCION':     result = nuevaInscripcion(rowP);           break;
       case 'SEND_ALERTS_IMPAGOS':   result = sendAlertsImpagos(rowP);          break;
       case 'SUBMIT_VERIFACTU':      result = submitVerifactu(rowP);            break;
+      case 'GET_AMPA_DATA':         result = getAmpaData();                    break;
+      case 'AMPA_APPEND':           result = ampaAppend(sheetP, rowP);         break;
       default:
         result = { ok: false, error: 'Acción desconocida: ' + action };
     }
@@ -816,4 +818,35 @@ function xmlEscape_(s) {
   return String(s || '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  AMPA — Socios y Alumnos
+// ══════════════════════════════════════════════════════════════════════════
+function getAmpaData() {
+  return {
+    ok:          true,
+    socios:      sheetToObjects_('AMPA_SOCIOS'),
+    ampaAlumnos: sheetToObjects_('AMPA_ALUMNOS'),
+  };
+}
+
+function ampaAppend(sheetName, rowObj) {
+  if (!sheetName) return { ok: false, error: 'Parámetro "sheet" requerido' };
+  var prefix = sheetName === 'AMPA_SOCIOS' ? 'SOC' : 'ALU';
+  var sh = ss_().getSheetByName(sheetName);
+  if (!sh) return { ok: false, error: 'Hoja no encontrada: ' + sheetName + '. Créala con las cabeceras indicadas.' };
+  var max = 0;
+  if (sh.getLastRow() >= 2) {
+    var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().flat();
+    ids.forEach(function(id) {
+      var n = parseInt(String(id).replace(/\D/g, '')) || 0;
+      if (n > max) max = n;
+    });
+  }
+  rowObj['ID'] = prefix + '-' + String(max + 1).padStart(3, '0');
+  var newId = rowObj['ID'];
+  var r = appendRow(sheetName, rowObj);
+  if (r.ok) r.id = newId;
+  return r;
 }
