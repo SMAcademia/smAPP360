@@ -40,6 +40,8 @@ function doGet(e) {
       case 'GET_AMPA_DATA':         result = getAmpaData();                    break;
       case 'AMPA_APPEND':           result = ampaAppend(sheetP, rowP);         break;
       case 'SETUP_AMPA_SHEETS':     result = setupAmpaSheets();                break;
+      case 'GET_FACTURAS':          result = getFacturasData();                break;
+      case 'MARCAR_FACTURA_PAGO':   result = marcarFacturaPago(idP, rowP);     break;
       default:
         result = { ok: false, error: 'Acción desconocida: ' + action };
     }
@@ -172,6 +174,7 @@ function getAllData() {
       inscripciones:     sheetToObjects_('INSCRIPCIONES'),
       gastos:            sheetToObjects_('GASTOS'),
       personal:          sheetToObjects_('PERSONAL'),
+      facturas:          sheetToObjects_('FACTURAS'),
       preinscripciones:  sheetToObjects_('PREINSCRIPCIONES'),
       actividades:       sheetToObjects_('ACTIVIDADES'),
     }
@@ -184,6 +187,11 @@ function getPagosData() {
     .map(r => normalizeKeys_(r))
     .filter(p => String(p.id_pago || '').trim() !== '');
   return { ok: true, pagos, total: pagos.length, ts: new Date().toISOString() };
+}
+
+function getFacturasData() {
+    const facturas = sheetToObjects_('FACTURAS');
+    return { ok: true, facturas, total: facturas.length, ts: new Date().toISOString() };
 }
 
 function getSesionesData() {
@@ -287,6 +295,47 @@ function updateRow(sheetName, id, rowObj) {
     }
   }
   return { ok: false, error: 'No se encontró id=' + id + ' en ' + sheetName };
+}
+
+  /**
+   * Marca una factura en la fila de PAGOS correspondiente, tocando UNICAMENTE
+    * las columnas ID_FACTURA y ESTADO PDF (nunca el resto de la fila). Se usa
+     * porque PAGOS esta bloqueada como solo lectura para writeToSheet/updateInSheet
+      * en la app (evita ediciones masivas accidentales); esta accion es estrecha
+       * y especifica para poder registrar el vinculo pago -> factura de forma segura.
+        * idPago: valor de ID_PAGO a localizar.
+         * rowObj: { facturaId, estadoPdf } (ambos opcionales, solo se escribe lo presente).
+          */
+function marcarFacturaPago(idPago, rowObj) {
+    if (idPago === undefined || idPago === '') {
+          return { ok: false, error: 'Parametro "id" (ID_PAGO) requerido' };
+    }
+    if (typeof rowObj === 'string') {
+          try { rowObj = JSON.parse(rowObj); } catch(_) { return { ok: false, error: 'row JSON invalido' }; }
+    }
+    rowObj = rowObj || {};
+
+    const sh = ss_().getSheetByName('PAGOS') || sheetByKw_('PAGOS');
+    if (!sh) return { ok: false, error: 'Hoja PAGOS no encontrada' };
+
+    const data = sh.getDataRange().getValues();
+    const hdrs = data[0];
+    const ciId  = hdrs.findIndex(h => String(h).trim() === 'ID_PAGO');
+    const ciFac = hdrs.findIndex(h => String(h).trim() === 'ID_FACTURA');
+    const ciPdf = hdrs.findIndex(h => String(h).trim() === 'ESTADO PDF');
+    if (ciId  < 0) return { ok: false, error: 'Columna ID_PAGO no encontrada en PAGOS' };
+    if (ciFac < 0) return { ok: false, error: 'Columna ID_FACTURA no encontrada en PAGOS' };
+    if (ciPdf < 0) return { ok: false, error: 'Columna ESTADO PDF no encontrada en PAGOS' };
+
+    const idStr = String(idPago).trim();
+    for (let i = 1; i < data.length; i++) {
+          if (String(data[i][ciId]).trim() === idStr) {
+                  if (rowObj.facturaId !== undefined) sh.getRange(i + 1, ciFac + 1).setValue(rowObj.facturaId);
+                  if (rowObj.estadoPdf !== undefined) sh.getRange(i + 1, ciPdf + 1).setValue(rowObj.estadoPdf);
+                  return { ok: true, rowIndex: i + 1 };
+          }
+    }
+    return { ok: false, error: 'No se encontro ID_PAGO=' + idPago + ' en PAGOS' };
 }
 
 
@@ -635,16 +684,19 @@ function submitVerifactu(params) {
   const certB64     = props.getProperty('VF_CERT_B64')        || '';
   const entorno     = (params.entorno || props.getProperty('VF_ENTORNO') || 'TEST').toUpperCase();
 
+  // Si hay proxy Cloudflare Worker configurado, úsalo (soporta TLS mutuo hacia AEAT)
+  // Si no, llama directamente a AEAT (solo funciona si el entorno lo permite)
+  const proxyUrl = props.getProperty('VF_PROXY_URL') || '';
   const ENDPOINT_TEST = 'https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP';
   const ENDPOINT_PROD = 'https://www1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP';
-  const endpoint      = entorno === 'PROD' ? ENDPOINT_PROD : ENDPOINT_TEST;
+  const endpoint      = proxyUrl || (entorno === 'PROD' ? ENDPOINT_PROD : ENDPOINT_TEST);
 
   // Guardar en Sheets con estado PENDIENTE_ENVIO aunque falle el envío
   const factura = params.factura || {};
   if (factura['Id Factura']) {
     try {
       updateRow('FACTURAS', factura['Id Factura'], {
-        'Estado VeriFactu': privateKey ? 'ENVIANDO' : 'CERT_NO_CONFIGURADO',
+                'Estado Envío': privateKey ? 'ENVIANDO' : 'CERT_NO_CONFIGURADO',
       });
     } catch(_) {}
   }
@@ -662,12 +714,15 @@ function submitVerifactu(params) {
   if (!xmlSoap.ok) return xmlSoap;
 
   try {
+    // El Worker añade el SOAPAction; si llamamos directamente a AEAT lo ponemos aquí
+    const extraHeaders = proxyUrl
+      ? { 'X-Entorno': entorno }
+      : { 'SOAPAction': 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1/cont/ws/SistemaFacturacion/RegFactuSistemaFacturacion' };
+
     const response = UrlFetchApp.fetch(endpoint, {
       method:      'post',
       contentType: 'text/xml; charset=UTF-8',
-      headers: {
-        'SOAPAction': 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1/cont/ws/SistemaFacturacion/RegFactuSistemaFacturacion',
-      },
+      headers:     extraHeaders,
       payload:          xmlSoap.xml,
       muteHttpExceptions: true,
     });
@@ -675,17 +730,30 @@ function submitVerifactu(params) {
     const statusCode = response.getResponseCode();
     const respBody   = response.getContentText();
 
-    // Parsear respuesta AEAT
-    const estadoAEAT = respBody.includes('<CSV>') ? 'ACEPTADA' :
-                       respBody.includes('KO')    ? 'RECHAZADA' : 'DESCONOCIDO';
+    // Parsear respuesta AEAT — los tags llevan prefijo de namespace (p.ej. sfdr:CSV)
+    // Usamos regex namespace-agnostic: coincide con cualquier prefijo
+    function xtag(tag) {
+      const m = respBody.match(new RegExp('<(?:[^:>]+:)?' + tag + '[^>]*>([\\s\\S]*?)<'));
+      return m ? m[1].trim() : '';
+    }
+    const csvVal         = xtag('CSV');
+    const estadoRegistro = xtag('EstadoRegistro');   // Correcto | AceptadoConErrores | Incorrecto
+    const estadoEnvio    = xtag('EstadoEnvio');       // Correcto | Incorrecto
+    const codError       = xtag('CodigoErrorRegistro');
+    const descError      = xtag('DescripcionErrorRegistro');
+
+    const estadoAEAT = csvVal                                   ? 'ACEPTADA'  :
+                       /^Correcto/i.test(estadoRegistro||estadoEnvio) ? 'ACEPTADA'  :
+                       /Incorrecto/i.test(estadoRegistro||estadoEnvio)? 'RECHAZADA' :
+                       statusCode !== 200                        ? 'ERROR_HTTP' : 'DESCONOCIDO';
 
     // Actualizar Sheets con resultado
     if (factura['Id Factura']) {
       try {
         updateRow('FACTURAS', factura['Id Factura'], {
-          'Estado VeriFactu': estadoAEAT,
-          'CSV AEAT':         (respBody.match(/<CSV>([^<]+)<\/CSV>/) || ['',''])[1],
-          'Fecha envío AEAT': Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+                    'Estado Envío':      estadoAEAT,
+                    'CSV Respuesta':     csvVal,
+                    'Código error AEAT': codError,
         });
       } catch(_) {}
     }
@@ -694,8 +762,11 @@ function submitVerifactu(params) {
       ok:          statusCode === 200,
       statusCode:  statusCode,
       estado:      estadoAEAT,
+      csv:         csvVal,
+      codError:    codError,
+      descError:   descError,
       entorno:     entorno,
-      responseXml: respBody.substring(0, 2000), // truncar para no saturar la respuesta
+      responseXml: respBody.substring(0, 4000),
     };
 
   } catch (e) {
@@ -715,8 +786,8 @@ function buildVerifactuXml_(f) {
 
   return (
     '<sfc:SuministroLRFacturasEmitidas ' +
-    'xmlns:sfc="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1/cont/ws/SistemaFacturacion" ' +
-    'xmlns:sf="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1/cont/xml/catalogos">' +
+    'xmlns:sf="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1/cont/xml/catalogos" ' +
+    'xmlns:sfc="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tikeV1/cont/ws/SistemaFacturacion">' +
       '<sfc:Cabecera>' +
         '<sfc:Obligado>' +
           '<sf:NombreRazon>' + xmlEscape_(nombre) + '</sf:NombreRazon>' +
@@ -744,15 +815,35 @@ function buildVerifactuXml_(f) {
 }
 
 /** Envuelve el XML en un SOAP envelope firmado (WS-Security XMLDSig RSA-SHA256) */
+/** Normaliza un PEM para que tenga saltos de línea cada 64 chars (por si se pegó como una sola línea) */
+function normalizePem_(pem) {
+  pem = String(pem || '').trim().replace(/\r/g, '');
+  if (pem.includes('\n')) return pem;
+  // Sin saltos de línea — reconstruir
+  const hdr = (pem.match(/-----BEGIN [^-]+-----/) || [''])[0];
+  const ftr = (pem.match(/-----END [^-]+-----/)   || [''])[0];
+  const b64 = pem.replace(hdr,'').replace(ftr,'').replace(/\s+/g,'');
+  return hdr + '\n' + (b64.match(/.{1,64}/g)||[]).join('\n') + '\n' + ftr;
+}
+
 function buildVerifactuSoap_(bodyXml, certB64, privateKeyPem) {
   try {
-    // ID del body para la referencia en la firma
+    privateKeyPem = normalizePem_(privateKeyPem);
+
+    // Strip XML declaration — no puede aparecer dentro del body SOAP
+    // y en exc-C14N se elimina, lo que causaría un digest incorrecto
+    const cleanBodyXml = bodyXml.replace(/^<\?xml[^?]*\?>\s*/i, '');
+
     const bodyId = 'Body-' + Utilities.getUuid().replace(/-/g,'').substring(0,16);
 
+    // exc-C14N: declaraciones de namespace (ordenadas) ANTES que atributos regulares
+    // xmlns:soapenv (s) < xmlns:wsu (w) → correcto; wsu:Id va después
     const bodyElem =
-      '<soapenv:Body xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" wsu:Id="' + bodyId + '" ' +
-      'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' +
-      bodyXml +
+      '<soapenv:Body ' +
+      'xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' +
+      'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" ' +
+      'wsu:Id="' + bodyId + '">' +
+      cleanBodyXml +
       '</soapenv:Body>';
 
     // Digest SHA-256 del body (canonicalización simple — sin C14N completo)
