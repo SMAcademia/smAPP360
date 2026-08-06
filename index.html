@@ -2894,9 +2894,15 @@ function modalSesion(s) {
         <input type="time" id="ses-hi" value="${esc(s.HORA_INICIO||'')}"></div>
       <div class="field"><label>Hora fin</label>
         <input type="time" id="ses-hf" value="${esc(s.HORA_FIN||'')}"></div>
-      <div class="field"><label>Grupo <span class="req">*</span></label>
+      <div class="field"><label>Grupo / día <span class="req">*</span></label>
         <select id="ses-grupo">
-          ${['Prebenjamín','Benjamín','Alevín','Infantil','Cadete','Juvenil','Senior','Adultos'].map(g=>`<option value="${g}" ${s.GRUPO===g?'selected':''}>${g}</option>`).join('')}
+          ${(() => {
+            const actFutbol = DB.actividades.filter(a => String(a.TIPO||'').toUpperCase().includes('FUTBOL') || String(a.NOMBRE||'').toUpperCase().includes('FUTBOL') || String(a.NOMBRE||'').toUpperCase().includes('FÚTBOL') || String(a.NOMBRE||'').toUpperCase().includes('TECNIF'));
+            const opts = actFutbol.length > 0
+              ? actFutbol.map(a => `<option value="${esc(a.NOMBRE)}" ${s.GRUPO===a.NOMBRE?'selected':''}>${esc(a.NOMBRE)}</option>`)
+              : ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Lunes y Miércoles','Martes y Jueves','Martes y Viernes'].map(d => `<option value="${d}" ${s.GRUPO===d?'selected':''}>${d}</option>`);
+            return opts.join('');
+          })()}
         </select></div>
       <div class="field"><label>Entrenador</label>
         <select id="ses-ent">${entrenadores}</select></div>
