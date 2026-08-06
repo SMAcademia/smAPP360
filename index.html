@@ -311,6 +311,13 @@ tr:hover td{background:var(--g5)}
         </div>
       </div>
 
+      <div class="nav-section" id="nav-familia">
+        <div class="nav-section-label">Mi familia</div>
+        <div class="nav-item" onclick="navigate('portal-familia')" data-page="portal-familia">
+          <span class="nav-icon">🏠</span><span>Portal familia</span>
+        </div>
+      </div>
+
       <div class="nav-section">
         <div class="nav-item" onclick="navigate('configuracion')" data-page="configuracion">
           <span class="nav-icon">⚙️</span><span>Configuración</span>
@@ -365,6 +372,7 @@ tr:hover td{background:var(--g5)}
 const GAS_URL  = 'https://script.google.com/macros/s/AKfycby6PHeBX1EPH0wrmNF-ixgvs7T8sy5pgzzpquTFb-dtt7W4G1mg2wY8B-IL_wJ9NgT_cQ/exec';
 const APP_VER  = '2.0';
 const CURSO    = '2026-2027';
+const NIF_EMISOR = 'B00000000'; // ← Sustituye por el NIF/CIF real de la entidad
 
 // ── Google Identity Services ──────────────────────────────────────────────
 // Obtén tu Client ID en console.cloud.google.com → APIs → Credenciales → OAuth 2.0
@@ -560,7 +568,7 @@ function loginUser(p) {
   document.getElementById('sidebar-rol').textContent    = currentUser.rol;
 
   applyRoleVisibility();
-  navigate('dashboard');
+  navigate(currentUser.rol === 'FAMILIA' ? 'portal-familia' : 'dashboard');
 }
 
 function doLogin() {
@@ -610,12 +618,13 @@ function applyRoleVisibility() {
   const ampaLike   = ['ADMIN','COORDINADOR','AMPA'].includes(rol);
 
   const vis = {
-    'nav-general':      rol !== 'FAMILIA', // familias ven sólo dashboard
+    'nav-general':      rol !== 'FAMILIA',
     'nav-futbol':       futbolLike,
     'nav-extra':        extraLike,
     'nav-personal':     adminLike,
     'nav-contabilidad': adminLike,
     'nav-ampa':         ampaLike,
+    'nav-familia':      rol === 'FAMILIA',
   };
   Object.entries(vis).forEach(([id, show]) => {
     const el = document.getElementById(id);
@@ -656,6 +665,7 @@ const PAGE_META = {
   'fiscal':             { title: 'Fiscal',               sub: 'Resúmenes trimestrales y anuales' },
   'ampa-socios':        { title: 'Socios AMPA',          sub: 'Gestión del padrón de socios' },
   'ampa-alumnos':       { title: 'Alumnos AMPA',         sub: 'Fichas de alumnos vinculados' },
+  'portal-familia':     { title: 'Portal Familia',       sub: 'Inscripciones, pagos y asistencias' },
   'configuracion':      { title: 'Configuración',        sub: 'Ajustes del sistema' },
 };
 
@@ -668,11 +678,11 @@ const MODULES = {
   'inscripciones':      inscripciones,
   'pagos':              pagos,
   'facturas':           facturas,
-  'sesiones':           stub,
+  'sesiones':           sesiones,
   'asistencias-futbol': asistenciasFutbol,
   'asistencias-extra':  asistenciasExtra,
   'personal':           personal,
-  'ausencias':          stub,
+  'ausencias':          ausencias,
   'registro-horario':   registroHorario,
   'nominas':            nominas,
   'gastos':             gastos,
@@ -680,6 +690,7 @@ const MODULES = {
   'fiscal':             fiscal,
   'ampa-socios':        ampaSocios,
   'ampa-alumnos':       ampaAlumnos,
+  'portal-familia':     portalFamilia,
   'configuracion':      configuracion,
 };
 
@@ -1539,14 +1550,139 @@ function guardarPago(id) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  MÓDULO: FACTURAS (stub — requiere VeriFactu)
+//  MÓDULO: FACTURAS (VeriFactu)
 // ══════════════════════════════════════════════════════════════════════════
+async function sha256hex(texto) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
 function facturas() {
-  render(`<div class="stub">
-    <div class="stub-icon">🧾</div>
-    <h2>Facturas VeriFactu</h2>
-    <p>Este módulo se implementará con la cadena de hash VeriFactu en la próxima sesión.</p>
-  </div>`);
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores.</p></div>'); return; }
+  topbarBtn('+ Nueva factura', () => modalFactura());
+
+  const rows = DB.facturas.map(f => {
+    const estado = String(f.ESTADO||'EMITIDA').toUpperCase();
+    const badgeE = estado==='COBRADA' ? 'badge-green' : estado==='ANULADA' ? 'badge-red' : 'badge-amber';
+    return `<tr>
+      <td class="mono"><strong>${esc(f.ID||'')}</strong></td>
+      <td>${fmtFecha(f.FECHA)}</td>
+      <td>${esc(f.NOMBRE_CLIENTE||f.ID_CLIENTE||'—')}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.DESCRIPCION||'—')}</td>
+      <td class="mono" style="text-align:right">${fmtEur(f.BASE_IMPONIBLE)}</td>
+      <td style="text-align:right">${esc(f.TIPO_IMPUESTO||'EXENTO')}</td>
+      <td class="mono" style="text-align:right">${fmtEur(f.CUOTA_IMPUESTO||0)}</td>
+      <td class="mono" style="text-align:right"><strong>${fmtEur(f.TOTAL)}</strong></td>
+      <td><span class="badge ${badgeE}">${esc(estado)}</span></td>
+      <td class="mono" style="font-size:10px;color:var(--text3)" title="${esc(f.HUELLA||'')}">${(f.HUELLA||'').substring(0,10)}…</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalFactura(${JSON.stringify(f)})'>Editar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><p>Sin facturas registradas</p></div></td></tr>`;
+
+  const total = DB.facturas.reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+  const cobradas = DB.facturas.filter(f=>String(f.ESTADO||'').toUpperCase()==='COBRADA').reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+
+  render(`
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n">${DB.facturas.length}</div><div class="kpi-l">Facturas</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(total)}</div><div class="kpi-l">Total facturado</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--g2)">${fmtEur(cobradas)}</div><div class="kpi-l">Cobrado</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(total-cobradas)}</div><div class="kpi-l">Pendiente</div></div>
+    </div>
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-fac" placeholder="Buscar…" oninput="filterTable('q-fac','tbl-fac')">
+        <span class="text-muted">${DB.facturas.length} facturas · NIF emisor: ${NIF_EMISOR}</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-fac">
+          <thead><tr><th>Nº</th><th>Fecha</th><th>Cliente</th><th>Descripción</th><th>Base imp.</th><th>Impuesto</th><th>Cuota</th><th>Total</th><th>Estado</th><th>Huella</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalFactura(f) {
+  f = f || {};
+  const isNew = !f.ID;
+  const clientes = DB.clientes.map(c=>`<option value="${esc(c.ID)}" ${f.ID_CLIENTE===c.ID?'selected':''}>${esc(c.NOMBRE||'')} ${esc(c.APELLIDOS||'')}</option>`).join('');
+  openModal(isNew ? 'Nueva factura VeriFactu' : 'Editar factura', `
+    <div class="form-grid">
+      <div class="field"><label>Fecha <span class="req">*</span></label>
+        <input type="date" id="fac-fecha" value="${esc(f.FECHA||new Date().toISOString().slice(0,10))}"></div>
+      <div class="field"><label>Cliente <span class="req">*</span></label>
+        <select id="fac-cli">${clientes}</select></div>
+      <div class="field" style="grid-column:span 2"><label>Descripción <span class="req">*</span></label>
+        <input id="fac-desc" value="${esc(f.DESCRIPCION||'')}"></div>
+      <div class="field"><label>Base imponible (€) <span class="req">*</span></label>
+        <input type="number" step="0.01" id="fac-base" value="${esc(f.BASE_IMPONIBLE||'')}" oninput="calcTotalFac()"></div>
+      <div class="field"><label>Impuesto</label>
+        <select id="fac-imp" onchange="calcTotalFac()">
+          <option value="EXENTO" ${(f.TIPO_IMPUESTO||'EXENTO')==='EXENTO'?'selected':''}>Exento</option>
+          <option value="IGIC 7%" ${f.TIPO_IMPUESTO==='IGIC 7%'?'selected':''}>IGIC 7%</option>
+          <option value="IGIC 3%" ${f.TIPO_IMPUESTO==='IGIC 3%'?'selected':''}>IGIC 3%</option>
+        </select></div>
+      <div class="field"><label>Cuota impuesto (€)</label>
+        <input type="number" step="0.01" id="fac-cuota" value="${esc(f.CUOTA_IMPUESTO||'0')}" readonly></div>
+      <div class="field"><label>Total (€)</label>
+        <input type="number" step="0.01" id="fac-total" value="${esc(f.TOTAL||'')}" readonly style="font-weight:700"></div>
+      <div class="field"><label>Estado</label>
+        <select id="fac-estado">
+          ${['EMITIDA','COBRADA','ANULADA'].map(s=>`<option value="${s}" ${(f.ESTADO||'EMITIDA')===s?'selected':''}>${s}</option>`).join('')}
+        </select></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="saveFactura(${JSON.stringify(isNew)},${JSON.stringify(f.ID||null)})">${isNew?'Crear factura':'Guardar cambios'}</button>`);
+  calcTotalFac();
+}
+
+function calcTotalFac() {
+  const base = parseFloat(document.getElementById('fac-base')?.value||0)||0;
+  const imp  = document.getElementById('fac-imp')?.value||'EXENTO';
+  const pct  = imp==='IGIC 7%' ? 0.07 : imp==='IGIC 3%' ? 0.03 : 0;
+  const cuota = parseFloat((base * pct).toFixed(2));
+  const total = parseFloat((base + cuota).toFixed(2));
+  const cEl = document.getElementById('fac-cuota'); if(cEl) cEl.value = cuota.toFixed(2);
+  const tEl = document.getElementById('fac-total'); if(tEl) tEl.value = total.toFixed(2);
+}
+
+async function saveFactura(isNew, id) {
+  const cliId  = document.getElementById('fac-cli')?.value||'';
+  const fecha  = document.getElementById('fac-fecha')?.value||'';
+  const desc   = document.getElementById('fac-desc')?.value.trim()||'';
+  const base   = parseFloat(document.getElementById('fac-base')?.value)||0;
+  const imp    = document.getElementById('fac-imp')?.value||'EXENTO';
+  const cuota  = parseFloat(document.getElementById('fac-cuota')?.value)||0;
+  const total  = parseFloat(document.getElementById('fac-total')?.value)||0;
+  const estado = document.getElementById('fac-estado')?.value||'EMITIDA';
+  if (!cliId||!fecha||!desc||!base) { showToast('Rellena todos los campos obligatorios','error'); return; }
+  const cli = DB.clientes.find(c=>c.ID===cliId)||{};
+  let huellaAnt = '0'.repeat(64);
+  if (isNew && DB.facturas.length>0) {
+    const sorted = [...DB.facturas].sort((a,b)=>String(a.FECHA)<String(b.FECHA)?-1:1);
+    huellaAnt = sorted[sorted.length-1].HUELLA || '0'.repeat(64);
+  }
+  const numFac = id || ('FAC-' + String(DB.facturas.length+1).padStart(3,'0'));
+  const cadena = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${huellaAnt}`;
+  const huella = await sha256hex(cadena);
+  const row = {
+    FECHA:           fecha,
+    ID_CLIENTE:      cliId,
+    NOMBRE_CLIENTE:  `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim(),
+    DESCRIPCION:     desc,
+    BASE_IMPONIBLE:  base,
+    TIPO_IMPUESTO:   imp,
+    CUOTA_IMPUESTO:  cuota,
+    TOTAL:           total,
+    ESTADO:          estado,
+    HUELLA_ANT:      isNew ? huellaAnt : undefined,
+    HUELLA:          huella,
+    NIF_EMISOR:      NIF_EMISOR,
+  };
+  writeToSheet('FACTURAS', row, isNew ? null : id)
+    .then(()=>{ showToast(isNew?'Factura creada con huella VeriFactu':'Factura actualizada'); closeModal(); loadAllData().then(facturas); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -2703,6 +2839,283 @@ function testEmailJS() {
   })
   .then(()=>{ if(el) el.innerHTML='<span style="color:var(--g2)">✓ Email enviado correctamente</span>'; })
   .catch(err=>{ if(el) el.innerHTML=`<span style="color:var(--red)">✗ Error: ${esc(String(err))}</span>`; });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: SESIONES (SM Fútbol)
+// ══════════════════════════════════════════════════════════════════════════
+function sesiones() {
+  const puedeCrea = isAdmin() || isEntrenador();
+  if (puedeCrea) topbarBtn('+ Nueva sesión', () => modalSesion());
+  const lista = isAdmin()
+    ? DB.sesiones
+    : DB.sesiones.filter(s => String(s.ID_ENTRENADOR||'') === String(currentUser.id||''));
+  const rows = lista.map(s => {
+    const est = String(s.ESTADO||'PROGRAMADA').toUpperCase();
+    const badgeE = est==='REALIZADA' ? 'badge-green' : est==='CANCELADA' ? 'badge-red' : 'badge-blue';
+    const ent = DB.personal.find(p=>String(p.ID_MONITOR)===String(s.ID_ENTRENADOR));
+    return `<tr>
+      <td class="mono">${esc(s.ID||'')}</td>
+      <td>${fmtFecha(s.FECHA)}</td>
+      <td>${esc(s.HORA_INICIO||'—')} – ${esc(s.HORA_FIN||'—')}</td>
+      <td><strong>${esc(s.GRUPO||'—')}</strong></td>
+      <td>${esc(ent ? (ent.NOMBRE+' '+(ent.APELLIDOS||'')).trim() : s.ID_ENTRENADOR||'—')}</td>
+      <td>${esc(s.LUGAR||'—')}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.DESCRIPCION||'—')}</td>
+      <td><span class="badge ${badgeE}">${esc(est)}</span></td>
+      ${puedeCrea ? `<td><button class="btn btn-sm btn-secondary" onclick='modalSesion(${JSON.stringify(s)})'>Editar</button></td>` : '<td></td>'}
+    </tr>`;
+  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">⚽</div><p>Sin sesiones registradas</p></div></td></tr>`;
+  render(`
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-ses" placeholder="Buscar…" oninput="filterTable('q-ses','tbl-ses')">
+        <span class="text-muted">${lista.length} sesiones</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-ses">
+          <thead><tr><th>ID</th><th>Fecha</th><th>Horario</th><th>Grupo</th><th>Entrenador</th><th>Lugar</th><th>Descripción</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalSesion(s) {
+  s = s || {};
+  const isNew = !s.ID;
+  const entrenadores = DB.personal.filter(p=>['ENTRENADOR','ADMIN','COORDINADOR'].includes(String(p.ROL||'').toUpperCase()))
+    .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(s.ID_ENTRENADOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
+  openModal(isNew ? 'Nueva sesión' : 'Editar sesión', `
+    <div class="form-grid">
+      <div class="field"><label>Fecha <span class="req">*</span></label>
+        <input type="date" id="ses-fecha" value="${esc(s.FECHA||new Date().toISOString().slice(0,10))}"></div>
+      <div class="field"><label>Hora inicio</label>
+        <input type="time" id="ses-hi" value="${esc(s.HORA_INICIO||'')}"></div>
+      <div class="field"><label>Hora fin</label>
+        <input type="time" id="ses-hf" value="${esc(s.HORA_FIN||'')}"></div>
+      <div class="field"><label>Grupo <span class="req">*</span></label>
+        <select id="ses-grupo">
+          ${['Prebenjamín','Benjamín','Alevín','Infantil','Cadete','Juvenil','Senior','Adultos'].map(g=>`<option value="${g}" ${s.GRUPO===g?'selected':''}>${g}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Entrenador</label>
+        <select id="ses-ent">${entrenadores}</select></div>
+      <div class="field"><label>Lugar</label>
+        <input id="ses-lugar" value="${esc(s.LUGAR||'')}"></div>
+      <div class="field" style="grid-column:span 2"><label>Descripción / contenido</label>
+        <input id="ses-desc" value="${esc(s.DESCRIPCION||'')}"></div>
+      <div class="field"><label>Estado</label>
+        <select id="ses-estado">
+          ${['PROGRAMADA','REALIZADA','CANCELADA'].map(e=>`<option value="${e}" ${(s.ESTADO||'PROGRAMADA')===e?'selected':''}>${e}</option>`).join('')}
+        </select></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="saveSesion(${isNew},${JSON.stringify(s.ID||null)})">${isNew?'Crear sesión':'Guardar'}</button>`);
+}
+
+function saveSesion(isNew, id) {
+  const fecha  = document.getElementById('ses-fecha')?.value||'';
+  const grupo  = document.getElementById('ses-grupo')?.value||'';
+  if (!fecha||!grupo) { showToast('Fecha y grupo son obligatorios','error'); return; }
+  const row = {
+    FECHA:       fecha,
+    HORA_INICIO: document.getElementById('ses-hi')?.value||'',
+    HORA_FIN:    document.getElementById('ses-hf')?.value||'',
+    GRUPO:       grupo,
+    ID_ENTRENADOR: document.getElementById('ses-ent')?.value||'',
+    LUGAR:       document.getElementById('ses-lugar')?.value.trim()||'',
+    DESCRIPCION: document.getElementById('ses-desc')?.value.trim()||'',
+    ESTADO:      document.getElementById('ses-estado')?.value||'PROGRAMADA',
+  };
+  writeToSheet('SESIONES', row, isNew ? null : id)
+    .then(()=>{ showToast(isNew?'Sesión creada':'Sesión actualizada'); closeModal(); loadAllData().then(sesiones); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: AUSENCIAS (personal)
+// ══════════════════════════════════════════════════════════════════════════
+function ausencias() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores.</p></div>'); return; }
+  topbarBtn('+ Registrar ausencia', () => modalAusencia());
+  const rows = DB.ausencias.map(a => {
+    const trab = DB.personal.find(p=>String(p.ID_MONITOR)===String(a.ID_MONITOR));
+    const tipo = String(a.TIPO||'').toUpperCase();
+    const tipoBadge = tipo==='BAJA_LABORAL' ? 'badge-red' : tipo==='VACACIONES' ? 'badge-blue' : 'badge-amber';
+    const est  = String(a.ESTADO||'SOLICITADA').toUpperCase();
+    const estBadge = est==='APROBADA'||est==='ACTIVA' ? 'badge-green' : est==='RECHAZADA' ? 'badge-red' : 'badge-amber';
+    return `<tr>
+      <td class="mono">${esc(a.ID||'')}</td>
+      <td><strong>${esc(trab ? (trab.NOMBRE+' '+(trab.APELLIDOS||'')).trim() : a.ID_MONITOR||'—')}</strong></td>
+      <td><span class="badge ${tipoBadge}">${esc(a.TIPO||'—')}</span></td>
+      <td>${fmtFecha(a.FECHA_INICIO)}</td>
+      <td>${fmtFecha(a.FECHA_FIN)}</td>
+      <td style="text-align:center">${esc(a.DIAS||'—')}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.JUSTIFICACION||'—')}</td>
+      <td><span class="badge ${estBadge}">${esc(est)}</span></td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalAusencia(${JSON.stringify(a)})'>Editar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📅</div><p>Sin ausencias registradas</p></div></td></tr>`;
+  render(`
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-aus" placeholder="Buscar…" oninput="filterTable('q-aus','tbl-aus')">
+        <span class="text-muted">${DB.ausencias.length} registros</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-aus">
+          <thead><tr><th>ID</th><th>Trabajador</th><th>Tipo</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Justificación</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalAusencia(a) {
+  a = a || {};
+  const isNew = !a.ID;
+  const trabajadores = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S'))
+    .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(a.ID_MONITOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
+  openModal(isNew ? 'Registrar ausencia' : 'Editar ausencia', `
+    <div class="form-grid">
+      <div class="field"><label>Trabajador <span class="req">*</span></label>
+        <select id="aus-trab">${trabajadores}</select></div>
+      <div class="field"><label>Tipo <span class="req">*</span></label>
+        <select id="aus-tipo">
+          ${['BAJA_LABORAL','VACACIONES','PERMISO','OTROS'].map(t=>`<option value="${t}" ${(a.TIPO||'')===t?'selected':''}>${t.replace('_',' ')}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Fecha inicio <span class="req">*</span></label>
+        <input type="date" id="aus-fi" value="${esc(a.FECHA_INICIO||'')}" oninput="calcDiasAus()"></div>
+      <div class="field"><label>Fecha fin</label>
+        <input type="date" id="aus-ff" value="${esc(a.FECHA_FIN||'')}" oninput="calcDiasAus()"></div>
+      <div class="field"><label>Días</label>
+        <input type="number" id="aus-dias" value="${esc(a.DIAS||'')}" min="1"></div>
+      <div class="field"><label>Estado</label>
+        <select id="aus-estado">
+          ${['SOLICITADA','APROBADA','ACTIVA','RECHAZADA','FINALIZADA'].map(e=>`<option value="${e}" ${(a.ESTADO||'SOLICITADA')===e?'selected':''}>${e}</option>`).join('')}
+        </select></div>
+      <div class="field" style="grid-column:span 2"><label>Justificación / observaciones</label>
+        <input id="aus-just" value="${esc(a.JUSTIFICACION||'')}"></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="saveAusencia(${isNew},${JSON.stringify(a.ID||null)})">${isNew?'Registrar':'Guardar'}</button>`);
+}
+
+function calcDiasAus() {
+  const fi = document.getElementById('aus-fi')?.value;
+  const ff = document.getElementById('aus-ff')?.value;
+  if (fi && ff) {
+    const d = Math.round((new Date(ff)-new Date(fi))/(1000*60*60*24))+1;
+    const el = document.getElementById('aus-dias'); if(el) el.value = d>0?d:1;
+  }
+}
+
+function saveAusencia(isNew, id) {
+  const trabId = document.getElementById('aus-trab')?.value||'';
+  const fi     = document.getElementById('aus-fi')?.value||'';
+  if (!trabId||!fi) { showToast('Trabajador y fecha de inicio son obligatorios','error'); return; }
+  const trab = DB.personal.find(p=>String(p.ID_MONITOR)===trabId)||{};
+  const row = {
+    ID_MONITOR:    trabId,
+    NOMBRE_MONITOR: `${trab.NOMBRE||''} ${trab.APELLIDOS||''}`.trim(),
+    TIPO:          document.getElementById('aus-tipo')?.value||'OTROS',
+    FECHA_INICIO:  fi,
+    FECHA_FIN:     document.getElementById('aus-ff')?.value||'',
+    DIAS:          parseInt(document.getElementById('aus-dias')?.value)||1,
+    JUSTIFICACION: document.getElementById('aus-just')?.value.trim()||'',
+    ESTADO:        document.getElementById('aus-estado')?.value||'SOLICITADA',
+  };
+  writeToSheet('AUSENCIAS', row, isNew ? null : id)
+    .then(()=>{ showToast(isNew?'Ausencia registrada':'Ausencia actualizada'); closeModal(); loadAllData().then(ausencias); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: PORTAL FAMILIA (solo lectura)
+// ══════════════════════════════════════════════════════════════════════════
+function portalFamilia() {
+  const email = currentUser?.email?.toLowerCase()||'';
+  const cli = DB.clientes.find(c=>String(c.EMAIL||'').toLowerCase()===email);
+
+  if (!cli) {
+    render(`<div class="stub">
+      <div class="stub-icon">🏠</div>
+      <h2>Bienvenido al Portal Familia</h2>
+      <p>No encontramos un perfil de cliente vinculado a <strong>${esc(email)}</strong>.<br>
+      Contacta con la academia para que vinculen tu cuenta.</p>
+    </div>`);
+    return;
+  }
+
+  const misAlumnos = DB.alumnos.filter(a=>String(a.ID_CLIENTE||'')===String(cli.ID));
+  const idsAlumnos = new Set(misAlumnos.map(a=>String(a.ID)));
+  const misInsc    = DB.inscripciones.filter(i=>idsAlumnos.has(String(i.ID_ALUMNO||'')));
+  const misPagos   = DB.pagos.filter(p=>String(p.ID_CLIENTE||'')===String(cli.ID));
+
+  const rowsAlumnos = misAlumnos.map(a=>`
+    <tr>
+      <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
+      <td>${fmtFecha(a.FECHA_NAC)}</td>
+      <td>${esc(a.CURSO_ESCOLAR||'—')}</td>
+    </tr>`).join('') || `<tr><td colspan="3"><div class="empty"><p>Sin alumnos registrados</p></div></td></tr>`;
+
+  const rowsInsc = misInsc.map(i=>{
+    const alum = DB.alumnos.find(a=>String(a.ID)===String(i.ID_ALUMNO));
+    const act  = DB.actividades.find(ac=>String(ac.ID)===String(i.ID_ACTIVIDAD));
+    const est  = String(i.ESTADO||'').toUpperCase();
+    const badgeE = est==='ACTIVA'?'badge-green':est==='BAJA'?'badge-red':'badge-amber';
+    return `<tr>
+      <td>${esc(alum?(alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim():i.ID_ALUMNO||'—')}</td>
+      <td>${esc(act?act.NOMBRE:i.ID_ACTIVIDAD||'—')}</td>
+      <td>${fmtFecha(i.FECHA_ALTA)}</td>
+      <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}</td>
+      <td><span class="badge ${badgeE}">${esc(est||'—')}</span></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5"><div class="empty"><p>Sin inscripciones</p></div></td></tr>`;
+
+  const rowsPagos = misPagos.map(p=>{
+    const est = String(p.ESTADO||'').toUpperCase();
+    const badgeE = est==='PAGADO'?'badge-green':est==='PENDIENTE'?'badge-amber':'badge-red';
+    return `<tr>
+      <td>${fmtFecha(p.FECHA)}</td>
+      <td>${esc(p.CONCEPTO||'—')}</td>
+      <td class="mono">${fmtEur(p.TOTAL_FACTURADO)}</td>
+      <td class="mono" style="color:var(--g2)">${fmtEur(p.TOTAL_RECIBIDO)}</td>
+      <td><span class="badge ${badgeE}">${esc(est||'—')}</span></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5"><div class="empty"><p>Sin pagos registrados</p></div></td></tr>`;
+
+  const pendiente = misPagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
+
+  render(`
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n">${misAlumnos.length}</div><div class="kpi-l">Alumnos</div></div>
+      <div class="kpi"><div class="kpi-n">${misInsc.filter(i=>String(i.ESTADO||'').toUpperCase()==='ACTIVA').length}</div><div class="kpi-l">Actividades activas</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(pendiente)}</div><div class="kpi-l">Pendiente de pago</div></div>
+    </div>
+    <div style="display:grid;gap:16px">
+      <div class="card">
+        <div class="card-title">Mis alumnos</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Nombre</th><th>Fecha nac.</th><th>Curso escolar</th></tr></thead>
+          <tbody>${rowsAlumnos}</tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Inscripciones</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Alumno</th><th>Actividad</th><th>Fecha alta</th><th>Precio</th><th>Estado</th></tr></thead>
+          <tbody>${rowsInsc}</tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pagos</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Recibido</th><th>Estado</th></tr></thead>
+          <tbody>${rowsPagos}</tbody>
+        </table></div>
+      </div>
+    </div>`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
