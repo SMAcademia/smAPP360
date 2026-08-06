@@ -347,7 +347,7 @@ tr:hover td{background:var(--g5)}
 // ══════════════════════════════════════════════════════════════════════════
 //  CONFIG
 // ══════════════════════════════════════════════════════════════════════════
-const GAS_URL  = 'https://script.google.com/macros/s/AKfycbzEmqw3sWGq6VwiHbJumtmUap_fzYb38pV81LpoWG8CwTHVF0JTkUMmoAAYdzwVFHsEfQ/exec';
+const GAS_URL  = 'https://script.google.com/macros/s/AKfycby6PHeBX1EPH0wrmNF-ixgvs7T8sy5pgzzpquTFb-dtt7W4G1mg2wY8B-IL_wJ9NgT_cQ/exec';
 const APP_VER  = '2.0';
 const CURSO    = '2026-2027';
 
@@ -358,9 +358,8 @@ const GOOGLE_CLIENT_ID = '155722667257-thtelihhq2fkuippdjvmohc7r8alkrvb.apps.goo
 // ── EmailJS ───────────────────────────────────────────────────────────────
 const EMAILJS_PUBLIC_KEY   = '';    // ← tu Public Key de emailjs.com (Account → General)
 const EMAILJS_SERVICE_ID   = 'service_m28ej3c';
-const EMAILJS_TPL_BIENVENIDA  = ''; // ← Template ID bienvenida cliente
-const EMAILJS_TPL_PREINSC     = ''; // ← Template ID confirmación preinscripción
-const EMAILJS_TPL_RECORDATORIO= ''; // ← Template ID recordatorio de pago
+const EMAILJS_TPL_CONFIRMACION  = ''; // ← Template ID: confirmación preinscripción + bienvenida
+const EMAILJS_TPL_RECORDATORIO  = ''; // ← Template ID: recordatorio de pago pendiente
 
 // ══════════════════════════════════════════════════════════════════════════
 //  ESTADO GLOBAL
@@ -1271,7 +1270,7 @@ function ejecutarConfirmacion(preinscId, cliIdExistente) {
   }).then(() => {
     // Enviar email de bienvenida
     const emailTutor = document.getElementById('cp-email').value.trim();
-    sendEmail(EMAILJS_TPL_PREINSC, {
+    sendEmail(EMAILJS_TPL_CONFIRMACION, {
       to_email: emailTutor,
       to_name: document.getElementById('cp-nomb').value.trim(),
       alumno:  aluNom,
@@ -2638,8 +2637,7 @@ function configuracion() {
         <div style="font-size:13px;display:flex;flex-direction:column;gap:8px">
           <div class="flex"><span style="width:140px;color:var(--text3)">Public Key</span><span class="mono">${EMAILJS_PUBLIC_KEY||'—'}</span></div>
           <div class="flex"><span style="width:140px;color:var(--text3)">Service ID</span><span class="mono">${EMAILJS_SERVICE_ID||'—'}</span></div>
-          <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Bienvenida</span><span class="mono">${EMAILJS_TPL_BIENVENIDA||'—'}</span></div>
-          <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Preinsc.</span><span class="mono">${EMAILJS_TPL_PREINSC||'—'}</span></div>
+          <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Confirmación</span><span class="mono">${EMAILJS_TPL_CONFIRMACION||'—'}</span></div>
           <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Recordatorio</span><span class="mono">${EMAILJS_TPL_RECORDATORIO||'—'}</span></div>
         </div>
         ${ejsOk ? `
@@ -2683,7 +2681,7 @@ function testGAS() {
 function testEmailJS() {
   const el = document.getElementById('ejs-test-result');
   if(el) el.textContent = 'Enviando…';
-  sendEmail(EMAILJS_TPL_BIENVENIDA, {
+  sendEmail(EMAILJS_TPL_CONFIRMACION, {
     to_email: currentUser?.email || 'test@smacademia.es',
     to_name:  currentUser?.nombre || 'Test',
     alumno:   'Prueba',
