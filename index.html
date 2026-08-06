@@ -832,7 +832,7 @@ const CryptoSM = (() => {
   return { encrypt, decrypt, isEncrypted };
 })();
 
-const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyhFDN-zhSurQwdxHomYm8mIkdjDiFqbWYKoYSkkw5GH6nZ9vhrS5fZfvLTqYgEwUoROA/exec';
+const GAS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbzEmqw3sWGq6VwiHbJumtmUap_fzYb38pV81LpoWG8CwTHVF0JTkUMmoAAYdzwVFHsEfQ/exec';
 // Si el dispositivo tiene cualquier URL de GAS antigua → actualizar a la actual automáticamente
 // (evita que las trabajadoras queden bloqueadas tras un nuevo despliegue del GAS)
 const _cachedGasUrl = localStorage.getItem(CONFIG_KEY);
