@@ -83,7 +83,7 @@ function doPost(e) {
 //  HELPERS INTERNOS
 // ══════════════════════════════════════════════════════════════════════════
 
-function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+function ss_() { return SpreadsheetApp.openById('1oHJIUoyR3V5N0iweWnMagZic_8YkWtVV6CsshXloX4k'); }
 
 /** Primera hoja cuyo nombre contiene `kw` (insensible a mayúsculas). */
 function sheetByKw_(kw) {
