@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preinscripción — SM Academia</title>
+<style>
+  :root {
+    --green:    #1b5e20;
+    --green-m:  #2e7d32;
+    --green-l:  #e8f5e9;
+    --green-ll: #f1f8f2;
+    --border:   #c8e6c9;
+    --text:     #1a2a1a;
+    --text2:    #4a5e4a;
+    --text3:    #7a8e7a;
+    --red:      #c62828;
+    --red-l:    #ffebee;
+    --bg:       #f5f8f5;
+    --white:    #ffffff;
+    --r:        10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.5;
+    padding-bottom: 60px;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--green);
+    color: #fff;
+    text-align: center;
+    padding: 28px 20px 22px;
+  }
+  .header img { height: 54px; margin-bottom: 12px; display: block; margin-left: auto; margin-right: auto; }
+  .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  .header p  { font-size: 13px; opacity: .75; margin-top: 4px; }
+
+  /* ── Progress bar ── */
+  .progress-bar {
+    background: var(--green-m);
+    height: 4px;
+  }
+  .progress-fill {
+    background: #a5d6a7;
+    height: 100%;
+    transition: width .35s ease;
+  }
+
+  /* ── Steps ── */
+  .steps-row {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    background: var(--green);
+    padding: 0 16px 16px;
+  }
+  .step-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: default;
+    transition: background .2s;
+    min-width: 70px;
+  }
+  .step-tab.active { background: rgba(255,255,255,.15); }
+  .step-n {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(255,255,255,.25);
+    color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-tab.active   .step-n { background: #fff; color: var(--green); }
+  .step-tab.done     .step-n { background: #a5d6a7; color: var(--green); }
+  .step-lbl { font-size: 10px; color: rgba(255,255,255,.65); font-weight: 600; letter-spacing: .04em; text-align: center; }
+  .step-tab.active .step-lbl { color: #fff; }
+
+  /* ── Container ── */
+  .container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 24px 16px 0;
+  }
+
+  /* ── Section card ── */
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 20px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .card.active { display: block; }
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--green-m);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--green-l);
+  }
+
+  /* ── Fields ── */
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    margin-bottom: 5px;
+    letter-spacing: .02em;
+  }
+  .field label .req { color: var(--red); margin-left: 2px; }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--white);
+    transition: border-color .15s;
+    -webkit-appearance: none;
+  }
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: var(--green-m);
+    box-shadow: 0 0 0 3px rgba(46,125,50,.1);
+  }
+  .field input.uppercase,
+  .field textarea.uppercase { text-transform: uppercase; }
+  .field textarea { resize: vertical; min-height: 72px; }
+  .field select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%234a5e4a' d='M6 8L0 0h12z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  .field .hint { font-size: 11px; color: var(--text3); margin-top: 4px; }
+  .field.error input, .field.error select, .field.error textarea { border-color: var(--red); }
+  .field .err-msg { font-size: 11px; color: var(--red); margin-top: 3px; display: none; }
+  .field.error .err-msg { display: block; }
+
+  /* ── Row ── */
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 440px) { .row { grid-template-columns: 1fr; } }
+
+  /* ── Checkboxes ── */
+  .check-group { display: flex; flex-direction: column; gap: 8px; }
+  .check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+  }
+  .check-item input[type="checkbox"] {
+    width: 18px; height: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    accent-color: var(--green-m);
+    cursor: pointer;
+  }
+  .check-item span { font-size: 13px; color: var(--text); line-height: 1.4; }
+  .check-item.required-check span::after { content: ' *'; color: var(--red); }
+
+  .acts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .act-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .act-chip input { display: none; }
+  .act-chip .chip-icon { font-size: 20px; }
+  .act-chip .chip-name { font-size: 13px; font-weight: 600; }
+  .act-chip:has(input:checked) {
+    border-color: var(--green-m);
+    background: var(--green-ll);
+  }
+
+  /* ── Buttons ── */
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+  .btn {
+    padding: 11px 22px;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity .15s, transform .1s;
+    font-family: inherit;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--green-m); color: #fff; }
+  .btn-primary:hover { background: var(--green); }
+  .btn-back { background: var(--bg); color: var(--text2); border: 1.5px solid var(--border); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Success ── */
+  #screen-ok { display: none; text-align: center; padding: 40px 20px; }
+  #screen-ok .ok-icon { font-size: 56px; margin-bottom: 16px; }
+  #screen-ok h2 { font-size: 22px; font-weight: 800; color: var(--green); margin-bottom: 8px; }
+  #screen-ok p  { color: var(--text2); font-size: 14px; max-width: 360px; margin: 0 auto 12px; }
+  #screen-ok .id-box {
+    display: inline-block;
+    background: var(--green-l);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--green);
+    letter-spacing: .04em;
+    margin: 8px 0 20px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Error banner ── */
+  #banner-err {
+    display: none;
+    background: var(--red-l);
+    border: 1px solid #ef9a9a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--red);
+    margin-bottom: 14px;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 24px 16px 0;
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .footer a { color: var(--green-m); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <img src="img/logo.webp" alt="SM Academia" onerror="this.style.display='none'">
+  <h1>Formulario de Preinscripción</h1>
+  <p>Completa los datos para registrar tu interés. Te contactaremos en breve.</p>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="progress" style="width:33%"></div></div>
+
+<!-- Pasos -->
+<div class="steps-row">
+  <div class="step-tab active" id="tab-1">
+    <div class="step-n">1</div>
+    <div class="step-lbl">ALUMNO/A</div>
+  </div>
+  <div class="step-tab" id="tab-2">
+    <div class="step-n">2</div>
+    <div class="step-lbl">FAMILIA</div>
+  </div>
+  <div class="step-tab" id="tab-3">
+    <div class="step-n">3</div>
+    <div class="step-lbl">INTERÉS</div>
+  </div>
+</div>
+
+<div class="container">
+  <div id="banner-err"></div>
+
+  <!-- ── PASO 1: Datos del alumno/a ── -->
+  <div class="card active" id="step-1">
+    <div class="card-title">Datos del alumno/a</div>
+
+    <div class="row">
+      <div class="field" id="f-nombre-alu">
+        <label>Nombre <span class="req">*</span></label>
+        <input type="text" id="nombre_alumno" class="uppercase" autocomplete="given-name" placeholder="NOMBRE">
+        <div class="err-msg">Campo obligatorio</div>
+      </div>
+      <div class="field" id="f-apellidos-alu">
+        <label>Apellidos <span class="req">*</span></label>
+        <input type="text" id="apellidos_alumno" class="uppercase" autocomplete="family-name" placeholder="APELLIDOS">
+        <div class="err-msg">Campo obligatorio</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>Fecha de nacimiento</label>
+        <input type="date" id="fecha_nac">
+      </div>
+      <div class="field">
+        <label>Curso escolar</label>
+        <select id="curso_alumno">
+          <option value="">— Selecciona —</option>
+          <option>INFANTIL 3 AÑOS</option>
+          <option>INFANTIL 4 AÑOS</option>
+          <option>INFANTIL 5 AÑOS</option>
+          <option>1º PRIMARIA</option>
+          <option>2º PRIMARIA</option>
+          <option>3º PRIMARIA</option>
+          <option>4º PRIMARIA</option>
+          <option>5º PRIMARIA</option>
+          <option>6º PRIMARIA</option>
+          <option>1º ESO</option>
+          <option>2º ESO</option>
+          <option>3º ESO</option>
+          <option>4º ESO</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Centro / Colegio <span class="req">*</span></label>
+      <select id="centro">
+        <option value="">— Selecciona el centro —</option>
+        <option value="ESCALERITAS">CEIP Escaleritas</option>
+        <option value="OTRO">Otro centro</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Alergias, enfermedades u observaciones de salud</label>
+      <textarea id="salud" class="uppercase" placeholder="NINGUNA / ALERGIA AL GLUTEN..."></textarea>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="irPaso(2)">Siguiente →</button>
+    </div>
+  </div>
+
+  <!-- ── PASO 2: Datos del tutor/a ── -->
+  <div class="card" id="step-2">
+    <div class="card-title">Datos del tutor/a o familiar</div>
+
+    <div class="row">
+      <div class="field" id="f-nombre-tut">
+        <label>Nombre <span class="req">*</span></label>
+        <input type="text" id="nombre_tutor1" class="uppercase" autocomplete="given-name" placeholder="NOMBRE">
+        <div class="err-msg">Campo obligatorio</div>
+      </div>
+      <div class="field" id="f-apellidos-tut">
+        <label>Apellidos <span class="req">*</span></label>
+        <input type="text" id="apellidos_tutor1" class="uppercase" autocomplete="family-name" placeholder="APELLIDOS">
+        <div class="err-msg">Campo obligatorio</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>Relación con el alumno/a</label>
+        <select id="relacion_tutor1">
+          <option value="">— Selecciona —</option>
+          <option value="MADRE">Madre</option>
+          <option value="PADRE">Padre</option>
+          <option value="TUTOR LEGAL">Tutor/a legal</option>
+          <option value="ABUELO/A">Abuelo/a</option>
+          <option value="OTRO">Otro</option>
+        </select>
+      </div>
+      <div class="field" id="f-nif-tut">
+        <label>NIF / DNI</label>
+        <input type="text" id="nif_tutor1" class="uppercase" autocomplete="off" placeholder="12345678A">
+        <div class="err-msg">Formato no válido</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field" id="f-tel-tut">
+        <label>Teléfono <span class="req">*</span></label>
+        <input type="tel" id="telefono_tutor1" autocomplete="tel" placeholder="600 000 000">
+        <div class="err-msg">Campo obligatorio</div>
+      </div>
+      <div class="field" id="f-email-tut">
+        <label>Email <span class="req">*</span></label>
+        <input type="email" id="email_tutor1" autocomplete="email" placeholder="nombre@email.com">
+        <div class="err-msg">Email no válido</div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="irPaso(1)">← Atrás</button>
+      <button class="btn btn-primary" onclick="irPaso(3)">Siguiente →</button>
+    </div>
+  </div>
+
+  <!-- ── PASO 3: Interés y consentimientos ── -->
+  <div class="card" id="step-3">
+    <div class="card-title">Actividades de interés</div>
+
+    <div class="field">
+      <label>¿Qué actividades te interesan? (puedes marcar varias)</label>
+      <div class="acts-grid">
+        <label class="act-chip">
+          <input type="checkbox" name="actividades" value="FÚTBOL">
+          <span class="chip-icon">⚽</span>
+          <span class="chip-name">Fútbol</span>
+        </label>
+        <label class="act-chip">
+          <input type="checkbox" name="actividades" value="EXTRAESCOLARES">
+          <span class="chip-icon">🎒</span>
+          <span class="chip-name">Extraescolares</span>
+        </label>
+        <label class="act-chip">
+          <input type="checkbox" name="actividades" value="TECNIFICACIÓN">
+          <span class="chip-icon">🏃</span>
+          <span class="chip-name">Tecnificación</span>
+        </label>
+        <label class="act-chip">
+          <input type="checkbox" name="actividades" value="RECOGIDA ESCOLAR">
+          <span class="chip-icon">🚌</span>
+          <span class="chip-name">Recogida escolar</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Días de disponibilidad</label>
+      <div class="check-group" style="flex-direction:row; flex-wrap:wrap; gap:6px">
+        <label class="act-chip" style="min-width:auto; padding:6px 12px">
+          <input type="checkbox" name="dias" value="LUNES">
+          <span class="chip-name">Lunes</span>
+        </label>
+        <label class="act-chip" style="min-width:auto; padding:6px 12px">
+          <input type="checkbox" name="dias" value="MARTES">
+          <span class="chip-name">Martes</span>
+        </label>
+        <label class="act-chip" style="min-width:auto; padding:6px 12px">
+          <input type="checkbox" name="dias" value="MIÉRCOLES">
+          <span class="chip-name">Miércoles</span>
+        </label>
+        <label class="act-chip" style="min-width:auto; padding:6px 12px">
+          <input type="checkbox" name="dias" value="JUEVES">
+          <span class="chip-name">Jueves</span>
+        </label>
+        <label class="act-chip" style="min-width:auto; padding:6px 12px">
+          <input type="checkbox" name="dias" value="VIERNES">
+          <span class="chip-name">Viernes</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Observaciones adicionales</label>
+      <textarea id="observaciones" placeholder="Cualquier información que quieras añadir..."></textarea>
+    </div>
+
+    <!-- Consentimientos -->
+    <div style="background:var(--green-ll); border:1px solid var(--border); border-radius:8px; padding:14px; margin-top:4px">
+      <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--green-m); margin-bottom:10px">Consentimientos</div>
+      <div class="check-group">
+        <label class="check-item required-check" id="chk-datos">
+          <input type="checkbox" id="acepta_datos">
+          <span>Acepto la <a href="#" style="color:var(--green-m)">política de protección de datos</a> y el tratamiento de los datos personales facilitados.</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" id="autoriza_imagen">
+          <span>Autorizo el uso de imágenes del alumno/a con fines informativos y promocionales de SM Academia.</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" id="acepta_datos_salud">
+          <span>Consiento el tratamiento de datos de salud indicados en este formulario.</span>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" id="socio_ampa">
+          <span>Deseo información sobre cómo hacerme socio/a del AMPA del centro.</span>
+        </label>
+      </div>
+    </div>
+    <div class="err-msg" id="err-datos" style="font-size:12px; color:var(--red); margin-top:6px"></div>
+
+    <div class="btn-row" style="margin-top:18px">
+      <button class="btn btn-back" onclick="irPaso(2)">← Atrás</button>
+      <button class="btn btn-primary" id="btn-enviar" onclick="enviarFormulario()">Enviar preinscripción</button>
+    </div>
+  </div>
+
+  <!-- ── Pantalla de éxito ── -->
+  <div id="screen-ok">
+    <div class="ok-icon">✅</div>
+    <h2>¡Preinscripción recibida!</h2>
+    <p>Hemos registrado tu solicitud. En breve nos pondremos en contacto contigo.</p>
+    <div class="id-box" id="id-result"></div>
+    <p style="font-size:12px; color:var(--text3)">Guarda este número como referencia de tu preinscripción.</p>
+    <button class="btn btn-primary" onclick="window.location.reload()" style="margin-top:8px">Nueva preinscripción</button>
+  </div>
+
+</div>
+
+<div class="footer">
+  SM Academia &nbsp;·&nbsp; <a href="index.html">Área privada</a>
+</div>
+
+<script>
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyhFDN-zhSurQwdxHomYm8mIkdjDiFqbWYKoYSkkw5GH6nZ9vhrS5fZfvLTqYgEwUoROA/exec';
+  let pasoActual = 1;
+
+  // ── Auto-mayúsculas preservando tildes ──────────────────────────────────
+  document.querySelectorAll('input.uppercase, textarea.uppercase').forEach(el => {
+    el.addEventListener('input', function() {
+      const pos = this.selectionStart;
+      this.value = this.value.toUpperCase();
+      try { this.setSelectionRange(pos, pos); } catch(_) {}
+    });
+  });
+
+  // ── Navegación entre pasos ───────────────────────────────────────────────
+  function irPaso(n) {
+    if (n > pasoActual && !validarPaso(pasoActual)) return;
+
+    document.getElementById('step-' + pasoActual).classList.remove('active');
+    document.getElementById('tab-' + pasoActual).classList.remove('active');
+    if (n > pasoActual) document.getElementById('tab-' + pasoActual).classList.add('done');
+
+    pasoActual = n;
+    document.getElementById('step-' + n).classList.add('active');
+    document.getElementById('tab-' + n).classList.add('active');
+    document.getElementById('progress').style.width = (n / 3 * 100) + '%';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    ocultarBanner();
+  }
+
+  // ── Validación por paso ──────────────────────────────────────────────────
+  function validarPaso(p) {
+    let ok = true;
+    if (p === 1) {
+      ok = requerido('nombre_alumno', 'f-nombre-alu') & requerido('apellidos_alumno', 'f-apellidos-alu') & ok;
+    }
+    if (p === 2) {
+      ok = requerido('nombre_tutor1',   'f-nombre-tut')   & ok;
+      ok = requerido('apellidos_tutor1','f-apellidos-tut') & ok;
+      ok = requerido('telefono_tutor1', 'f-tel-tut')      & ok;
+      ok = validarEmail('email_tutor1', 'f-email-tut')    & ok;
+    }
+    return !!ok;
+  }
+
+  function requerido(id, fid) {
+    const v = document.getElementById(id).value.trim();
+    const ok = v.length > 0;
+    document.getElementById(fid).classList.toggle('error', !ok);
+    return ok;
+  }
+
+  function validarEmail(id, fid) {
+    const v = document.getElementById(id).value.trim();
+    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    document.getElementById(fid).classList.toggle('error', !ok);
+    return ok;
+  }
+
+  // ── Envío ────────────────────────────────────────────────────────────────
+  function enviarFormulario() {
+    if (!validarPaso(3) && false) return; // paso 3 sin campos obligatorios de texto
+
+    if (!document.getElementById('acepta_datos').checked) {
+      document.getElementById('err-datos').textContent = 'Debes aceptar la política de protección de datos para continuar.';
+      return;
+    }
+    document.getElementById('err-datos').textContent = '';
+
+    const actividades = [...document.querySelectorAll('input[name="actividades"]:checked')].map(c => c.value);
+    const dias        = [...document.querySelectorAll('input[name="dias"]:checked')].map(c => c.value);
+
+    const body = {
+      action:            'NUEVA_PREINSCRIPCION',
+      nombre_alumno:     document.getElementById('nombre_alumno').value.trim(),
+      apellidos_alumno:  document.getElementById('apellidos_alumno').value.trim(),
+      fecha_nac:         document.getElementById('fecha_nac').value,
+      curso_alumno:      document.getElementById('curso_alumno').value,
+      centro:            document.getElementById('centro').value || 'ESCALERITAS',
+      salud:             document.getElementById('salud').value.trim(),
+      nombre_tutor1:     document.getElementById('nombre_tutor1').value.trim(),
+      apellidos_tutor1:  document.getElementById('apellidos_tutor1').value.trim(),
+      relacion_tutor1:   document.getElementById('relacion_tutor1').value,
+      nif_tutor1:        document.getElementById('nif_tutor1').value.trim(),
+      telefono_tutor1:   document.getElementById('telefono_tutor1').value.trim(),
+      email_tutor1:      document.getElementById('email_tutor1').value.trim().toLowerCase(),
+      actividades:       actividades,
+      dias_disponibles:  dias.join(', '),
+      observaciones:     document.getElementById('observaciones').value.trim(),
+      autoriza_imagen:   document.getElementById('autoriza_imagen').checked ? 'SI' : 'NO',
+      acepta_datos:      'SI',
+      acepta_datos_salud:document.getElementById('acepta_datos_salud').checked ? 'SI' : 'NO',
+      socio_ampa:        document.getElementById('socio_ampa').checked ? 'SI' : 'NO',
+    };
+
+    const btn = document.getElementById('btn-enviar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando…';
+    ocultarBanner();
+
+    // Sin Content-Type para evitar preflight CORS con GAS.
+    // El body sigue siendo JSON; GAS lo lee en e.postData.contents.
+    fetch(GAS_URL, {
+      method: 'POST',
+      body:   JSON.stringify(body),
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok) {
+        document.querySelectorAll('.card').forEach(c => c.style.display = 'none');
+        document.getElementById('screen-ok').style.display = 'block';
+        document.getElementById('id-result').textContent = res.preinscId;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        mostrarBanner('Error al enviar: ' + (res.error || 'Inténtalo de nuevo.'));
+        btn.disabled = false;
+        btn.textContent = 'Enviar preinscripción';
+      }
+    })
+    .catch(() => {
+      mostrarBanner('Error de conexión. Comprueba tu internet e inténtalo de nuevo.');
+      btn.disabled = false;
+      btn.textContent = 'Enviar preinscripción';
+    });
+  }
+
+  function mostrarBanner(msg) {
+    const b = document.getElementById('banner-err');
+    b.textContent = msg;
+    b.style.display = 'block';
+    b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function ocultarBanner() {
+    document.getElementById('banner-err').style.display = 'none';
+  }
+</script>
+</body>
+</html>
