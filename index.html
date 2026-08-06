@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SM Academia</title>
+<script>
+// Eliminar service workers heredados y limpiar caché antigua
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function(regs) {
+    if (regs.length === 0) return;
+    Promise.all(regs.map(function(r) { return r.unregister(); })).then(function() {
+      return 'caches' in window ? caches.keys().then(function(ks) {
+        return Promise.all(ks.map(function(k) { return caches.delete(k); }));
+      }) : Promise.resolve();
+    }).then(function() { location.reload(true); });
+  });
+  // Registrar SW suicida para eliminar caché desde dentro
+  navigator.serviceWorker.register('/smAPP360/sw.js').catch(function(){});
+}
+</script>
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" onload="initGIS()" async defer></script>
 <!-- EmailJS -->
