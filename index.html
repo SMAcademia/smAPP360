@@ -655,11 +655,11 @@ const MODULES = {
   'pagos':              pagos,
   'facturas':           facturas,
   'sesiones':           stub,
-  'asistencias-futbol': stub,
-  'asistencias-extra':  stub,
+  'asistencias-futbol': asistenciasFutbol,
+  'asistencias-extra':  asistenciasExtra,
   'personal':           personal,
   'ausencias':          stub,
-  'registro-horario':   stub,
+  'registro-horario':   registroHorario,
   'nominas':            nominas,
   'gastos':             gastos,
   'banco':              banco,
@@ -2133,15 +2133,553 @@ function guardarAmpaAlumno(id) {
     .then(()=>{ showToast('Alumno AMPA guardado'); closeModal(); loadAllData().then(ampaAlumnos); })
     .catch(err=>showToast('Error: '+err.message,'error'));
 }
-function configuracion()    {
-  render(`<div class="card">
-    <div class="card-title">Configuración del sistema</div>
-    <div style="font-size:13px;display:flex;flex-direction:column;gap:8px">
-      <div class="flex"><span style="width:160px;color:var(--text3)">Versión</span> <span class="badge badge-blue">v${APP_VER}</span></div>
-      <div class="flex"><span style="width:160px;color:var(--text3)">Curso académico</span> <strong>${CURSO}</strong></div>
-      <div class="flex"><span style="width:160px;color:var(--text3)">GAS URL</span> <span class="mono" style="font-size:11px;word-break:break-all">${GAS_URL}</span></div>
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: REGISTRO HORARIO
+// ══════════════════════════════════════════════════════════════════════════
+function registroHorario() {
+  const today    = new Date().toISOString().slice(0,10);
+  const nowTime  = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' });
+  const myId     = String(currentUser?.id || '');
+
+  // Registros activos de hoy del usuario actual
+  const todayActive = DB.registroHorario.filter(r =>
+    String(r.ID_MONITOR) === myId &&
+    String(r.FECHA) === today &&
+    String(r.TIPO || 'NORMAL') !== 'ERROR'
+  );
+
+  const entrada  = todayActive.find(r => r.HORA_ENTRADA && !r.HORA_SALIDA);
+  const completo = todayActive.find(r => r.HORA_ENTRADA &&  r.HORA_SALIDA);
+
+  // Horas de hoy
+  let horasHoy = '—';
+  if (completo?.HORAS_TRABAJADAS) horasHoy = completo.HORAS_TRABAJADAS + ' h';
+
+  // Estado card
+  let estadoCard, btnEntrada, btnSalida;
+  if (completo) {
+    estadoCard = `<span class="badge badge-green">✓ Jornada completa — ${horasHoy}</span>`;
+    btnEntrada = true; btnSalida = true;
+  } else if (entrada) {
+    estadoCard = `<span class="badge badge-amber">En curso desde ${esc(entrada.HORA_ENTRADA)}</span>`;
+    btnEntrada = true; btnSalida = false;
+  } else {
+    estadoCard = `<span class="badge badge-gray">Sin fichar hoy</span>`;
+    btnEntrada = false; btnSalida = true;
+  }
+
+  // Historial del usuario (o todos si es admin)
+  const historia = isAdmin()
+    ? [...DB.registroHorario].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')))
+    : DB.registroHorario.filter(r => String(r.ID_MONITOR)===myId).sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')));
+
+  const rows = historia.slice(0,60).map(r => {
+    const p    = DB.personal.find(x => String(x.ID_MONITOR)===String(r.ID_MONITOR));
+    const es_error = String(r.TIPO||'').toUpperCase() === 'ERROR';
+    const es_corr  = String(r.TIPO||'').toUpperCase() === 'CORRECCION';
+    const rowStyle = es_error ? 'opacity:.5;text-decoration:line-through;background:#fff5f5' : '';
+    return `<tr style="${rowStyle}">
+      ${isAdmin() ? `<td>${p ? esc(p.NOMBRE) : esc(r.ID_MONITOR||'—')}</td>` : ''}
+      <td>${fmtFecha(r.FECHA)}</td>
+      <td>${esc(r.HORA_ENTRADA||'—')}</td>
+      <td>${esc(r.HORA_SALIDA||'—')}</td>
+      <td>${esc(r.HORAS_TRABAJADAS||'—')}</td>
+      <td>${es_error ? '<span class="badge badge-red">ERROR</span>' : es_corr ? '<span class="badge badge-amber">CORRECCIÓN</span>' : '<span class="badge badge-green">OK</span>'}</td>
+      <td style="font-size:11px;color:var(--text3)">${esc(r.JUSTIFICACION||'')}</td>
+      ${isAdmin() && !es_error ? `<td><button class="btn btn-sm btn-secondary" onclick="corregirFichaje('${esc(r.ID||'')}')">Corregir</button></td>` : '<td></td>'}
+    </tr>`;
+  }).join('') || `<tr><td colspan="${isAdmin()?8:7}"><div class="empty"><div class="empty-icon">🕐</div><p>Sin registros</p></div></td></tr>`;
+
+  render(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <!-- Estado hoy -->
+      <div class="card">
+        <div class="card-title">Hoy — ${fmtFecha(today)}</div>
+        <div style="font-size:15px;margin-bottom:20px">${estadoCard}</div>
+        <div style="display:flex;gap:12px">
+          <button class="btn btn-primary" style="flex:1;font-size:15px;padding:14px"
+            onclick="ficharEntrada()" ${btnEntrada?'disabled':''}>
+            ⏺ Fichar entrada
+          </button>
+          <button class="btn btn-secondary" style="flex:1;font-size:15px;padding:14px"
+            onclick="ficharSalida()" ${btnSalida?'disabled':''}>
+            ⏹ Fichar salida
+          </button>
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--text3);text-align:center">
+          Hora actual: <strong id="reloj-live">${nowTime}</strong>
+        </div>
+      </div>
+      <!-- Resumen semana -->
+      <div class="card">
+        <div class="card-title">Esta semana</div>
+        ${resumenSemanaHorario(myId)}
+      </div>
     </div>
-  </div>`);
+    <div class="card" style="padding:14px 20px">
+      <div class="card-title">${isAdmin()?'Todos los registros':'Mis registros'}</div>
+      <div class="table-toolbar">
+        <input class="search-input" id="q-rh" placeholder="Buscar…" oninput="filterTable('q-rh','tbl-rh')">
+        ${isAdmin() ? '<span class="text-muted badge badge-amber" style="font-size:11px">Admin: puedes corregir cualquier fichaje</span>' : ''}
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-rh">
+          <thead><tr>${isAdmin()?'<th>Persona</th>':''}<th>Fecha</th><th>Entrada</th><th>Salida</th><th>Horas</th><th>Estado</th><th>Nota</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+
+  // Reloj en tiempo real
+  setInterval(() => {
+    const el = document.getElementById('reloj-live');
+    if (el) el.textContent = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  }, 30000);
+}
+
+function resumenSemanaHorario(monitorId) {
+  const hoy  = new Date();
+  const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - (hoy.getDay()||7) + 1);
+  const dias  = [];
+  for (let i=0;i<5;i++) { const d=new Date(lunes); d.setDate(lunes.getDate()+i); dias.push(d.toISOString().slice(0,10)); }
+
+  let totalMins = 0;
+  const filas = dias.map(fecha => {
+    const r = DB.registroHorario.find(x =>
+      String(x.ID_MONITOR)===String(monitorId) && String(x.FECHA)===fecha &&
+      String(x.TIPO||'').toUpperCase()!=='ERROR'
+    );
+    let horas = '—'; let mins = 0;
+    if (r?.HORAS_TRABAJADAS) { horas = r.HORAS_TRABAJADAS+' h'; mins = Math.round(parseFloat(r.HORAS_TRABAJADAS)*60)||0; }
+    totalMins += mins;
+    const nombre = new Date(fecha+'T00:00:00').toLocaleDateString('es-ES',{weekday:'short'}).toUpperCase();
+    return `<div class="flex" style="font-size:13px;margin-bottom:6px">
+      <span style="width:45px;color:var(--text3)">${nombre}</span>
+      <span style="color:var(--text3);font-size:11px;flex:1">${fmtFecha(fecha)}</span>
+      <strong style="min-width:50px;text-align:right">${horas}</strong>
+    </div>`;
+  }).join('');
+  const totalH = (totalMins/60).toFixed(1);
+  return filas + `<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">
+    <div class="flex"><span style="flex:1;color:var(--text3)">Total semana</span><strong>${totalH} h</strong></div>`;
+}
+
+function ficharEntrada() {
+  const hora = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  const fecha = new Date().toISOString().slice(0,10);
+  writeToSheet('REGISTRO_HORARIO', {
+    ID_MONITOR:  currentUser.id,
+    FECHA:       fecha,
+    HORA_ENTRADA:hora,
+    TIPO:        'NORMAL',
+    ACTIVO:      'SÍ',
+  })
+  .then(()=>{ showToast('Entrada fichada: '+hora); loadAllData().then(registroHorario); })
+  .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+function ficharSalida() {
+  const today = new Date().toISOString().slice(0,10);
+  const myId  = String(currentUser?.id||'');
+  const entrada = DB.registroHorario.find(r =>
+    String(r.ID_MONITOR)===myId && String(r.FECHA)===today &&
+    r.HORA_ENTRADA && !r.HORA_SALIDA && String(r.TIPO||'').toUpperCase()!=='ERROR'
+  );
+  if (!entrada) { showToast('No hay entrada fichada hoy','error'); return; }
+
+  const hora = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  // Calcular horas trabajadas
+  const [he,me] = (entrada.HORA_ENTRADA||'00:00').split(':').map(Number);
+  const [hs,ms] = hora.split(':').map(Number);
+  const mins = (hs*60+ms) - (he*60+me);
+  const horas = (mins/60).toFixed(2);
+
+  writeToSheet('REGISTRO_HORARIO', { HORA_SALIDA: hora, HORAS_TRABAJADAS: horas }, entrada.ID)
+  .then(()=>{ showToast(`Salida fichada: ${hora} — ${horas} h trabajadas`); loadAllData().then(registroHorario); })
+  .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+function corregirFichaje(id) {
+  const r = DB.registroHorario.find(x => String(x.ID||'')===String(id));
+  if (!r) return;
+  openModal('Corregir fichaje — ' + fmtFecha(r.FECHA), `
+    <div style="background:var(--amber-l);border:1px solid var(--amber);border-radius:6px;padding:12px;margin-bottom:16px;font-size:13px">
+      <strong>⚠️ El registro original queda marcado como ERROR</strong> (persiste en el historial pero no contabiliza).
+      Se creará un registro de corrección con los datos correctos.
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Hora entrada correcta</label>
+        <input id="cor-ent" type="time" value="${esc(r.HORA_ENTRADA||'')}"></div>
+      <div class="field"><label>Hora salida correcta</label>
+        <input id="cor-sal" type="time" value="${esc(r.HORA_SALIDA||'')}"></div>
+      <div class="field span2"><label>Justificación <span class="req">*</span></label>
+        <textarea id="cor-just" placeholder="Explica el motivo de la corrección…">${esc(r.JUSTIFICACION||'')}</textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-danger" onclick="ejecutarCorreccion('${id}')">Aplicar corrección</button>`
+  );
+}
+
+function ejecutarCorreccion(idOriginal) {
+  const just = document.getElementById('cor-just').value.trim();
+  if (!just) { showToast('La justificación es obligatoria','error'); return; }
+  const entC = document.getElementById('cor-ent').value;
+  const salC = document.getElementById('cor-sal').value;
+
+  let horas = '';
+  if (entC && salC) {
+    const [he,me] = entC.split(':').map(Number);
+    const [hs,ms] = salC.split(':').map(Number);
+    horas = ((hs*60+ms - he*60-me)/60).toFixed(2);
+  }
+
+  const r = DB.registroHorario.find(x => String(x.ID||'')===String(idOriginal));
+  if (!r) return;
+
+  const btn = document.querySelector('#modal-footer .btn-danger');
+  if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+
+  // 1. Marcar original como ERROR
+  writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', JUSTIFICACION: 'Corregido: '+just }, idOriginal)
+  .then(() => {
+    // 2. Crear registro de corrección
+    return writeToSheet('REGISTRO_HORARIO', {
+      ID_MONITOR:      r.ID_MONITOR,
+      FECHA:           r.FECHA,
+      HORA_ENTRADA:    entC,
+      HORA_SALIDA:     salC,
+      HORAS_TRABAJADAS:horas,
+      TIPO:            'CORRECCION',
+      ACTIVO:          'SÍ',
+      JUSTIFICACION:   just,
+    });
+  })
+  .then(()=>{ showToast('Corrección aplicada'); closeModal(); loadAllData().then(registroHorario); })
+  .catch(err=>{ showToast('Error: '+err.message,'error'); if(btn){btn.disabled=false;btn.textContent='Aplicar corrección';} });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: ASISTENCIAS EXTRAESCOLARES
+// ══════════════════════════════════════════════════════════════════════════
+function asistenciasExtra() {
+  const today = new Date().toISOString().slice(0,10);
+
+  // Actividades de la línea extraescolares activas
+  const actividades = DB.actividades.filter(a =>
+    String(a.LINEA||'').toUpperCase()==='EXTRAESCOLARES' && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+  );
+
+  // Historial de asistencias registradas hoy (para mostrar las ya completadas)
+  const yaHoy = DB.asistenciasExtra.filter(a => String(a.FECHA)===today);
+
+  render(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-title">Pasar lista — ${fmtFecha(today)}</div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Actividad / Grupo</label>
+          <select id="as-act" onchange="cargarListaExtra()">
+            <option value="">— Selecciona actividad —</option>
+            ${actividades.map(a=>`<option value="${a.ID}">${esc(a.NOMBRE)}${a.CENTRO?' — '+esc(a.CENTRO):''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Fecha</label>
+          <input id="as-fecha" type="date" value="${today}" onchange="cargarListaExtra()">
+        </div>
+        <div id="lista-alumnos-extra"><p style="color:var(--text3);font-size:13px">Selecciona una actividad para ver el listado.</p></div>
+        <div id="as-guardar-wrap" style="display:none;margin-top:16px">
+          <div class="field" style="margin-bottom:10px">
+            <label>Notas del día</label>
+            <textarea id="as-notas" style="min-height:50px"></textarea>
+          </div>
+          <button class="btn btn-primary" style="width:100%" onclick="guardarAsistenciaExtra()">Guardar asistencia</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Registros recientes</div>
+        ${yaHoy.length ? `
+          <div class="badge badge-green" style="margin-bottom:12px">✓ ${yaHoy.length} lista(s) pasadas hoy</div>
+        ` : '<p style="font-size:13px;color:var(--text3)">No hay asistencias registradas hoy.</p>'}
+        <div class="table-wrap" style="margin-top:8px">
+          <table>
+            <thead><tr><th>Fecha</th><th>Actividad</th><th>Presentes</th></tr></thead>
+            <tbody>
+              ${DB.asistenciasExtra.slice(-20).reverse().map(a=>{
+                const act=DB.actividades.find(x=>String(x.ID)===String(a.ID_ACTIVIDAD));
+                return `<tr><td>${fmtFecha(a.FECHA)}</td><td>${act?esc(act.NOMBRE):esc(a.ID_ACTIVIDAD||'—')}</td><td><strong>${a.TOTAL_PRESENTES||0}</strong></td></tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`);
+}
+
+function cargarListaExtra() {
+  const actId = document.getElementById('as-act')?.value;
+  const fecha  = document.getElementById('as-fecha')?.value;
+  const cont   = document.getElementById('lista-alumnos-extra');
+  const wrap   = document.getElementById('as-guardar-wrap');
+  if (!actId || !cont) return;
+
+  // Alumnos inscritos en esta actividad
+  const inscs = DB.inscripciones.filter(i =>
+    String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
+  );
+  const alumnos = inscs.map(i => DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(i.ID_ALUMNO))).filter(Boolean);
+
+  if (!alumnos.length) {
+    cont.innerHTML = '<p style="color:var(--amber);font-size:13px">No hay alumnos inscritos en esta actividad.</p>';
+    if(wrap) wrap.style.display='none';
+    return;
+  }
+
+  // Ver si ya hay asistencia guardada para esta fecha+actividad
+  const prev = DB.asistenciasExtra.find(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
+  const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
+
+  cont.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:13px;color:var(--text3)">${alumnos.length} alumnos inscritos</span>
+      <div>
+        <button class="btn btn-sm btn-secondary" onclick="marcarTodosExtra(true)">✓ Todos</button>
+        <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="marcarTodosExtra(false)">✗ Ninguno</button>
+      </div>
+    </div>
+    <div id="lista-checks-extra" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+      ${alumnos.map(a=>`
+        <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--border2);font-size:13px;${prevIds.includes(String(a.ID_ALUMNO))?'background:var(--g4)':''}">
+          <input type="checkbox" data-id="${a.ID_ALUMNO}" ${prevIds.includes(String(a.ID_ALUMNO))||!prev?'checked':''} style="width:16px;height:16px">
+          <span>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</span>
+        </label>`).join('')}
+    </div>
+    ${prev ? '<div class="badge badge-amber" style="margin-top:8px">⚠️ Ya existe asistencia para esta fecha — guardar la sobreescribirá</div>' : ''}
+  `;
+  if(wrap) wrap.style.display = '';
+}
+
+function marcarTodosExtra(val) {
+  document.querySelectorAll('#lista-checks-extra input[type=checkbox]').forEach(cb => cb.checked=val);
+}
+
+function guardarAsistenciaExtra() {
+  const actId = document.getElementById('as-act')?.value;
+  const fecha  = document.getElementById('as-fecha')?.value;
+  if (!actId||!fecha) return;
+
+  const checks = [...document.querySelectorAll('#lista-checks-extra input[type=checkbox]')];
+  const presentes = checks.filter(c=>c.checked).map(c=>c.dataset.id);
+  const notas = document.getElementById('as-notas')?.value.trim()||'';
+
+  // Ver si existe ya (para actualizar en vez de crear)
+  const prev = DB.asistenciasExtra.find(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
+
+  const row = {
+    FECHA:             fecha,
+    ID_MONITOR:        currentUser.id,
+    ID_ACTIVIDAD:      actId,
+    ALUMNOS_PRESENTES: presentes.join(','),
+    TOTAL_PRESENTES:   presentes.length,
+    TOTAL_ALUMNOS:     checks.length,
+    NOTAS:             notas,
+  };
+
+  writeToSheet('ASISTENCIAS_EXTRA', row, prev?.ID||null)
+  .then(()=>{ showToast(`Asistencia guardada — ${presentes.length}/${checks.length} presentes`); loadAllData().then(asistenciasExtra); })
+  .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: ASISTENCIAS FÚTBOL
+// ══════════════════════════════════════════════════════════════════════════
+function asistenciasFutbol() {
+  const today = new Date().toISOString().slice(0,10);
+
+  const actividades = DB.actividades.filter(a =>
+    String(a.LINEA||'').toUpperCase()==='FUTBOL' && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+  );
+
+  render(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-title">Pase de lista — ${fmtFecha(today)}</div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Grupo / Sesión</label>
+          <select id="af-act" onchange="cargarListaFutbol()">
+            <option value="">— Selecciona grupo —</option>
+            ${actividades.map(a=>`<option value="${a.ID}">⚽ ${esc(a.NOMBRE)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Fecha</label>
+          <input id="af-fecha" type="date" value="${today}" onchange="cargarListaFutbol()">
+        </div>
+        <div id="lista-alumnos-futbol"><p style="color:var(--text3);font-size:13px">Selecciona un grupo para ver el listado.</p></div>
+        <div id="af-guardar-wrap" style="display:none;margin-top:16px">
+          <div class="field" style="margin-bottom:10px">
+            <label>Observaciones del entrenamiento</label>
+            <textarea id="af-notas" style="min-height:50px" placeholder="Incidencias, lesiones, objetivos trabajados…"></textarea>
+          </div>
+          <button class="btn btn-primary" style="width:100%" onclick="guardarAsistenciaFutbol()">Guardar asistencia</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Últimos entrenamientos</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Grupo</th><th>Asistencia</th></tr></thead>
+            <tbody>
+              ${DB.asistenciasFutbol.slice(-20).reverse().map(a=>{
+                const act=DB.actividades.find(x=>String(x.ID)===String(a.ID_ACTIVIDAD));
+                const pct = a.TOTAL_ALUMNOS>0 ? Math.round(a.TOTAL_PRESENTES/a.TOTAL_ALUMNOS*100) : 0;
+                return `<tr>
+                  <td>${fmtFecha(a.FECHA)}</td>
+                  <td>${act?esc(act.NOMBRE):esc(a.ID_ACTIVIDAD||'—')}</td>
+                  <td><strong>${a.TOTAL_PRESENTES||0}/${a.TOTAL_ALUMNOS||0}</strong> <span style="color:var(--text3)">(${pct}%)</span></td>
+                </tr>`;
+              }).join('') || '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px">Sin registros</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`);
+}
+
+function cargarListaFutbol() {
+  const actId = document.getElementById('af-act')?.value;
+  const fecha  = document.getElementById('af-fecha')?.value;
+  const cont   = document.getElementById('lista-alumnos-futbol');
+  const wrap   = document.getElementById('af-guardar-wrap');
+  if (!actId||!cont) return;
+
+  const inscs   = DB.inscripciones.filter(i => String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA');
+  const alumnos = inscs.map(i=>DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(i.ID_ALUMNO))).filter(Boolean);
+
+  if (!alumnos.length) {
+    cont.innerHTML='<p style="color:var(--amber);font-size:13px">No hay alumnos inscritos en este grupo.</p>';
+    if(wrap)wrap.style.display='none'; return;
+  }
+
+  const prev = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
+  const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
+
+  cont.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="font-size:13px;color:var(--text3)">${alumnos.length} jugadores inscritos</span>
+      <div>
+        <button class="btn btn-sm btn-secondary" onclick="marcarTodosFutbol(true)">✓ Todos</button>
+        <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="marcarTodosFutbol(false)">✗ Ninguno</button>
+      </div>
+    </div>
+    <div id="lista-checks-futbol" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+      ${alumnos.map(a=>`
+        <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--border2);font-size:13px;${prevIds.includes(String(a.ID_ALUMNO))?'background:var(--g4)':''}">
+          <input type="checkbox" data-id="${a.ID_ALUMNO}" ${!prev||prevIds.includes(String(a.ID_ALUMNO))?'checked':''} style="width:16px;height:16px">
+          <span>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</span>
+        </label>`).join('')}
+    </div>
+    ${prev?'<div class="badge badge-amber" style="margin-top:8px">⚠️ Ya existe lista para esta fecha</div>':''}`;
+  if(wrap)wrap.style.display='';
+}
+
+function marcarTodosFutbol(val) {
+  document.querySelectorAll('#lista-checks-futbol input[type=checkbox]').forEach(cb=>cb.checked=val);
+}
+
+function guardarAsistenciaFutbol() {
+  const actId = document.getElementById('af-act')?.value;
+  const fecha  = document.getElementById('af-fecha')?.value;
+  if (!actId||!fecha) return;
+  const checks    = [...document.querySelectorAll('#lista-checks-futbol input[type=checkbox]')];
+  const presentes = checks.filter(c=>c.checked).map(c=>c.dataset.id);
+  const prev      = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
+  const row = {
+    FECHA:             fecha,
+    ID_MONITOR:        currentUser.id,
+    ID_ACTIVIDAD:      actId,
+    ALUMNOS_PRESENTES: presentes.join(','),
+    TOTAL_PRESENTES:   presentes.length,
+    TOTAL_ALUMNOS:     checks.length,
+    NOTAS:             document.getElementById('af-notas')?.value.trim()||'',
+  };
+  writeToSheet('ASISTENCIAS_FUTBOL', row, prev?.ID||null)
+  .then(()=>{ showToast(`Asistencia guardada — ${presentes.length}/${checks.length}`); loadAllData().then(asistenciasFutbol); })
+  .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+function configuracion() {
+  const ejsOk  = !!EMAILJS_PUBLIC_KEY && !!EMAILJS_SERVICE_ID;
+  const gisOk  = !!GOOGLE_CLIENT_ID;
+  const gasOk  = !!GAS_URL;
+
+  render(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+      <!-- Estado general -->
+      <div class="card">
+        <div class="card-title">Estado del sistema</div>
+        <div style="font-size:13px;display:flex;flex-direction:column;gap:10px">
+          <div class="flex"><span style="width:160px;color:var(--text3)">Versión</span><span class="badge badge-blue">v${APP_VER}</span></div>
+          <div class="flex"><span style="width:160px;color:var(--text3)">Curso</span><strong>${CURSO}</strong></div>
+          <div class="flex"><span style="width:160px;color:var(--text3)">Google Sign-In</span><span class="badge ${gisOk?'badge-green':'badge-red'}">${gisOk?'✓ Configurado':'✗ Sin Client ID'}</span></div>
+          <div class="flex"><span style="width:160px;color:var(--text3)">EmailJS</span><span class="badge ${ejsOk?'badge-green':'badge-amber'}">${ejsOk?'✓ Activo':'⚠ Pendiente de claves'}</span></div>
+          <div class="flex"><span style="width:160px;color:var(--text3)">GAS</span><span class="badge ${gasOk?'badge-green':'badge-red'}">${gasOk?'✓ URL configurada':'✗ Sin URL'}</span></div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+        <button class="btn btn-secondary" style="width:100%" onclick="testGAS()">🔌 Probar conexión GAS</button>
+        <div id="gas-test-result" style="margin-top:8px;font-size:12px;color:var(--text3)"></div>
+      </div>
+
+      <!-- EmailJS -->
+      <div class="card">
+        <div class="card-title">EmailJS — configuración</div>
+        ${ejsOk ? '<div class="badge badge-green" style="margin-bottom:12px">✓ EmailJS activo</div>' : '<div class="badge badge-amber" style="margin-bottom:12px">Rellena las claves en las constantes del código (inicio del script)</div>'}
+        <div style="font-size:13px;display:flex;flex-direction:column;gap:8px">
+          <div class="flex"><span style="width:140px;color:var(--text3)">Public Key</span><span class="mono">${EMAILJS_PUBLIC_KEY||'—'}</span></div>
+          <div class="flex"><span style="width:140px;color:var(--text3)">Service ID</span><span class="mono">${EMAILJS_SERVICE_ID||'—'}</span></div>
+          <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Bienvenida</span><span class="mono">${EMAILJS_TPL_BIENVENIDA||'—'}</span></div>
+          <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Preinsc.</span><span class="mono">${EMAILJS_TPL_PREINSC||'—'}</span></div>
+          <div class="flex"><span style="width:140px;color:var(--text3)">Tpl. Recordatorio</span><span class="mono">${EMAILJS_TPL_RECORDATORIO||'—'}</span></div>
+        </div>
+        ${ejsOk ? `
+        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+        <button class="btn btn-secondary" style="width:100%" onclick="testEmailJS()">📧 Enviar email de prueba</button>
+        <div id="ejs-test-result" style="margin-top:8px;font-size:12px;color:var(--text3)"></div>` : ''}
+      </div>
+
+      <!-- GAS URL -->
+      <div class="card" style="grid-column:span 2">
+        <div class="card-title">Google Apps Script</div>
+        <div style="font-size:12px;font-family:monospace;word-break:break-all;background:var(--bg);padding:10px;border-radius:6px;border:1px solid var(--border)">
+          ${esc(GAS_URL)}
+        </div>
+        <p style="font-size:12px;color:var(--text3);margin-top:8px">
+          Para verificar manualmente: abre esta URL en el navegador añadiendo <code style="font-size:11px;background:var(--bg);padding:2px 5px;border-radius:3px">?action=PING&callback=test</code>.
+          Debe devolver <code style="font-size:11px">test({"ok":true})</code>.
+        </p>
+      </div>
+    </div>`);
+}
+
+function testGAS() {
+  const el = document.getElementById('gas-test-result');
+  if (el) el.textContent = 'Probando…';
+  gasRequest('PING', {}, 10000)
+    .then(r => { if(el) el.innerHTML = r.ok ? '<span style="color:var(--g2)">✓ GAS responde correctamente</span>' : '<span style="color:var(--red)">✗ GAS devolvió error: '+esc(r.error||'desconocido')+'</span>'; })
+    .catch(() => { if(el) el.innerHTML = '<span style="color:var(--red)">✗ No se pudo conectar al GAS (timeout o red)</span>'; });
+}
+
+function testEmailJS() {
+  const el = document.getElementById('ejs-test-result');
+  if(el) el.textContent = 'Enviando…';
+  sendEmail(EMAILJS_TPL_BIENVENIDA, {
+    to_email: currentUser?.email || 'test@smacademia.es',
+    to_name:  currentUser?.nombre || 'Test',
+    alumno:   'Prueba',
+  })
+  .then(()=>{ if(el) el.innerHTML='<span style="color:var(--g2)">✓ Email enviado correctamente</span>'; })
+  .catch(err=>{ if(el) el.innerHTML=`<span style="color:var(--red)">✗ Error: ${esc(String(err))}</span>`; });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
