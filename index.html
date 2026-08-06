@@ -746,8 +746,9 @@ function filterTable(inputId, tableId) {
 }
 
 // Formatear fecha ISO a DD/MM/AAAA
-function esFutbol(l)       { const u=String(l||'').toUpperCase(); return u.includes('FUTBOL')||u.includes('FÚTBOL'); }
-function esExtraescolar(l) { return String(l||'').toUpperCase().includes('EXTRAESCOLAR'); }
+function sinTildes(s) { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); }
+function esFutbol(l)       { const u=sinTildes(l); return u.includes('FUTBOL'); }
+function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
 
 function fmtFecha(v) {
   if (!v) return '—';
