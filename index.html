@@ -746,6 +746,9 @@ function filterTable(inputId, tableId) {
 }
 
 // Formatear fecha ISO a DD/MM/AAAA
+function esFutbol(l)       { const u=String(l||'').toUpperCase(); return u.includes('FUTBOL')||u.includes('FÚTBOL'); }
+function esExtraescolar(l) { return String(l||'').toUpperCase().includes('EXTRAESCOLAR'); }
+
 function fmtFecha(v) {
   if (!v) return '—';
   const s = String(v);
@@ -1072,7 +1075,7 @@ function actividadesCatalogo() {
     <tr>
       <td class="mono">${esc(a.ID)}</td>
       <td><strong>${esc(a.NOMBRE)}</strong></td>
-      <td>${a.LINEA === 'FUTBOL' ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extraescolares</span>'}</td>
+      <td>${esFutbol(a.LINEA) ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extraescolares</span>'}</td>
       <td>${esc(a.TIPO||'—')}</td>
       <td>${fmtEur(a.PRECIO)}</td>
       <td>${String(a.SUBVENCIONADA||'').toUpperCase().startsWith('S') ? '<span class="badge badge-amber">Subv.</span>' : '—'}</td>
@@ -1105,8 +1108,8 @@ function modalActividad(a) {
         <input id="ac-nombre" class="upper" value="${esc(a.NOMBRE||'')}"></div>
       <div class="field"><label>Línea</label>
         <select id="ac-linea">
-          <option value="EXTRAESCOLARES" ${a.LINEA==='EXTRAESCOLARES'?'selected':''}>Extraescolares</option>
-          <option value="FUTBOL" ${a.LINEA==='FUTBOL'?'selected':''}>Fútbol</option>
+          <option value="EXTRAESCOLARES" ${esExtraescolar(a.LINEA)?'selected':''}  >Extraescolares</option>
+          <option value="SM FÚTBOL" ${esFutbol(a.LINEA)?'selected':''>Fútbol</option>
         </select></div>
       <div class="field"><label>Tipo</label>
         <input id="ac-tipo" class="upper" value="${esc(a.TIPO||'')}"></div>
@@ -1340,7 +1343,7 @@ function inscripciones() {
         <td class="mono">${esc(i.ID_INSCRIPCION)}</td>
         <td>${alu ? `<strong>${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</strong>` : `<span class="text-muted">${esc(i.ID_ALUMNO)}</span>`}</td>
         <td>${act ? esc(act.NOMBRE) : `<span class="text-muted">${esc(i.ID_ACTIVIDAD)}</span>`}</td>
-        <td>${i.LINEA === 'FUTBOL' ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
+        <td>${esFutbol(i.LINEA) ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
         <td>${esc(i.DIA_SEMANA||'—')}</td>
         <td>${fmtEur(i.PRECIO_ACORDADO)}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
@@ -2516,7 +2519,7 @@ function asistenciasExtra() {
 
   // Actividades de la línea extraescolares activas
   const actividades = DB.actividades.filter(a =>
-    String(a.LINEA||'').toUpperCase()==='EXTRAESCOLARES' && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+    esExtraescolar(a.LINEA) && String(a.ACTIVA||'').toUpperCase().startsWith('S')
   );
 
   // Historial de asistencias registradas hoy (para mostrar las ya completadas)
@@ -2647,7 +2650,7 @@ function asistenciasFutbol() {
   const today = new Date().toISOString().slice(0,10);
 
   const actividades = DB.actividades.filter(a =>
-    String(a.LINEA||'').toUpperCase()==='FUTBOL' && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+    esFutbol(a.LINEA) && String(a.ACTIVA||'').toUpperCase().startsWith('S')
   );
 
   render(`
@@ -2897,7 +2900,7 @@ function modalSesion(s) {
       <div class="field"><label>Grupo / día <span class="req">*</span></label>
         <select id="ses-grupo">
           ${(() => {
-            const actFutbol = DB.actividades.filter(a => String(a.TIPO||'').toUpperCase().includes('FUTBOL') || String(a.NOMBRE||'').toUpperCase().includes('FUTBOL') || String(a.NOMBRE||'').toUpperCase().includes('FÚTBOL') || String(a.NOMBRE||'').toUpperCase().includes('TECNIF'));
+            const actFutbol = DB.actividades.filter(a => esFutbol(a.LINEA) || esFutbol(a.NOMBRE) || String(a.TIPO||'').toUpperCase().includes('TECNIF'));
             const opts = actFutbol.length > 0
               ? actFutbol.map(a => `<option value="${esc(a.NOMBRE)}" ${s.GRUPO===a.NOMBRE?'selected':''}>${esc(a.NOMBRE)}</option>`)
               : ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Lunes y Miércoles','Martes y Jueves','Martes y Viernes'].map(d => `<option value="${d}" ${s.GRUPO===d?'selected':''}>${d}</option>`);
