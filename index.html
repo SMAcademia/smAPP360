@@ -1126,19 +1126,1013 @@ function guardarActividad(id) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  MÓDULOS STUB CON NOMBRE
+//  MÓDULO: PREINSCRIPCIONES
 // ══════════════════════════════════════════════════════════════════════════
-function preinscripciones() { stub(); }
-function inscripciones()    { stub(); }
-function pagos()            { stub(); }
-function facturas()         { stub(); }
-function personal()         { stub(); }
-function nominas()          { stub(); }
-function gastos()           { stub(); }
-function banco()            { stub(); }
-function fiscal()           { stub(); }
-function ampaSocios()       { stub(); }
-function ampaAlumnos()      { stub(); }
+function preinscripciones() {
+  let filtro = 'RECIBIDA';
+  const render_ = () => {
+    const lista = DB.preinscripciones.filter(p =>
+      filtro === 'TODAS' || String(p.ESTADO||'RECIBIDA').toUpperCase() === filtro
+    );
+
+    const rows = lista.map(p => `
+      <tr>
+        <td class="mono">${esc(p.ID)}</td>
+        <td>${fmtFecha(p.FECHA_SOLICITUD)}</td>
+        <td><strong>${esc(p.NOMBRE_ALUMNO)} ${esc(p.APELLIDOS_ALUMNO||'')}</strong></td>
+        <td>${esc(p.NOMBRE_TUTOR)} ${esc(p.APELLIDOS_TUTOR||'')}</td>
+        <td>${esc(p.EMAIL_TUTOR||'—')}</td>
+        <td>${esc(p.TELÉFONO_TUTOR||'—')}</td>
+        <td>${esc(p.ACTIVIDAD_INTERES||'—')}</td>
+        <td>${badgeEstado(p.ESTADO||'RECIBIDA')}</td>
+        <td style="white-space:nowrap">
+          ${String(p.ESTADO||'RECIBIDA').toUpperCase()==='RECIBIDA' ? `
+          <button class="btn btn-sm btn-primary" onclick="confirmarPreinsc('${esc(p.ID)}')">Confirmar</button>
+          <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="rechazarPreinsc('${esc(p.ID)}')">Rechazar</button>
+          ` : ''}
+          <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="verPreinsc('${esc(p.ID)}')">Ver</button>
+        </td>
+      </tr>`).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><p>Sin preinscripciones ${filtro==='TODAS'?'':'con estado '+filtro.toLowerCase()}</p></div></td></tr>`;
+
+    render(`
+      <div class="card" style="padding:14px 20px">
+        <div class="table-toolbar">
+          <input class="search-input" id="q-pre" placeholder="Buscar…" oninput="filterTable('q-pre','tbl-pre')">
+          <select id="filtro-pre" onchange="document.getElementById('filtro-pre').dataset.v=this.value;preinscripciones()"
+            style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
+            <option value="RECIBIDA" ${filtro==='RECIBIDA'?'selected':''}>Nuevas</option>
+            <option value="CONFIRMADA" ${filtro==='CONFIRMADA'?'selected':''}>Confirmadas</option>
+            <option value="RECHAZADA" ${filtro==='RECHAZADA'?'selected':''}>Rechazadas</option>
+            <option value="TODAS">Todas</option>
+          </select>
+          <span class="text-muted">${lista.length} registros</span>
+        </div>
+        <div class="table-wrap">
+          <table id="tbl-pre">
+            <thead><tr><th>ID</th><th>Fecha</th><th>Alumno</th><th>Tutor</th><th>Email</th><th>Teléfono</th><th>Actividad de interés</th><th>Estado</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`);
+
+    // reaplica filtro tras render
+    const sel = document.getElementById('filtro-pre');
+    if (sel) sel.onchange = () => { filtro = sel.value; render_(); };
+  };
+  render_();
+}
+
+function verPreinsc(id) {
+  const p = DB.preinscripciones.find(x => String(x.ID) === String(id));
+  if (!p) return;
+  openModal('Preinscripción ' + id, `
+    <div class="form-grid">
+      <div class="field"><label>Alumno</label><input readonly value="${esc(p.NOMBRE_ALUMNO+' '+(p.APELLIDOS_ALUMNO||''))}"></div>
+      <div class="field"><label>Fecha nacimiento</label><input readonly value="${esc(fmtFecha(p.FECHA_NAC))}"></div>
+      <div class="field"><label>Tutor</label><input readonly value="${esc(p.NOMBRE_TUTOR+' '+(p.APELLIDOS_TUTOR||''))}"></div>
+      <div class="field"><label>Email</label><input readonly value="${esc(p.EMAIL_TUTOR||'')}"></div>
+      <div class="field"><label>Teléfono</label><input readonly value="${esc(p.TELÉFONO_TUTOR||'')}"></div>
+      <div class="field"><label>Actividad de interés</label><input readonly value="${esc(p.ACTIVIDAD_INTERES||'')}"></div>
+      <div class="field span2"><label>Notas</label><textarea readonly>${esc(p.NOTAS||'')}</textarea></div>
+    </div>`, '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>');
+}
+
+function confirmarPreinsc(id) {
+  const p = DB.preinscripciones.find(x => String(x.ID) === String(id));
+  if (!p) return;
+
+  // Comprobar si ya existe cliente con ese email
+  const cliExiste = DB.clientes.find(c =>
+    String(c.EMAIL||'').toLowerCase() === String(p.EMAIL_TUTOR||'').toLowerCase()
+  );
+
+  openModal('Confirmar preinscripción — ' + id, `
+    <p style="margin-bottom:16px;color:var(--text3);font-size:13px">
+      Se creará el cliente y el alumno si no existen ya, y la preinscripción pasará a <strong>CONFIRMADA</strong>.
+    </p>
+    ${cliExiste ? `<div class="badge badge-amber" style="margin-bottom:12px">⚠️ El cliente ya existe: ${esc(cliExiste.NOMBRE+' '+( cliExiste.APELLIDOS||''))} (${cliExiste.EMAIL})</div><br>` : ''}
+    <div class="form-grid">
+      <div class="field"><label>Nombre tutor</label><input id="cp-nomb" class="upper" value="${esc(p.NOMBRE_TUTOR||'')}"></div>
+      <div class="field"><label>Apellidos tutor</label><input id="cp-ape" class="upper" value="${esc(p.APELLIDOS_TUTOR||'')}"></div>
+      <div class="field"><label>Email tutor</label><input id="cp-email" type="email" value="${esc(p.EMAIL_TUTOR||'')}"></div>
+      <div class="field"><label>Teléfono</label><input id="cp-tel" value="${esc(p.TELÉFONO_TUTOR||'')}"></div>
+      <div class="field"><label>Nombre alumno</label><input id="cp-alu-n" class="upper" value="${esc(p.NOMBRE_ALUMNO||'')}"></div>
+      <div class="field"><label>Apellidos alumno</label><input id="cp-alu-a" class="upper" value="${esc(p.APELLIDOS_ALUMNO||'')}"></div>
+      <div class="field"><label>Fecha nac. alumno</label><input id="cp-fnac" type="date" value="${esc(p.FECHA_NAC||'')}"></div>
+      <div class="field"><label>Curso escolar</label>
+        <select id="cp-curso">
+          <option value="">— Selecciona —</option>
+          ${['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO']
+            .map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="ejecutarConfirmacion('${id}',${cliExiste?`'${cliExiste.ID_CLIENTE}'`:'null'})">Confirmar</button>`
+  );
+  ['cp-nomb','cp-ape','cp-alu-n','cp-alu-a'].forEach(id2 => {
+    const el = document.getElementById(id2);
+    if(el) el.addEventListener('input', function(){ const p2=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p2,p2)}catch(_){} });
+  });
+}
+
+function ejecutarConfirmacion(preinscId, cliIdExistente) {
+  const nombre  = document.getElementById('cp-nomb').value.trim();
+  const email   = document.getElementById('cp-email').value.trim().toLowerCase();
+  const aluNom  = document.getElementById('cp-alu-n').value.trim();
+  if (!nombre || !email || !aluNom) { showToast('Rellena los campos obligatorios','error'); return; }
+
+  const btn = document.querySelector('#modal-footer .btn-primary');
+  if(btn) { btn.disabled=true; btn.textContent='Guardando…'; }
+
+  const crearCliente = cliIdExistente
+    ? Promise.resolve({ id: cliIdExistente })
+    : writeToSheet('CLIENTES', {
+        NOMBRE: nombre,
+        APELLIDOS: document.getElementById('cp-ape').value.trim(),
+        EMAIL: email,
+        'TELÉFONO': document.getElementById('cp-tel').value.trim(),
+        ACTIVO: 'SÍ',
+        FECHA_ALTA: new Date().toISOString().slice(0,10),
+      });
+
+  crearCliente.then(res => {
+    const cliId = res.id || cliIdExistente;
+    return writeToSheet('ALUMNOS', {
+      NOMBRE:    aluNom,
+      APELLIDOS: document.getElementById('cp-alu-a').value.trim(),
+      FECHA_NAC: document.getElementById('cp-fnac').value,
+      CURSO:     document.getElementById('cp-curso').value,
+      ID_CLIENTE: cliId,
+      'CESIÓN_IMAGEN': 'NO',
+      ACTIVO: 'SÍ',
+    });
+  }).then(() => {
+    return writeToSheet('PREINSCRIPCIONES', { ESTADO: 'CONFIRMADA' }, preinscId);
+  }).then(() => {
+    // Enviar email de bienvenida
+    const emailTutor = document.getElementById('cp-email').value.trim();
+    sendEmail(EMAILJS_TPL_PREINSC, {
+      to_email: emailTutor,
+      to_name: document.getElementById('cp-nomb').value.trim(),
+      alumno:  aluNom,
+    });
+    showToast('Preinscripción confirmada. Cliente y alumno creados.');
+    closeModal();
+    loadAllData().then(preinscripciones);
+  }).catch(err => {
+    showToast('Error: ' + err.message, 'error');
+    if(btn) { btn.disabled=false; btn.textContent='Confirmar'; }
+  });
+}
+
+function rechazarPreinsc(id) {
+  if (!confirm('¿Rechazar esta preinscripción?')) return;
+  writeToSheet('PREINSCRIPCIONES', { ESTADO: 'RECHAZADA' }, id)
+    .then(() => { showToast('Preinscripción rechazada'); loadAllData().then(preinscripciones); })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: INSCRIPCIONES
+// ══════════════════════════════════════════════════════════════════════════
+function inscripciones() {
+  topbarBtn('+ Nueva inscripción', () => modalInscripcion());
+
+  let filtroLinea = 'TODAS';
+  let filtroEst   = 'ACTIVA';
+
+  const render_ = () => {
+    const lista = DB.inscripciones.filter(i => {
+      const linea = filtroLinea === 'TODAS' || String(i.LINEA||'').toUpperCase() === filtroLinea;
+      const est   = filtroEst   === 'TODAS' || String(i.ESTADO||'').toUpperCase() === filtroEst;
+      return linea && est;
+    });
+
+    const rows = lista.map(i => {
+      const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
+      const act = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+      return `<tr>
+        <td class="mono">${esc(i.ID_INSCRIPCION)}</td>
+        <td>${alu ? `<strong>${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</strong>` : `<span class="text-muted">${esc(i.ID_ALUMNO)}</span>`}</td>
+        <td>${act ? esc(act.NOMBRE) : `<span class="text-muted">${esc(i.ID_ACTIVIDAD)}</span>`}</td>
+        <td>${i.LINEA === 'FUTBOL' ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
+        <td>${esc(i.DIA_SEMANA||'—')}</td>
+        <td>${fmtEur(i.PRECIO_ACORDADO)}</td>
+        <td>${fmtFecha(i.FECHA_ALTA)}</td>
+        <td>${badgeEstado(i.ESTADO)}</td>
+        <td><button class="btn btn-sm btn-secondary" onclick='modalInscripcion(${JSON.stringify(i)})'>Editar</button></td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">✍️</div><p>Sin inscripciones</p></div></td></tr>`;
+
+    render(`
+      <div class="card" style="padding:14px 20px">
+        <div class="table-toolbar">
+          <input class="search-input" id="q-ins" placeholder="Buscar…" oninput="filterTable('q-ins','tbl-ins')">
+          <select id="fl-linea" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
+            <option value="TODAS">Todas las líneas</option>
+            <option value="FUTBOL">SM Fútbol</option>
+            <option value="EXTRAESCOLARES">Extraescolares</option>
+          </select>
+          <select id="fl-est" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
+            <option value="ACTIVA" selected>Activas</option>
+            <option value="BAJA">Bajas</option>
+            <option value="TODAS">Todas</option>
+          </select>
+          <span class="text-muted">${lista.length} inscripciones</span>
+        </div>
+        <div class="table-wrap">
+          <table id="tbl-ins">
+            <thead><tr><th>ID</th><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Día</th><th>Precio</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`);
+
+    document.getElementById('fl-linea').value = filtroLinea;
+    document.getElementById('fl-est').value   = filtroEst;
+    document.getElementById('fl-linea').onchange = e => { filtroLinea = e.target.value; render_(); };
+    document.getElementById('fl-est').onchange   = e => { filtroEst   = e.target.value; render_(); };
+  };
+  render_();
+}
+
+function modalInscripcion(i) {
+  i = i || {};
+  const isNew = !i.ID_INSCRIPCION;
+
+  const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
+    .map(a => `<option value="${a.ID_ALUMNO}" ${String(i.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`).join('');
+  const opsAct = DB.actividades.filter(a => String(a.ACTIVA||'').toUpperCase().startsWith('S'))
+    .map(a => `<option value="${a.ID}" ${String(i.ID_ACTIVIDAD)===String(a.ID)?'selected':''}>${esc(a.NOMBRE)} (${a.LINEA})</option>`).join('');
+
+  openModal(isNew ? 'Nueva inscripción' : 'Editar inscripción', `
+    <div class="form-grid">
+      <div class="field span2"><label>Alumno <span class="req">*</span></label>
+        <select id="i-alu"><option value="">— Selecciona alumno —</option>${opsAlu}</select></div>
+      <div class="field span2"><label>Actividad <span class="req">*</span></label>
+        <select id="i-act"><option value="">— Selecciona actividad —</option>${opsAct}</select></div>
+      <div class="field"><label>Día de la semana</label>
+        <select id="i-dia">
+          <option value="">—</option>
+          ${['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'].map(d=>`<option value="${d}" ${i.DIA_SEMANA===d?'selected':''}>${d}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Horario</label>
+        <input id="i-horario" placeholder="p.ej. 16:00-17:00" value="${esc(i.HORARIO||'')}"></div>
+      <div class="field"><label>Precio acordado (€)</label>
+        <input id="i-precio" type="number" step="0.01" value="${esc(i.PRECIO_ACORDADO||'')}"></div>
+      <div class="field"><label>Descuento (€)</label>
+        <input id="i-dto" type="number" step="0.01" value="${esc(i.DESCUENTO||'0')}"></div>
+      <div class="field"><label>Estado</label>
+        <select id="i-est">
+          <option value="ACTIVA" ${i.ESTADO==='ACTIVA'||!i.ESTADO?'selected':''}>Activa</option>
+          <option value="BAJA"   ${i.ESTADO==='BAJA'?'selected':''}>Baja</option>
+          <option value="SUSPENDIDA" ${i.ESTADO==='SUSPENDIDA'?'selected':''}>Suspendida</option>
+        </select></div>
+      <div class="field"><label>Fecha de baja</label>
+        <input id="i-fbaja" type="date" value="${esc(i.FECHA_BAJA||'')}"></div>
+      <div class="field span2"><label>Observaciones</label>
+        <textarea id="i-obs">${esc(i.OBSERVACIONES||'')}</textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarInscripcion(${isNew?'null':`'${i.ID_INSCRIPCION}'`})">Guardar</button>`
+  );
+}
+
+function guardarInscripcion(id) {
+  const aluId = document.getElementById('i-alu').value;
+  const actId = document.getElementById('i-act').value;
+  if (!aluId || !actId) { showToast('Alumno y actividad son obligatorios','error'); return; }
+
+  const act = DB.actividades.find(a => String(a.ID) === actId);
+  const row = {
+    ID_ALUMNO:       aluId,
+    ID_ACTIVIDAD:    actId,
+    LINEA:           act?.LINEA || 'EXTRAESCOLARES',
+    DIA_SEMANA:      document.getElementById('i-dia').value,
+    HORARIO:         document.getElementById('i-horario').value.trim(),
+    PRECIO_ACORDADO: document.getElementById('i-precio').value,
+    DESCUENTO:       document.getElementById('i-dto').value || '0',
+    ESTADO:          document.getElementById('i-est').value,
+    FECHA_BAJA:      document.getElementById('i-fbaja').value,
+    OBSERVACIONES:   document.getElementById('i-obs').value.trim(),
+  };
+  if (!id) row.FECHA_ALTA = new Date().toISOString().slice(0,10);
+
+  writeToSheet('INSCRIPCIONES', row, id)
+    .then(() => { showToast(id ? 'Inscripción actualizada' : 'Inscripción creada'); closeModal(); loadAllData().then(inscripciones); })
+    .catch(err => showToast('Error: ' + err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: PAGOS
+// ══════════════════════════════════════════════════════════════════════════
+function pagos() {
+  topbarBtn('+ Registrar pago', () => modalPago());
+
+  const rows = DB.pagos.map(p => {
+    const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+    return `<tr>
+      <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
+      <td>${esc(p.MES||'—')}</td>
+      <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : esc(p.ID_ALUMNO||'—')}</td>
+      <td>${esc(p.CONCEPTO||'—')}</td>
+      <td>${fmtEur(p.TOTAL_FACTURADO)}</td>
+      <td>${fmtEur(p.TOTAL_RECIBIDO)}</td>
+      <td>${esc(p.FORMA_PAGO||'—')}</td>
+      <td>${badgeEstado(p.ESTADO)}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalPago(${JSON.stringify(p)})'>Editar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">💳</div><p>Sin pagos registrados</p></div></td></tr>`;
+
+  const totalPend = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
+  const totalCobr = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+
+  render(`
+    <div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n">${DB.pagos.length}</div><div class="kpi-l">Total pagos</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(totalPend)}</div><div class="kpi-l">Pendiente de cobro</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
+    </div>
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-pag" placeholder="Buscar…" oninput="filterTable('q-pag','tbl-pag')">
+        <span class="text-muted">${DB.pagos.length} pagos</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-pag">
+          <thead><tr><th>ID</th><th>Mes</th><th>Alumno</th><th>Concepto</th><th>Facturado</th><th>Recibido</th><th>Forma</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalPago(p) {
+  p = p || {};
+  const isNew = !p.ID_PAGO && !p.ID;
+  const id = p.ID_PAGO || p.ID || null;
+  const opsAlu = DB.alumnos.filter(a=>String(a.ACTIVO||'').toUpperCase().startsWith('S'))
+    .map(a=>`<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`).join('');
+
+  openModal(isNew?'Registrar pago':'Editar pago',`
+    <div class="form-grid">
+      <div class="field span2"><label>Alumno <span class="req">*</span></label>
+        <select id="p-alu"><option value="">— Selecciona —</option>${opsAlu}</select></div>
+      <div class="field"><label>Mes (ej: septiembre 2026)</label>
+        <input id="p-mes" value="${esc(p.MES||'')}"></div>
+      <div class="field"><label>Concepto</label>
+        <input id="p-concepto" class="upper" value="${esc(p.CONCEPTO||'')}"></div>
+      <div class="field"><label>Total facturado (€)</label>
+        <input id="p-fact" type="number" step="0.01" value="${esc(p.TOTAL_FACTURADO||'')}"></div>
+      <div class="field"><label>Total recibido (€)</label>
+        <input id="p-recib" type="number" step="0.01" value="${esc(p.TOTAL_RECIBIDO||'')}"></div>
+      <div class="field"><label>Forma de pago</label>
+        <select id="p-forma">
+          ${['EFECTIVO','TRANSFERENCIA','DOMICILIACIÓN','BIZUM'].map(f=>`<option value="${f}" ${p.FORMA_PAGO===f?'selected':''}>${f}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Estado</label>
+        <select id="p-estado">
+          <option value="PENDIENTE" ${(p.ESTADO||'PENDIENTE')==='PENDIENTE'?'selected':''}>Pendiente</option>
+          <option value="PAGADO"    ${p.ESTADO==='PAGADO'?'selected':''}>Pagado</option>
+          <option value="PARCIAL"   ${p.ESTADO==='PARCIAL'?'selected':''}>Parcial</option>
+        </select></div>
+      <div class="field"><label>Fecha pago</label>
+        <input id="p-fecha" type="date" value="${esc(p.FECHA_PAGO||'')}"></div>
+      <div class="field span2"><label>Notas</label><textarea id="p-notas">${esc(p.NOTAS||'')}</textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarPago(${isNew?'null':`'${id}'`})">Guardar</button>`);
+}
+
+function guardarPago(id) {
+  const aluId = document.getElementById('p-alu').value;
+  if (!aluId) { showToast('Selecciona un alumno','error'); return; }
+  const row = {
+    ID_ALUMNO:       aluId,
+    MES:             document.getElementById('p-mes').value.trim(),
+    CONCEPTO:        document.getElementById('p-concepto').value.trim(),
+    TOTAL_FACTURADO: document.getElementById('p-fact').value,
+    TOTAL_RECIBIDO:  document.getElementById('p-recib').value,
+    FORMA_PAGO:      document.getElementById('p-forma').value,
+    ESTADO:          document.getElementById('p-estado').value,
+    FECHA_PAGO:      document.getElementById('p-fecha').value,
+    NOTAS:           document.getElementById('p-notas').value.trim(),
+  };
+  if (!id) row.FECHA_REGISTRO = new Date().toISOString().slice(0,10);
+  writeToSheet('PAGOS', row, id)
+    .then(()=>{ showToast(id?'Pago actualizado':'Pago registrado'); closeModal(); loadAllData().then(pagos); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: FACTURAS (stub — requiere VeriFactu)
+// ══════════════════════════════════════════════════════════════════════════
+function facturas() {
+  render(`<div class="stub">
+    <div class="stub-icon">🧾</div>
+    <h2>Facturas VeriFactu</h2>
+    <p>Este módulo se implementará con la cadena de hash VeriFactu en la próxima sesión.</p>
+  </div>`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: PERSONAL
+// ══════════════════════════════════════════════════════════════════════════
+function personal() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores y coordinadores.</p></div>'); return; }
+  topbarBtn('+ Nuevo trabajador', () => modalPersonal());
+
+  const rows = DB.personal.map(p => `
+    <tr>
+      <td class="mono">${esc(p.ID_MONITOR)}</td>
+      <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
+      <td><span class="badge badge-blue">${esc(p.ROL||'—')}</span></td>
+      <td>${esc(p.EMAIL||'—')}</td>
+      <td>${esc(p.TELÉFONO||'—')}</td>
+      <td>${esc(p.DNI||'—')}</td>
+      <td>${fmtFecha(p.FECHA_ALTA)}</td>
+      <td>${String(p.CERTIFICADO_DELITOS||'').trim() ? '<span class="badge badge-green">✓ OK</span>' : '<span class="badge badge-red">Pendiente</span>'}</td>
+      <td>${badgeActivo(p.ACTIVO)}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${JSON.stringify(p)})'>Editar</button></td>
+    </tr>`).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👤</div><p>Sin trabajadores registrados</p></div></td></tr>`;
+
+  render(`
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-per" placeholder="Buscar…" oninput="filterTable('q-per','tbl-per')">
+        <span class="text-muted">${DB.personal.length} trabajadores</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-per">
+          <thead><tr><th>ID</th><th>Nombre</th><th>Rol</th><th>Email</th><th>Teléfono</th><th>DNI</th><th>Alta</th><th>Cert. delitos</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalPersonal(p) {
+  p = p || {};
+  const isNew = !p.ID_MONITOR;
+  openModal(isNew?'Nuevo trabajador':'Editar trabajador',`
+    <div class="form-grid">
+      <div class="field"><label>Nombre <span class="req">*</span></label>
+        <input id="per-nom" class="upper" value="${esc(p.NOMBRE||'')}"></div>
+      <div class="field"><label>Apellidos</label>
+        <input id="per-ape" class="upper" value="${esc(p.APELLIDOS||'')}"></div>
+      <div class="field"><label>Rol</label>
+        <select id="per-rol">
+          ${['ADMIN','COORDINADOR','MONITOR','ENTRENADOR','AMPA'].map(r=>`<option value="${r}" ${p.ROL===r?'selected':''}>${r}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Email (para login Gmail)</label>
+        <input id="per-email" type="email" value="${esc(p.EMAIL||'')}"></div>
+      <div class="field"><label>Usuario (login alternativo)</label>
+        <input id="per-user" value="${esc(p.USERNAME||'')}"></div>
+      <div class="field"><label>Contraseña</label>
+        <input id="per-pass" type="password" value="${esc(p.PASSWORD||'')}"></div>
+      <div class="field"><label>Teléfono</label>
+        <input id="per-tel" value="${esc(p.TELÉFONO||'')}"></div>
+      <div class="field"><label>DNI</label>
+        <input id="per-dni" class="upper" value="${esc(p.DNI||'')}"></div>
+      <div class="field"><label>Nº Seguridad Social</label>
+        <input id="per-ss" value="${esc(p.SEGURIDAD_SOCIAL||'')}"></div>
+      <div class="field"><label>Fecha de alta</label>
+        <input id="per-falta" type="date" value="${esc(p.FECHA_ALTA||'')}"></div>
+      <div class="field"><label>Cert. delitos sexuales (fecha o link)</label>
+        <input id="per-cert" value="${esc(p.CERTIFICADO_DELITOS||'')}"></div>
+      <div class="field"><label>Activo</label>
+        <select id="per-activo">
+          <option value="SÍ" ${String(p.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
+          <option value="NO" ${String(p.ACTIVO||'').toUpperCase()==='NO'?'selected':''}>No</option>
+        </select></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarPersonal(${isNew?'null':`'${p.ID_MONITOR}'`})">Guardar</button>`);
+  ['per-nom','per-ape','per-dni'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.addEventListener('input',function(){const p2=this.selectionStart;this.value=this.value.toUpperCase();try{this.setSelectionRange(p2,p2)}catch(_){}});
+  });
+}
+
+function guardarPersonal(id) {
+  const nombre = document.getElementById('per-nom').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
+  const row = {
+    NOMBRE:              nombre,
+    APELLIDOS:           document.getElementById('per-ape').value.trim(),
+    ROL:                 document.getElementById('per-rol').value,
+    EMAIL:               document.getElementById('per-email').value.trim().toLowerCase(),
+    USERNAME:            document.getElementById('per-user').value.trim(),
+    PASSWORD:            document.getElementById('per-pass').value,
+    'TELÉFONO':          document.getElementById('per-tel').value.trim(),
+    DNI:                 document.getElementById('per-dni').value.trim(),
+    SEGURIDAD_SOCIAL:    document.getElementById('per-ss').value.trim(),
+    FECHA_ALTA:          document.getElementById('per-falta').value,
+    CERTIFICADO_DELITOS: document.getElementById('per-cert').value.trim(),
+    ACTIVO:              document.getElementById('per-activo').value,
+  };
+  writeToSheet('PERSONAL', row, id)
+    .then(()=>{ showToast(id?'Trabajador actualizado':'Trabajador creado'); closeModal(); loadAllData().then(personal); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: NÓMINAS
+// ══════════════════════════════════════════════════════════════════════════
+function nominas() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  topbarBtn('+ Añadir nómina', () => modalNomina());
+
+  // Agrupar por trabajador
+  const rows = DB.nominas.map(n => {
+    const p = DB.personal.find(x => String(x.ID_MONITOR) === String(n.ID_MONITOR));
+    return `<tr>
+      <td>${esc(n.MES||'—')} ${esc(n.AÑO||'')}</td>
+      <td>${p ? esc(p.NOMBRE+' '+(p.APELLIDOS||'')) : esc(n.ID_MONITOR||'—')}</td>
+      <td>${fmtEur(n.BRUTO)}</td>
+      <td>${fmtEur(n.SS_TRABAJADOR)}</td>
+      <td>${fmtEur(n.IRPF)}</td>
+      <td><strong>${fmtEur(n.NETO)}</strong></td>
+      <td>${fmtEur(n.SS_EMPRESA)}</td>
+      <td>${fmtEur(n.COSTE_TOTAL)}</td>
+      <td>${n.PDF_DRIVE ? `<a href="${esc(n.PDF_DRIVE)}" target="_blank" class="btn btn-sm btn-secondary">📎 Ver</a>` : '—'}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalNomina(${JSON.stringify(n)})'>Editar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">💶</div><p>Sin nóminas registradas</p></div></td></tr>`;
+
+  render(`
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-nom" placeholder="Buscar…" oninput="filterTable('q-nom','tbl-nom')">
+        <span class="text-muted">${DB.nominas.length} nóminas</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-nom">
+          <thead><tr><th>Período</th><th>Trabajador</th><th>Bruto</th><th>SS Trab.</th><th>IRPF</th><th>Neto</th><th>SS Empresa</th><th>Coste total</th><th>PDF</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalNomina(n) {
+  n = n || {};
+  const isNew = !n.ID;
+  const opsPer = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S'))
+    .map(p=>`<option value="${p.ID_MONITOR}" ${String(n.ID_MONITOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE+' '+(p.APELLIDOS||''))}</option>`).join('');
+
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  openModal(isNew?'Añadir nómina':'Editar nómina',`
+    <div class="form-grid">
+      <div class="field span2"><label>Trabajador <span class="req">*</span></label>
+        <select id="n-per"><option value="">— Selecciona —</option>${opsPer}</select></div>
+      <div class="field"><label>Mes</label>
+        <select id="n-mes">${meses.map(m=>`<option value="${m}" ${n.MES===m?'selected':''}>${m.charAt(0).toUpperCase()+m.slice(1)}</option>`).join('')}</select></div>
+      <div class="field"><label>Año</label>
+        <input id="n-anyo" type="number" value="${esc(n.AÑO||new Date().getFullYear())}"></div>
+      <div class="field"><label>Salario bruto (€)</label>
+        <input id="n-bruto" type="number" step="0.01" value="${esc(n.BRUTO||'')}"></div>
+      <div class="field"><label>SS trabajador (€)</label>
+        <input id="n-ss-t" type="number" step="0.01" value="${esc(n.SS_TRABAJADOR||'')}"></div>
+      <div class="field"><label>IRPF (€)</label>
+        <input id="n-irpf" type="number" step="0.01" value="${esc(n.IRPF||'')}"></div>
+      <div class="field"><label>Neto (€)</label>
+        <input id="n-neto" type="number" step="0.01" value="${esc(n.NETO||'')}"></div>
+      <div class="field"><label>SS empresa (€)</label>
+        <input id="n-ss-e" type="number" step="0.01" value="${esc(n.SS_EMPRESA||'')}"></div>
+      <div class="field"><label>Coste total empresa (€)</label>
+        <input id="n-coste" type="number" step="0.01" value="${esc(n.COSTE_TOTAL||'')}"></div>
+      <div class="field span2"><label>Link PDF nómina (Drive)</label>
+        <input id="n-pdf" type="url" placeholder="https://drive.google.com/…" value="${esc(n.PDF_DRIVE||'')}"></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarNomina(${isNew?'null':`'${n.ID}'`})">Guardar</button>`);
+}
+
+function guardarNomina(id) {
+  const perId = document.getElementById('n-per').value;
+  if (!perId) { showToast('Selecciona un trabajador','error'); return; }
+  const row = {
+    ID_MONITOR:    perId,
+    MES:           document.getElementById('n-mes').value,
+    'AÑO':         document.getElementById('n-anyo').value,
+    BRUTO:         document.getElementById('n-bruto').value,
+    SS_TRABAJADOR: document.getElementById('n-ss-t').value,
+    IRPF:          document.getElementById('n-irpf').value,
+    NETO:          document.getElementById('n-neto').value,
+    SS_EMPRESA:    document.getElementById('n-ss-e').value,
+    COSTE_TOTAL:   document.getElementById('n-coste').value,
+    PDF_DRIVE:     document.getElementById('n-pdf').value.trim(),
+  };
+  writeToSheet('NOMINAS', row, id)
+    .then(()=>{ showToast('Nómina guardada'); closeModal(); loadAllData().then(nominas); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: GASTOS
+// ══════════════════════════════════════════════════════════════════════════
+function gastos() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  topbarBtn('+ Registrar gasto', () => modalGasto());
+
+  const totalMes = DB.gastos
+    .filter(g => { const f=new Date(g.FECHA||''); const n=new Date(); return f.getMonth()===n.getMonth()&&f.getFullYear()===n.getFullYear(); })
+    .reduce((s,g)=>s+(parseFloat(g.IMPORTE)||0),0);
+
+  const rows = DB.gastos.map(g => `
+    <tr>
+      <td>${fmtFecha(g.FECHA)}</td>
+      <td>${esc(g.CONCEPTO||'—')}</td>
+      <td>${fmtEur(g.IMPORTE)}</td>
+      <td><span class="badge badge-gray">${esc(g.CATEGORIA||'—')}</span></td>
+      <td>${g.LINEA==='FUTBOL'?'<span class="badge badge-green">⚽</span>':g.LINEA==='EXTRAESCOLARES'?'<span class="badge badge-blue">🎒</span>':g.LINEA==='DOMESTICO'?'<span class="badge badge-amber">🏠</span>':'<span class="badge badge-gray">General</span>'}</td>
+      <td>${esc(g.PROVEEDOR||'—')}</td>
+      <td>${g.FACTURA_PDF?`<a href="${esc(g.FACTURA_PDF)}" target="_blank" class="btn btn-sm btn-secondary">📎</a>`:'—'}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalGasto(${JSON.stringify(g)})'>Editar</button></td>
+    </tr>`).join('') || `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📉</div><p>Sin gastos registrados</p></div></td></tr>`;
+
+  render(`
+    <div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n">${DB.gastos.length}</div><div class="kpi-l">Total registros</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(totalMes)}</div><div class="kpi-l">Gastos este mes</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(DB.gastos.reduce((s,g)=>s+(parseFloat(g.IMPORTE)||0),0))}</div><div class="kpi-l">Total gastos</div></div>
+    </div>
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-gas" placeholder="Buscar…" oninput="filterTable('q-gas','tbl-gas')">
+        <span class="text-muted">${DB.gastos.length} gastos</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-gas">
+          <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Categoría</th><th>Línea</th><th>Proveedor</th><th>Factura</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalGasto(g) {
+  g = g || {};
+  const isNew = !g.ID;
+  openModal(isNew?'Registrar gasto':'Editar gasto',`
+    <div class="form-grid">
+      <div class="field"><label>Fecha <span class="req">*</span></label>
+        <input id="g-fecha" type="date" value="${esc(g.FECHA||new Date().toISOString().slice(0,10))}"></div>
+      <div class="field"><label>Importe (€) <span class="req">*</span></label>
+        <input id="g-imp" type="number" step="0.01" value="${esc(g.IMPORTE||'')}"></div>
+      <div class="field span2"><label>Concepto <span class="req">*</span></label>
+        <input id="g-conc" class="upper" value="${esc(g.CONCEPTO||'')}"></div>
+      <div class="field"><label>Categoría</label>
+        <select id="g-cat">
+          ${['MATERIAL','ALQUILER','SEGURO','TRANSPORTE','PUBLICIDAD','SUMINISTROS','OTROS'].map(c=>`<option value="${c}" ${g.CATEGORIA===c?'selected':''}>${c}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Línea</label>
+        <select id="g-linea">
+          <option value="GENERAL" ${g.LINEA==='GENERAL'||!g.LINEA?'selected':''}>General empresa</option>
+          <option value="FUTBOL" ${g.LINEA==='FUTBOL'?'selected':''}>SM Fútbol</option>
+          <option value="EXTRAESCOLARES" ${g.LINEA==='EXTRAESCOLARES'?'selected':''}>Extraescolares</option>
+          <option value="DOMESTICO" ${g.LINEA==='DOMESTICO'?'selected':''}>Doméstico</option>
+        </select></div>
+      <div class="field"><label>Proveedor</label>
+        <input id="g-prov" class="upper" value="${esc(g.PROVEEDOR||'')}"></div>
+      <div class="field"><label>Link factura (Drive)</label>
+        <input id="g-pdf" type="url" placeholder="https://drive.google.com/…" value="${esc(g.FACTURA_PDF||'')}"></div>
+      <div class="field span2"><label>Notas</label><textarea id="g-notas">${esc(g.NOTAS||'')}</textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarGasto(${isNew?'null':`'${g.ID}'`})">Guardar</button>`);
+}
+
+function guardarGasto(id) {
+  const fecha = document.getElementById('g-fecha').value;
+  const imp   = document.getElementById('g-imp').value;
+  const conc  = document.getElementById('g-conc').value.trim();
+  if (!fecha||!imp||!conc) { showToast('Fecha, importe y concepto son obligatorios','error'); return; }
+  const row = {
+    FECHA: fecha, IMPORTE: imp, CONCEPTO: conc,
+    CATEGORIA: document.getElementById('g-cat').value,
+    LINEA:     document.getElementById('g-linea').value,
+    PROVEEDOR: document.getElementById('g-prov').value.trim(),
+    FACTURA_PDF: document.getElementById('g-pdf').value.trim(),
+    NOTAS:     document.getElementById('g-notas').value.trim(),
+  };
+  writeToSheet('GASTOS', row, id)
+    .then(()=>{ showToast('Gasto guardado'); closeModal(); loadAllData().then(gastos); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: BANCO
+// ══════════════════════════════════════════════════════════════════════════
+function banco() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  topbarBtn('+ Añadir movimiento', () => modalMovimiento());
+
+  const saldo = DB.movimientosBancarios.reduce((s,m)=>{
+    const imp = parseFloat(m.IMPORTE)||0;
+    return String(m.TIPO||'').toUpperCase()==='INGRESO' ? s+imp : s-imp;
+  }, 0);
+
+  const rows = [...DB.movimientosBancarios].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||''))).map(m => `
+    <tr>
+      <td>${fmtFecha(m.FECHA)}</td>
+      <td>${esc(m.CONCEPTO||'—')}</td>
+      <td style="color:${String(m.TIPO||'').toUpperCase()==='INGRESO'?'var(--g2)':'var(--red)'}">
+        ${String(m.TIPO||'').toUpperCase()==='INGRESO'?'+':'−'}${fmtEur(Math.abs(parseFloat(m.IMPORTE)||0))}
+      </td>
+      <td><span class="badge ${String(m.TIPO||'').toUpperCase()==='INGRESO'?'badge-green':'badge-red'}">${esc(m.TIPO||'—')}</span></td>
+      <td>${esc(m.NOTAS||'—')}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalMovimiento(${JSON.stringify(m)})'>Editar</button></td>
+    </tr>`).join('') || `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏦</div><p>Sin movimientos registrados</p></div></td></tr>`;
+
+  render(`
+    <div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n" style="color:${saldo>=0?'var(--g2)':'var(--red)'}">${fmtEur(saldo)}</div><div class="kpi-l">Saldo aproximado</div><div class="kpi-sub">Según movimientos registrados</div></div>
+      <div class="kpi"><div class="kpi-n">${DB.movimientosBancarios.filter(m=>String(m.TIPO||'').toUpperCase()==='INGRESO').length}</div><div class="kpi-l">Ingresos</div></div>
+      <div class="kpi"><div class="kpi-n">${DB.movimientosBancarios.filter(m=>String(m.TIPO||'').toUpperCase()==='GASTO').length}</div><div class="kpi-l">Gastos</div></div>
+    </div>
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-ban" placeholder="Buscar…" oninput="filterTable('q-ban','tbl-ban')">
+        <span class="text-muted">${DB.movimientosBancarios.length} movimientos</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-ban">
+          <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Tipo</th><th>Notas</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalMovimiento(m) {
+  m = m || {};
+  const isNew = !m.ID;
+  openModal(isNew?'Nuevo movimiento bancario':'Editar movimiento',`
+    <div class="form-grid">
+      <div class="field"><label>Fecha <span class="req">*</span></label>
+        <input id="b-fecha" type="date" value="${esc(m.FECHA||new Date().toISOString().slice(0,10))}"></div>
+      <div class="field"><label>Tipo</label>
+        <select id="b-tipo">
+          <option value="INGRESO" ${(m.TIPO||'INGRESO')==='INGRESO'?'selected':''}>Ingreso</option>
+          <option value="GASTO" ${m.TIPO==='GASTO'?'selected':''}>Gasto</option>
+        </select></div>
+      <div class="field span2"><label>Concepto <span class="req">*</span></label>
+        <input id="b-conc" class="upper" value="${esc(m.CONCEPTO||'')}"></div>
+      <div class="field"><label>Importe (€) <span class="req">*</span></label>
+        <input id="b-imp" type="number" step="0.01" value="${esc(m.IMPORTE||'')}"></div>
+      <div class="field"><label>Notas</label>
+        <input id="b-notas" value="${esc(m.NOTAS||'')}"></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarMovimiento(${isNew?'null':`'${m.ID}'`})">Guardar</button>`);
+}
+
+function guardarMovimiento(id) {
+  const fecha = document.getElementById('b-fecha').value;
+  const conc  = document.getElementById('b-conc').value.trim();
+  const imp   = document.getElementById('b-imp').value;
+  if (!fecha||!conc||!imp) { showToast('Fecha, concepto e importe son obligatorios','error'); return; }
+  const row = {
+    FECHA:    fecha,
+    TIPO:     document.getElementById('b-tipo').value,
+    CONCEPTO: conc,
+    IMPORTE:  imp,
+    NOTAS:    document.getElementById('b-notas').value.trim(),
+  };
+  writeToSheet('MOVIMIENTOS_BANCARIOS', row, id)
+    .then(()=>{ showToast('Movimiento guardado'); closeModal(); loadAllData().then(banco); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: FISCAL
+// ══════════════════════════════════════════════════════════════════════════
+function fiscal() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+
+  const anyo = new Date().getFullYear();
+
+  // Ingresos por trimestre
+  const ingresosPorTrimestre = [1,2,3,4].map(t => {
+    const meses = [(t-1)*3, (t-1)*3+1, (t-1)*3+2]; // índices 0-based
+    return DB.pagos
+      .filter(p => {
+        const f = new Date(p.FECHA_PAGO||p.FECHA_REGISTRO||'');
+        return f.getFullYear() === anyo && meses.includes(f.getMonth()) && String(p.ESTADO||'').toUpperCase()==='PAGADO';
+      })
+      .reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  });
+
+  const gastosTotales = DB.gastos.reduce((s,g)=>s+(parseFloat(g.IMPORTE)||0),0);
+  const ingresosTotal = ingresosPorTrimestre.reduce((s,v)=>s+v,0);
+  const beneficio = ingresosTotal - gastosTotales;
+
+  const nomCosteTot = DB.nominas.reduce((s,n)=>s+(parseFloat(n.COSTE_TOTAL)||0),0);
+
+  render(`
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-n">${fmtEur(ingresosTotal)}</div><div class="kpi-l">Ingresos ${anyo}</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(gastosTotales)}</div><div class="kpi-l">Gastos operativos</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(nomCosteTot)}</div><div class="kpi-l">Coste nóminas</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:${beneficio>=0?'var(--g2)':'var(--red)'}">${fmtEur(beneficio)}</div><div class="kpi-l">Resultado bruto</div><div class="kpi-sub">Sin nóminas</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-title">Ingresos por trimestre ${anyo}</div>
+        ${[1,2,3,4].map(t=>`
+          <div class="flex" style="margin-bottom:8px;font-size:13px">
+            <span style="width:80px;color:var(--text3)">T${t}</span>
+            <div style="flex:1;background:var(--bg);border-radius:4px;height:20px;overflow:hidden">
+              <div style="background:var(--g3);height:100%;width:${ingresosTotal>0?Math.round(ingresosPorTrimestre[t-1]/ingresosTotal*100):0}%"></div>
+            </div>
+            <strong style="margin-left:8px;min-width:80px;text-align:right">${fmtEur(ingresosPorTrimestre[t-1])}</strong>
+          </div>`).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">Modelos fiscales (exento IGIC)</div>
+        <div style="font-size:13px;display:flex;flex-direction:column;gap:10px">
+          <div><strong>Modelo 111</strong> — Retenciones IRPF trabajadores<br>
+            <span class="text-muted">Trimestral. Datos en nóminas.</span></div>
+          <div><strong>Modelo 130</strong> — IRPF actividad económica<br>
+            <span class="text-muted">Trimestral. Resultado: ${fmtEur(beneficio)}</span></div>
+          <div><strong>Modelo 190</strong> — Resumen anual retenciones<br>
+            <span class="text-muted">Anual. Datos del año ${anyo}.</span></div>
+          <div class="badge badge-green" style="margin-top:4px">✓ IGIC exento — umbral &gt;50.000€ desde julio 2026</div>
+        </div>
+      </div>
+    </div>`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: AMPA SOCIOS
+// ══════════════════════════════════════════════════════════════════════════
+function ampaSocios() {
+  topbarBtn('+ Nuevo socio', () => modalSocio());
+
+  const rows = DB.ampaSocios.map(s => `
+    <tr>
+      <td class="mono">${esc(s.ID_SOCIO||s.ID||'')}</td>
+      <td><strong>${esc(s.NOMBRE)} ${esc(s.APELLIDOS||'')}</strong></td>
+      <td>${esc(s.EMAIL||'—')}</td>
+      <td>${esc(s.TELÉFONO||'—')}</td>
+      <td>${fmtFecha(s.FECHA_ALTA)}</td>
+      <td>${fmtEur(s.CUOTA_ANUAL)}</td>
+      <td>${badgeActivo(s.ESTADO||s.ACTIVO)}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalSocio(${JSON.stringify(s)})'>Editar</button></td>
+    </tr>`).join('') || `<tr><td colspan="8"><div class="empty"><div class="empty-icon">🏫</div><p>Sin socios registrados</p></div></td></tr>`;
+
+  render(`
+    <div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n">${DB.ampaSocios.filter(s=>String(s.ESTADO||s.ACTIVO||'').toUpperCase().startsWith('S')||String(s.ESTADO||'').toUpperCase()==='ACTIVO').length}</div><div class="kpi-l">Socios activos</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(DB.ampaSocios.reduce((s,x)=>s+(parseFloat(x.CUOTA_ANUAL)||0),0))}</div><div class="kpi-l">Cuotas totales</div></div>
+    </div>
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-soc" placeholder="Buscar…" oninput="filterTable('q-soc','tbl-soc')">
+        <span class="text-muted">${DB.ampaSocios.length} socios</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-soc">
+          <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalSocio(s) {
+  s = s || {};
+  const id = s.ID_SOCIO || s.ID || null;
+  const isNew = !id;
+  openModal(isNew?'Nuevo socio AMPA':'Editar socio',`
+    <div class="form-grid">
+      <div class="field"><label>Nombre <span class="req">*</span></label>
+        <input id="s-nom" class="upper" value="${esc(s.NOMBRE||'')}"></div>
+      <div class="field"><label>Apellidos</label>
+        <input id="s-ape" class="upper" value="${esc(s.APELLIDOS||'')}"></div>
+      <div class="field"><label>Email</label>
+        <input id="s-email" type="email" value="${esc(s.EMAIL||'')}"></div>
+      <div class="field"><label>Teléfono</label>
+        <input id="s-tel" value="${esc(s.TELÉFONO||'')}"></div>
+      <div class="field"><label>Fecha de alta</label>
+        <input id="s-falta" type="date" value="${esc(s.FECHA_ALTA||'')}"></div>
+      <div class="field"><label>Cuota anual (€)</label>
+        <input id="s-cuota" type="number" step="0.01" value="${esc(s.CUOTA_ANUAL||'')}"></div>
+      <div class="field"><label>Estado</label>
+        <select id="s-est">
+          <option value="ACTIVO" ${String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO'?'selected':''}>Activo</option>
+          <option value="BAJA"   ${String(s.ESTADO||'').toUpperCase()==='BAJA'?'selected':''}>Baja</option>
+        </select></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarSocio(${isNew?'null':`'${id}'`})">Guardar</button>`);
+  ['s-nom','s-ape'].forEach(i2=>{
+    const el=document.getElementById(i2);
+    if(el)el.addEventListener('input',function(){const p2=this.selectionStart;this.value=this.value.toUpperCase();try{this.setSelectionRange(p2,p2)}catch(_){}});
+  });
+}
+
+function guardarSocio(id) {
+  const nombre = document.getElementById('s-nom').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
+  const row = {
+    NOMBRE:     nombre,
+    APELLIDOS:  document.getElementById('s-ape').value.trim(),
+    EMAIL:      document.getElementById('s-email').value.trim().toLowerCase(),
+    'TELÉFONO': document.getElementById('s-tel').value.trim(),
+    FECHA_ALTA: document.getElementById('s-falta').value,
+    CUOTA_ANUAL:document.getElementById('s-cuota').value,
+    ESTADO:     document.getElementById('s-est').value,
+  };
+  writeToSheet('AMPA_SOCIOS', row, id)
+    .then(()=>{ showToast('Socio guardado'); closeModal(); loadAllData().then(ampaSocios); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: AMPA ALUMNOS
+// ══════════════════════════════════════════════════════════════════════════
+function ampaAlumnos() {
+  topbarBtn('+ Nuevo alumno AMPA', () => modalAmpaAlumno());
+
+  const rows = DB.ampaAlumnos.map(a => {
+    const soc = DB.ampaSocios.find(s => String(s.ID_SOCIO||s.ID||'') === String(a.ID_SOCIO));
+    return `<tr>
+      <td class="mono">${esc(a.ID_ALUMNO_AMPA||a.ID||'')}</td>
+      <td><strong>${esc(a.NOMBRE_ALUMNO)} ${esc(a.APELLIDOS_ALUMNO||'')}</strong></td>
+      <td>${soc ? esc(soc.NOMBRE+' '+(soc.APELLIDOS||'')) : esc(a.ID_SOCIO||'—')}</td>
+      <td>${esc(a.ACTIVIDAD||'—')}</td>
+      <td>${esc(a.CENTRO||'—')}</td>
+      <td>${badgeEstado(a.ESTADO||'ACTIVO')}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick='modalAmpaAlumno(${JSON.stringify(a)})'>Editar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🎒</div><p>Sin alumnos AMPA registrados</p></div></td></tr>`;
+
+  render(`
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <input class="search-input" id="q-aa" placeholder="Buscar…" oninput="filterTable('q-aa','tbl-aa')">
+        <span class="text-muted">${DB.ampaAlumnos.length} alumnos</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-aa">
+          <thead><tr><th>ID</th><th>Alumno</th><th>Socio / Familia</th><th>Actividad</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
+}
+
+function modalAmpaAlumno(a) {
+  a = a || {};
+  const id = a.ID_ALUMNO_AMPA || a.ID || null;
+  const isNew = !id;
+  const opsSoc = DB.ampaSocios.map(s=>`<option value="${s.ID_SOCIO||s.ID||''}" ${String(a.ID_SOCIO)===String(s.ID_SOCIO||s.ID||'')?'selected':''}>${esc(s.NOMBRE+' '+(s.APELLIDOS||''))}</option>`).join('');
+
+  openModal(isNew?'Nuevo alumno AMPA':'Editar alumno AMPA',`
+    <div class="form-grid">
+      <div class="field"><label>Nombre alumno <span class="req">*</span></label>
+        <input id="aa-nom" class="upper" value="${esc(a.NOMBRE_ALUMNO||'')}"></div>
+      <div class="field"><label>Apellidos alumno</label>
+        <input id="aa-ape" class="upper" value="${esc(a.APELLIDOS_ALUMNO||'')}"></div>
+      <div class="field span2"><label>Socio / familia</label>
+        <select id="aa-soc"><option value="">— Sin socio vinculado —</option>${opsSoc}</select></div>
+      <div class="field"><label>Actividad</label>
+        <input id="aa-act" class="upper" value="${esc(a.ACTIVIDAD||'')}"></div>
+      <div class="field"><label>Centro</label>
+        <input id="aa-centro" class="upper" value="${esc(a.CENTRO||'')}"></div>
+      <div class="field"><label>Estado</label>
+        <select id="aa-est">
+          <option value="ACTIVO" ${(a.ESTADO||'ACTIVO')==='ACTIVO'?'selected':''}>Activo</option>
+          <option value="BAJA"   ${a.ESTADO==='BAJA'?'selected':''}>Baja</option>
+        </select></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarAmpaAlumno(${isNew?'null':`'${id}'`})">Guardar</button>`);
+  ['aa-nom','aa-ape','aa-act','aa-centro'].forEach(i2=>{
+    const el=document.getElementById(i2);
+    if(el)el.addEventListener('input',function(){const p2=this.selectionStart;this.value=this.value.toUpperCase();try{this.setSelectionRange(p2,p2)}catch(_){}});
+  });
+}
+
+function guardarAmpaAlumno(id) {
+  const nombre = document.getElementById('aa-nom').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
+  const row = {
+    NOMBRE_ALUMNO:    nombre,
+    APELLIDOS_ALUMNO: document.getElementById('aa-ape').value.trim(),
+    ID_SOCIO:         document.getElementById('aa-soc').value,
+    ACTIVIDAD:        document.getElementById('aa-act').value.trim(),
+    CENTRO:           document.getElementById('aa-centro').value.trim(),
+    ESTADO:           document.getElementById('aa-est').value,
+  };
+  writeToSheet('AMPA_ALUMNOS', row, id)
+    .then(()=>{ showToast('Alumno AMPA guardado'); closeModal(); loadAllData().then(ampaAlumnos); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
+}
 function configuracion()    {
   render(`<div class="card">
     <div class="card-title">Configuración del sistema</div>
