@@ -2664,10 +2664,20 @@ function configuracion() {
 
 function testGAS() {
   const el = document.getElementById('gas-test-result');
-  if (el) el.textContent = 'Probando…';
+  if (el) el.textContent = 'Probando conexión…';
   gasRequest('PING', {}, 10000)
-    .then(r => { if(el) el.innerHTML = r.ok ? '<span style="color:var(--g2)">✓ GAS responde correctamente</span>' : '<span style="color:var(--red)">✗ GAS devolvió error: '+esc(r.error||'desconocido')+'</span>'; })
-    .catch(() => { if(el) el.innerHTML = '<span style="color:var(--red)">✗ No se pudo conectar al GAS (timeout o red)</span>'; });
+    .then(r => {
+      if (!el) return;
+      if (r.ok) {
+        el.innerHTML = '<span style="color:var(--g2)">✓ GAS responde correctamente</span>';
+      } else if (String(r.error||'').includes('desconocida')) {
+        // GAS conectado pero sin acción PING — la comunicación JSONP funciona
+        el.innerHTML = '<span style="color:var(--g2)">✓ GAS conectado y respondiendo (añade la acción PING al script para el chequeo completo)</span>';
+      } else {
+        el.innerHTML = '<span style="color:var(--red)">✗ ' + esc(r.error||'Error desconocido') + '</span>';
+      }
+    })
+    .catch(() => { if(el) el.innerHTML = '<span style="color:var(--red)">✗ Sin respuesta (timeout o red)</span>'; });
 }
 
 function testEmailJS() {
