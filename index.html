@@ -1667,7 +1667,7 @@ async function saveFactura(isNew, id) {
     const sorted = [...DB.facturas].sort((a,b)=>String(a.FECHA)<String(b.FECHA)?-1:1);
     huellaAnt = sorted[sorted.length-1].HUELLA || '0'.repeat(64);
   }
-  const numFac = id || ('FAC-' + String(DB.facturas.length+1).padStart(3,'0'));
+  const numFac = id || ('SM-' + String(DB.facturas.length+1).padStart(3,'0'));
   const cadena = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${huellaAnt}`;
   const huella = await sha256hex(cadena);
   const row = {
