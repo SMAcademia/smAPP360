@@ -2990,10 +2990,13 @@ function modalSesion(s) {
   const fechaVal = s.FECHA || new Date().toISOString().slice(0,10);
   const entrenadores = DB.personal.filter(p=>['ENTRENADOR','ADMIN','COORDINADOR'].includes(String(p.ROL||'').toUpperCase()))
     .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(s.ID_ENTRENADOR||'')===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
-  const actFutbol = DB.actividades.filter(a => esFutbol(a.LINEA||'') || esFutbol(a.NOMBRE||'') || String(a.TIPO||'').toUpperCase().includes('TECNIF'));
-  const grupoOpts = actFutbol.length > 0
-    ? actFutbol.map(a => `<option value="${esc(a.NOMBRE)}" ${s.GRUPO===a.NOMBRE?'selected':''}>${esc(a.NOMBRE)}</option>`)
-    : ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Lunes y Miércoles','Martes y Jueves','Martes y Viernes'].map(d => `<option value="${d}" ${s.GRUPO===d?'selected':''}>${d}</option>`);
+  const GRUPOS_DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado',
+    'Lunes y Miércoles','Martes y Jueves','Martes y Viernes','Lunes, Miércoles y Viernes'];
+  const DAYS_ES = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const dFecha = fechaVal ? new Date(fechaVal + 'T12:00:00') : null;
+  const dayName = dFecha && !isNaN(dFecha) ? DAYS_ES[dFecha.getDay()] : '';
+  const grupoDefault = s.GRUPO || dayName;
+  const grupoOpts = GRUPOS_DIAS.map(g => `<option value="${g}" ${grupoDefault===g?'selected':''}>${g}</option>`);
   const val = parseInt(s.VALORACION)||0;
   const LABELS_VAL = ['Mejorable','Regular','Bueno','Excelente'];
 
@@ -3037,10 +3040,17 @@ function modalSesion(s) {
 function updateSesionDia() {
   const fEl = document.getElementById('ses-fecha');
   const dEl = document.getElementById('ses-dia');
-  if (!fEl||!dEl) return;
+  const gEl = document.getElementById('ses-grupo');
+  if (!fEl) return;
   const DAYS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const DIAS_SIMPLES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const d = fEl.value ? new Date(fEl.value + 'T12:00:00') : null;
-  dEl.textContent = d && !isNaN(d) ? DAYS[d.getDay()] : '';
+  const dayName = d && !isNaN(d) ? DAYS[d.getDay()] : '';
+  if (dEl) dEl.textContent = '';  // ya se muestra en el selector
+  // Auto-seleccionar el día en el grupo solo si el valor actual es un día simple o está vacío
+  if (gEl && dayName && (!gEl.value || DIAS_SIMPLES.includes(gEl.value))) {
+    gEl.value = dayName;
+  }
 }
 
 function selectSesVal(v) {
