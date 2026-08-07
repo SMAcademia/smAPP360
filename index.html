@@ -2723,39 +2723,26 @@ function guardarAsistenciaExtra() {
 //  MÓDULO: ASISTENCIAS FÚTBOL
 // ══════════════════════════════════════════════════════════════════════════
 function asistenciasFutbol() {
-  const today = new Date().toISOString().slice(0,10);
-  window._afCalFiltro = -1;
-
-  const actividades = DB.actividades.filter(a =>
-    esFutbol(a.LINEA) && String(a.ACTIVA||'').toUpperCase().startsWith('S')
-  );
-  const DIAS_BTN = [['L',0],['M',1],['X',2],['J',3],['V',4],['S',5],['D',6]];
+  const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const sesionesOrd = [...DB.sesiones].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')));
 
   render(`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="card">
         <div class="card-title">Pase de lista</div>
         <div class="field" style="margin-bottom:14px">
-          <label>Grupo / Sesión</label>
-          <select id="af-act" onchange="cargarListaFutbol()">
-            <option value="">— Selecciona grupo —</option>
-            ${actividades.map(a=>`<option value="${a.ID}">⚽ ${esc(a.NOMBRE)}</option>`).join('')}
+          <label>Sesión</label>
+          <select id="af-ses" onchange="cargarListaFutbol()">
+            <option value="">— Selecciona sesión —</option>
+            ${sesionesOrd.map(s=>{
+              const d = s.FECHA ? new Date(s.FECHA+'T12:00:00') : null;
+              const dia = d&&!isNaN(d) ? DAYS[d.getDay()] : '';
+              const hora = s.HORA_INICIO ? ' · '+s.HORA_INICIO : '';
+              return `<option value="${esc(s.ID)}">${esc(s.ID)} — ${dia} ${fmtFecha(s.FECHA)}${hora}</option>`;
+            }).join('')}
           </select>
         </div>
-        <div class="field" style="margin-bottom:14px">
-          <label>Sesión</label>
-          <div style="border:1px solid var(--border);border-radius:var(--r);padding:10px;background:var(--bg)">
-            <div style="display:flex;gap:4px;margin-bottom:8px;align-items:center">
-              ${DIAS_BTN.map(([l,i])=>`<button id="afb-${i}" type="button" onclick="afFiltrarDia(${i})"
-                style="padding:3px 8px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;border:1.5px solid var(--border);background:var(--bg);color:var(--text2)">${l}</button>`).join('')}
-              <button id="afb-all" type="button" onclick="afFiltrarDia(-1)"
-                style="padding:3px 8px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;border:1.5px solid var(--green);background:var(--green);color:white;margin-left:auto">Todos</button>
-            </div>
-            <div id="af-cal">${afRenderCal(today,-1)}</div>
-          </div>
-          <input id="af-fecha" type="date" value="${today}" onchange="afFechaManual()" style="margin-top:6px;font-size:12px">
-        </div>
-        <div id="lista-alumnos-futbol"><p style="color:var(--text3);font-size:13px">Selecciona un grupo y una sesión para ver el listado.</p></div>
+        <div id="lista-alumnos-futbol"><p style="color:var(--text3);font-size:13px">Selecciona una sesión para ver el listado.</p></div>
         <div id="af-guardar-wrap" style="display:none;margin-top:16px">
           <div class="field" style="margin-bottom:10px">
             <label>Observaciones del entrenamiento</label>
@@ -2768,22 +2755,18 @@ function asistenciasFutbol() {
         <div class="card-title">Últimos entrenamientos</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Fecha</th><th>Día</th><th>Grupo</th><th>Asistencia</th></tr></thead>
+            <thead><tr><th>Sesión</th><th>Fecha</th><th>Asistencia</th></tr></thead>
             <tbody>
               ${(()=>{
-                const DAYS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-                return DB.asistenciasFutbol.slice(-20).reverse().map(a=>{
-                  const act=DB.actividades.find(x=>String(x.ID)===String(a.ID_ACTIVIDAD));
+                return [...DB.asistenciasFutbol].reverse().slice(0,20).map(a=>{
+                  const ses = DB.sesiones.find(s=>String(s.ID)===String(a.ID_SESION));
                   const pct = a.TOTAL_ALUMNOS>0 ? Math.round(a.TOTAL_PRESENTES/a.TOTAL_ALUMNOS*100) : 0;
-                  const d = a.FECHA ? new Date(a.FECHA+'T12:00:00') : null;
-                  const dia = d&&!isNaN(d) ? DAYS[d.getDay()] : '—';
                   return `<tr>
-                    <td>${fmtFecha(a.FECHA)}</td>
-                    <td><strong>${dia}</strong></td>
-                    <td>${act?esc(act.NOMBRE):esc(a.ID_ACTIVIDAD||'—')}</td>
+                    <td class="mono">${esc(a.ID_SESION||'—')}</td>
+                    <td>${fmtFecha(ses?.FECHA||a.FECHA)}</td>
                     <td><strong>${a.TOTAL_PRESENTES||0}/${a.TOTAL_ALUMNOS||0}</strong> <span style="color:var(--text3)">(${pct}%)</span></td>
                   </tr>`;
-                }).join('') || '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px">Sin registros</td></tr>';
+                }).join('') || '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px">Sin registros</td></tr>';
               })()}
             </tbody>
           </table>
@@ -2792,93 +2775,33 @@ function asistenciasFutbol() {
     </div>`);
 }
 
-function afRenderCal(selectedDate, filtDia) {
-  const ref = new Date();
-  const y = ref.getFullYear();
-  const m = ref.getMonth();
-  const sessionDates = new Set(DB.sesiones.map(s=>s.FECHA).filter(Boolean));
-  const firstDay = new Date(y, m, 1);
-  const lastDay  = new Date(y, m + 1, 0);
-  const startDow = (firstDay.getDay() + 6) % 7; // Lun=0
-  const HDR = ['L','M','X','J','V','S','D'];
-  const MES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  let cells = '';
-  for (let i = 0; i < startDow; i++) cells += '<div></div>';
-  for (let d = 1; d <= lastDay.getDate(); d++) {
-    const ds  = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dow = (startDow + d - 1) % 7;
-    const hasSes   = sessionDates.has(ds);
-    const matchFil = filtDia < 0 || dow === filtDia;
-    const isSel    = ds === selectedDate;
-    const active   = hasSes && matchFil;
-    cells += `<div onclick="${active?`afSetFecha('${ds}')`:''}"
-      title="${active?ds:''}"
-      style="text-align:center;padding:5px 1px;font-size:11px;border-radius:3px;
-        cursor:${active?'pointer':'default'};
-        background:${isSel?'var(--green-d)':active?'var(--green)':'transparent'};
-        color:${isSel||active?'white':dow>=6?'var(--text3)':'var(--text)'};
-        opacity:${hasSes&&!matchFil?0.25:1};
-        font-weight:${active?600:400}">${d}</div>`;
-  }
-  return `
-    <div style="font-size:11px;font-weight:600;text-align:center;color:var(--text2);margin-bottom:4px">${MES[m]} ${y}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;margin-bottom:2px">
-      ${HDR.map(h=>`<div style="text-align:center;font-size:10px;color:var(--text3)">${h}</div>`).join('')}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">${cells}</div>`;
-}
-
-function afFiltrarDia(dia) {
-  window._afCalFiltro = dia;
-  [0,1,2,3,4,5].forEach(i => {
-    const b = document.getElementById(`afb-${i}`);
-    if (!b) return;
-    b.style.background   = i===dia ? 'var(--green)' : 'var(--bg)';
-    b.style.color        = i===dia ? 'white' : 'var(--text2)';
-    b.style.borderColor  = i===dia ? 'var(--green)' : 'var(--border)';
-  });
-  const ball = document.getElementById('afb-all');
-  if (ball) {
-    ball.style.background  = dia<0 ? 'var(--green)' : 'var(--bg)';
-    ball.style.color       = dia<0 ? 'white' : 'var(--text2)';
-    ball.style.borderColor = dia<0 ? 'var(--green)' : 'var(--border)';
-  }
-  const fecha = document.getElementById('af-fecha')?.value || new Date().toISOString().slice(0,10);
-  const cal = document.getElementById('af-cal');
-  if (cal) cal.innerHTML = afRenderCal(fecha, dia);
-}
-
-function afSetFecha(date) {
-  const el = document.getElementById('af-fecha');
-  if (el) el.value = date;
-  const cal = document.getElementById('af-cal');
-  if (cal) cal.innerHTML = afRenderCal(date, window._afCalFiltro ?? -1);
-  cargarListaFutbol();
-}
-
-function afFechaManual() {
-  const fecha = document.getElementById('af-fecha')?.value || '';
-  const cal = document.getElementById('af-cal');
-  if (cal) cal.innerHTML = afRenderCal(fecha, window._afCalFiltro ?? -1);
-  cargarListaFutbol();
-}
-
 function cargarListaFutbol() {
-  const actId = document.getElementById('af-act')?.value;
-  const fecha  = document.getElementById('af-fecha')?.value;
-  const cont   = document.getElementById('lista-alumnos-futbol');
-  const wrap   = document.getElementById('af-guardar-wrap');
-  if (!actId||!cont) return;
+  const sesId = document.getElementById('af-ses')?.value;
+  const cont  = document.getElementById('lista-alumnos-futbol');
+  const wrap  = document.getElementById('af-guardar-wrap');
+  if (!sesId || !cont) return;
 
-  const inscs   = DB.inscripciones.filter(i => String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA');
-  const alumnos = inscs.map(i=>DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(i.ID_ALUMNO))).filter(Boolean);
+  // Todos los alumnos con inscripción activa en cualquier actividad de fútbol/tecnificación
+  const idsSeen = new Set();
+  const alumnos = DB.inscripciones
+    .filter(i => {
+      const act = DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD));
+      return act && esFutbol(act.LINEA||'') && String(i.ESTADO||'').toUpperCase()==='ACTIVA';
+    })
+    .map(i => DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(i.ID_ALUMNO)))
+    .filter(a => a && !idsSeen.has(String(a.ID_ALUMNO)) && idsSeen.add(String(a.ID_ALUMNO)))
+    .sort((a,b) => {
+      const na = (a.NOMBRE+' '+(a.APELLIDOS||'')).trim().toUpperCase();
+      const nb = (b.NOMBRE+' '+(b.APELLIDOS||'')).trim().toUpperCase();
+      return na.localeCompare(nb,'es');
+    });
 
   if (!alumnos.length) {
-    cont.innerHTML='<p style="color:var(--amber);font-size:13px">No hay alumnos inscritos en este grupo.</p>';
+    cont.innerHTML='<p style="color:var(--amber);font-size:13px">No hay alumnos inscritos en actividades de fútbol.</p>';
     if(wrap)wrap.style.display='none'; return;
   }
 
-  const prev    = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
+  const prev    = DB.asistenciasFutbol.find(a=>String(a.ID_SESION)===sesId);
   const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
   let prevEvals = {};
   try { prevEvals = JSON.parse(prev?.EVALUACIONES||'{}'); } catch(_) {}
@@ -2909,11 +2832,11 @@ function cargarListaFutbol() {
               <strong>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</strong>
             </label>
             <div style="margin-top:8px;padding-left:26px;display:grid;grid-template-columns:100px 1fr;gap:5px 8px;align-items:center;font-size:12px">
-              ${DIMS.map(d => `
+              ${DIMS.map(d=>`
                 <span style="color:var(--text3)">${d.label}</span>
                 <div style="display:flex;gap:4px">
-                  ${[1,2,3,4].map(v => {
-                    const sel = (ev[d.k]||0)===v;
+                  ${[1,2,3,4].map(v=>{
+                    const sel=(ev[d.k]||0)===v;
                     return `<button type="button" class="eval-b" data-alumno="${aId}" data-dim="${d.k}" data-val="${v}" ${sel?'data-sel="1"':''} onclick="setEval(this)"
                       style="width:26px;height:24px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;border:1.5px solid ${sel?'var(--green)':'var(--border)'};background:${sel?'var(--green)':'var(--bg)'};color:${sel?'white':'var(--text3)'}">${v}</button>`;
                   }).join('')}
@@ -2922,8 +2845,9 @@ function cargarListaFutbol() {
           </div>`;
       }).join('')}
     </div>
-    ${prev?'<div class="badge badge-amber" style="margin-top:8px">⚠️ Ya existe lista para esta fecha</div>':''}`;
+    ${prev?'<div class="badge badge-amber" style="margin-top:8px">⚠ Ya existe lista para esta sesión</div>':''}`;
   if(wrap)wrap.style.display='';
+  if(prev?.NOTAS){ const n=document.getElementById('af-notas'); if(n)n.value=prev.NOTAS; }
 }
 
 function marcarTodosFutbol(val) {
@@ -2931,12 +2855,12 @@ function marcarTodosFutbol(val) {
 }
 
 function guardarAsistenciaFutbol() {
-  const actId = document.getElementById('af-act')?.value;
-  const fecha  = document.getElementById('af-fecha')?.value;
-  if (!actId||!fecha) return;
+  const sesId  = document.getElementById('af-ses')?.value;
+  if (!sesId) return;
+  const sesion = DB.sesiones.find(s=>String(s.ID)===sesId);
   const checks    = [...document.querySelectorAll('#lista-checks-futbol input[type=checkbox]')];
   const presentes = checks.filter(c=>c.checked).map(c=>c.dataset.id);
-  const prev      = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
+  const prev      = DB.asistenciasFutbol.find(a=>String(a.ID_SESION)===sesId);
   const evalMap   = {};
   document.querySelectorAll('.eval-b[data-sel="1"]').forEach(btn => {
     const aId = btn.dataset.alumno;
@@ -2945,9 +2869,9 @@ function guardarAsistenciaFutbol() {
     evalMap[aId][dim] = parseInt(btn.dataset.val)||0;
   });
   const row = {
-    FECHA:             fecha,
+    FECHA:             sesion?.FECHA||'',
+    ID_SESION:         sesId,
     ID_MONITOR:        currentUser.id,
-    ID_ACTIVIDAD:      actId,
     ALUMNOS_PRESENTES: presentes.join(','),
     TOTAL_PRESENTES:   presentes.length,
     TOTAL_ALUMNOS:     checks.length,
