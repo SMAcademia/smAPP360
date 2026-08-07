@@ -2765,23 +2765,49 @@ function cargarListaFutbol() {
     if(wrap)wrap.style.display='none'; return;
   }
 
-  const prev = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
+  const prev    = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
   const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
+  let prevEvals = {};
+  try { prevEvals = JSON.parse(prev?.EVALUACIONES||'{}'); } catch(_) {}
+
+  const DIMS = [
+    {k:'tec', label:'Técnica'},
+    {k:'cj',  label:'Comprensión'},
+    {k:'soc', label:'Soc-emocional'},
+  ];
 
   cont.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:13px;color:var(--text3)">${alumnos.length} jugadores inscritos</span>
+      <span style="font-size:13px;color:var(--text3)">${alumnos.length} jugadores</span>
       <div>
         <button class="btn btn-sm btn-secondary" onclick="marcarTodosFutbol(true)">✓ Todos</button>
         <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="marcarTodosFutbol(false)">✗ Ninguno</button>
       </div>
     </div>
-    <div id="lista-checks-futbol" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-      ${alumnos.map(a=>`
-        <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid var(--border2);font-size:13px;${prevIds.includes(String(a.ID_ALUMNO))?'background:var(--g4)':''}">
-          <input type="checkbox" data-id="${a.ID_ALUMNO}" ${!prev||prevIds.includes(String(a.ID_ALUMNO))?'checked':''} style="width:16px;height:16px">
-          <span>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</span>
-        </label>`).join('')}
+    <div id="lista-checks-futbol" style="display:flex;flex-direction:column;gap:6px">
+      ${alumnos.map(a => {
+        const aId = String(a.ID_ALUMNO);
+        const checked = !prev || prevIds.includes(aId);
+        const ev = prevEvals[aId] || {};
+        return `
+          <div style="border:1px solid var(--border2);border-radius:6px;padding:8px 10px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+              <input type="checkbox" data-id="${aId}" ${checked?'checked':''} style="width:16px;height:16px">
+              <strong>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</strong>
+            </label>
+            <div style="margin-top:8px;padding-left:26px;display:grid;grid-template-columns:100px 1fr;gap:5px 8px;align-items:center;font-size:12px">
+              ${DIMS.map(d => `
+                <span style="color:var(--text3)">${d.label}</span>
+                <div style="display:flex;gap:4px">
+                  ${[1,2,3,4].map(v => {
+                    const sel = (ev[d.k]||0)===v;
+                    return `<button type="button" class="eval-b" data-alumno="${aId}" data-dim="${d.k}" data-val="${v}" ${sel?'data-sel="1"':''} onclick="setEval(this)"
+                      style="width:26px;height:24px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;border:1.5px solid ${sel?'var(--green)':'var(--border)'};background:${sel?'var(--green)':'var(--bg)'};color:${sel?'white':'var(--text3)'}">${v}</button>`;
+                  }).join('')}
+                </div>`).join('')}
+            </div>
+          </div>`;
+      }).join('')}
     </div>
     ${prev?'<div class="badge badge-amber" style="margin-top:8px">⚠️ Ya existe lista para esta fecha</div>':''}`;
   if(wrap)wrap.style.display='';
@@ -2798,6 +2824,13 @@ function guardarAsistenciaFutbol() {
   const checks    = [...document.querySelectorAll('#lista-checks-futbol input[type=checkbox]')];
   const presentes = checks.filter(c=>c.checked).map(c=>c.dataset.id);
   const prev      = DB.asistenciasFutbol.find(a=>String(a.ID_ACTIVIDAD)===actId&&String(a.FECHA)===fecha);
+  const evalMap   = {};
+  document.querySelectorAll('.eval-b[data-sel="1"]').forEach(btn => {
+    const aId = btn.dataset.alumno;
+    const dim  = btn.dataset.dim;
+    if (!evalMap[aId]) evalMap[aId] = {};
+    evalMap[aId][dim] = parseInt(btn.dataset.val)||0;
+  });
   const row = {
     FECHA:             fecha,
     ID_MONITOR:        currentUser.id,
@@ -2806,10 +2839,26 @@ function guardarAsistenciaFutbol() {
     TOTAL_PRESENTES:   presentes.length,
     TOTAL_ALUMNOS:     checks.length,
     NOTAS:             document.getElementById('af-notas')?.value.trim()||'',
+    EVALUACIONES:      JSON.stringify(evalMap),
   };
   writeToSheet('ASISTENCIAS_FUTBOL', row, prev?.ID||null)
   .then(()=>{ showToast(`Asistencia guardada — ${presentes.length}/${checks.length}`); loadAllData().then(asistenciasFutbol); })
   .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+function setEval(btn) {
+  const aId = btn.dataset.alumno;
+  const dim  = btn.dataset.dim;
+  document.querySelectorAll(`.eval-b[data-alumno="${aId}"][data-dim="${dim}"]`).forEach(b => {
+    delete b.dataset.sel;
+    b.style.borderColor = 'var(--border)';
+    b.style.background  = 'var(--bg)';
+    b.style.color       = 'var(--text3)';
+  });
+  btn.dataset.sel      = '1';
+  btn.style.borderColor = 'var(--green)';
+  btn.style.background  = 'var(--green)';
+  btn.style.color       = 'white';
 }
 
 function configuracion() {
@@ -2900,13 +2949,13 @@ function testEmailJS() {
 // ══════════════════════════════════════════════════════════════════════════
 function sesiones() {
   const puedeCrea = isAdmin() || isEntrenador();
-  if (puedeCrea) topbarBtn('+ Nueva sesión', () => modalSesion());
+  if (puedeCrea) topbarBtn('+ Registrar sesión', () => modalSesion());
   const lista = isAdmin()
     ? DB.sesiones
     : DB.sesiones.filter(s => String(s.ID_ENTRENADOR||'') === String(currentUser.id||''));
   const rows = lista.map(s => {
-    const est = String(s.ESTADO||'PROGRAMADA').toUpperCase();
-    const badgeE = est==='REALIZADA' ? 'badge-green' : est==='CANCELADA' ? 'badge-red' : 'badge-blue';
+    const val = parseInt(s.VALORACION)||0;
+    const estrellas = val > 0 ? '★'.repeat(val)+'☆'.repeat(4-val) : '—';
     const ent = DB.personal.find(p=>String(p.ID_MONITOR)===String(s.ID_ENTRENADOR));
     return `<tr>
       <td class="mono">${esc(s.ID||'')}</td>
@@ -2916,7 +2965,7 @@ function sesiones() {
       <td>${esc(ent ? (ent.NOMBRE+' '+(ent.APELLIDOS||'')).trim() : s.ID_ENTRENADOR||'—')}</td>
       <td>${esc(s.LUGAR||'—')}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.DESCRIPCION||'—')}</td>
-      <td><span class="badge ${badgeE}">${esc(est)}</span></td>
+      <td style="color:var(--amber);letter-spacing:-1px">${estrellas}</td>
       ${puedeCrea ? `<td><button class="btn btn-sm btn-secondary" onclick='modalSesion(${JSON.stringify(s)})'>Editar</button></td>` : '<td></td>'}
     </tr>`;
   }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">⚽</div><p>Sin sesiones registradas</p></div></td></tr>`;
@@ -2928,7 +2977,7 @@ function sesiones() {
       </div>
       <div class="table-wrap">
         <table id="tbl-ses">
-          <thead><tr><th>ID</th><th>Fecha</th><th>Horario</th><th>Grupo</th><th>Entrenador</th><th>Lugar</th><th>Descripción</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Fecha</th><th>Horario</th><th>Grupo</th><th>Entrenador</th><th>Lugar</th><th>Descripción</th><th>Valoración</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -2938,39 +2987,72 @@ function sesiones() {
 function modalSesion(s) {
   s = s || {};
   const isNew = !s.ID;
+  const fechaVal = s.FECHA || new Date().toISOString().slice(0,10);
   const entrenadores = DB.personal.filter(p=>['ENTRENADOR','ADMIN','COORDINADOR'].includes(String(p.ROL||'').toUpperCase()))
-    .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(s.ID_ENTRENADOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
-  openModal(isNew ? 'Nueva sesión' : 'Editar sesión', `
+    .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(s.ID_ENTRENADOR||'')===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
+  const actFutbol = DB.actividades.filter(a => esFutbol(a.LINEA||'') || esFutbol(a.NOMBRE||'') || String(a.TIPO||'').toUpperCase().includes('TECNIF'));
+  const grupoOpts = actFutbol.length > 0
+    ? actFutbol.map(a => `<option value="${esc(a.NOMBRE)}" ${s.GRUPO===a.NOMBRE?'selected':''}>${esc(a.NOMBRE)}</option>`)
+    : ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Lunes y Miércoles','Martes y Jueves','Martes y Viernes'].map(d => `<option value="${d}" ${s.GRUPO===d?'selected':''}>${d}</option>`);
+  const val = parseInt(s.VALORACION)||0;
+  const LABELS_VAL = ['Mejorable','Regular','Bueno','Excelente'];
+
+  openModal(isNew ? 'Registrar sesión' : 'Editar sesión', `
     <div class="form-grid">
       <div class="field"><label>Fecha <span class="req">*</span></label>
-        <input type="date" id="ses-fecha" value="${esc(s.FECHA||new Date().toISOString().slice(0,10))}"></div>
+        <input type="date" id="ses-fecha" value="${esc(fechaVal)}" oninput="updateSesionDia()">
+        <div id="ses-dia" style="font-size:12px;color:var(--text3);margin-top:3px"></div>
+      </div>
       <div class="field"><label>Hora inicio</label>
-        <input type="time" id="ses-hi" value="${esc(s.HORA_INICIO||'')}"></div>
+        <input type="time" id="ses-hi" value="${esc(s.HORA_INICIO||'17:00')}"></div>
       <div class="field"><label>Hora fin</label>
-        <input type="time" id="ses-hf" value="${esc(s.HORA_FIN||'')}"></div>
-      <div class="field"><label>Grupo / día <span class="req">*</span></label>
-        <select id="ses-grupo">
-          ${(() => {
-            const actFutbol = DB.actividades.filter(a => esFutbol(a.LINEA) || esFutbol(a.NOMBRE) || String(a.TIPO||'').toUpperCase().includes('TECNIF'));
-            const opts = actFutbol.length > 0
-              ? actFutbol.map(a => `<option value="${esc(a.NOMBRE)}" ${s.GRUPO===a.NOMBRE?'selected':''}>${esc(a.NOMBRE)}</option>`)
-              : ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Lunes y Miércoles','Martes y Jueves','Martes y Viernes'].map(d => `<option value="${d}" ${s.GRUPO===d?'selected':''}>${d}</option>`);
-            return opts.join('');
-          })()}
-        </select></div>
+        <input type="time" id="ses-hf" value="${esc(s.HORA_FIN||'18:30')}"></div>
+      <div class="field"><label>Grupo <span class="req">*</span></label>
+        <select id="ses-grupo">${grupoOpts.join('')}</select></div>
       <div class="field"><label>Entrenador</label>
         <select id="ses-ent">${entrenadores}</select></div>
       <div class="field"><label>Lugar</label>
         <input id="ses-lugar" value="${esc(s.LUGAR||'')}"></div>
       <div class="field" style="grid-column:span 2"><label>Descripción / contenido</label>
         <input id="ses-desc" value="${esc(s.DESCRIPCION||'')}"></div>
-      <div class="field"><label>Estado</label>
-        <select id="ses-estado">
-          ${['PROGRAMADA','REALIZADA','CANCELADA'].map(e=>`<option value="${e}" ${(s.ESTADO||'PROGRAMADA')===e?'selected':''}>${e}</option>`).join('')}
-        </select></div>
+      <div class="field" style="grid-column:span 2">
+        <label>Autoevaluación del entrenador</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          ${[1,2,3,4].map(v=>`
+            <button id="ses-val-${v}" type="button" onclick="selectSesVal(${v})"
+              style="flex:1;padding:8px 4px;border:2px solid ${val===v?'var(--green)':'var(--border)'};border-radius:6px;background:${val===v?'var(--green-l)':'var(--bg)'};cursor:pointer;text-align:center;font-size:12px;font-weight:${val===v?700:400};transition:all .15s">
+              <div style="font-size:18px;letter-spacing:-2px">${'★'.repeat(v)}${'☆'.repeat(4-v)}</div>
+              <div style="color:var(--text3);font-size:11px;margin-top:2px">${LABELS_VAL[v-1]}</div>
+            </button>`).join('')}
+        </div>
+        <input type="hidden" id="ses-val" value="${val||''}">
+      </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="saveSesion(${isNew},${JSON.stringify(s.ID||null)})">${isNew?'Crear sesión':'Guardar'}</button>`);
+     <button class="btn btn-primary" onclick="saveSesion(${isNew},${JSON.stringify(s.ID||null)})">${isNew?'Guardar sesión':'Actualizar'}</button>`);
+
+  updateSesionDia();
+}
+
+function updateSesionDia() {
+  const fEl = document.getElementById('ses-fecha');
+  const dEl = document.getElementById('ses-dia');
+  if (!fEl||!dEl) return;
+  const DAYS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const d = fEl.value ? new Date(fEl.value + 'T12:00:00') : null;
+  dEl.textContent = d && !isNaN(d) ? DAYS[d.getDay()] : '';
+}
+
+function selectSesVal(v) {
+  [1,2,3,4].forEach(n => {
+    const b = document.getElementById(`ses-val-${n}`);
+    if (!b) return;
+    b.style.borderColor  = n===v ? 'var(--green)' : 'var(--border)';
+    b.style.background   = n===v ? 'var(--green-l)' : 'var(--bg)';
+    b.style.fontWeight   = n===v ? '700' : '400';
+  });
+  const hi = document.getElementById('ses-val');
+  if (hi) hi.value = v;
 }
 
 function saveSesion(isNew, id) {
@@ -2978,17 +3060,18 @@ function saveSesion(isNew, id) {
   const grupo  = document.getElementById('ses-grupo')?.value||'';
   if (!fecha||!grupo) { showToast('Fecha y grupo son obligatorios','error'); return; }
   const row = {
-    FECHA:       fecha,
-    HORA_INICIO: document.getElementById('ses-hi')?.value||'',
-    HORA_FIN:    document.getElementById('ses-hf')?.value||'',
-    GRUPO:       grupo,
+    FECHA:         fecha,
+    HORA_INICIO:   document.getElementById('ses-hi')?.value||'',
+    HORA_FIN:      document.getElementById('ses-hf')?.value||'',
+    GRUPO:         grupo,
     ID_ENTRENADOR: document.getElementById('ses-ent')?.value||'',
-    LUGAR:       document.getElementById('ses-lugar')?.value.trim()||'',
-    DESCRIPCION: document.getElementById('ses-desc')?.value.trim()||'',
-    ESTADO:      document.getElementById('ses-estado')?.value||'PROGRAMADA',
+    LUGAR:         document.getElementById('ses-lugar')?.value.trim()||'',
+    DESCRIPCION:   document.getElementById('ses-desc')?.value.trim()||'',
+    ESTADO:        'REALIZADA',
+    VALORACION:    document.getElementById('ses-val')?.value||'',
   };
   writeToSheet('SESIONES', row, isNew ? null : id)
-    .then(()=>{ showToast(isNew?'Sesión creada':'Sesión actualizada'); closeModal(); loadAllData().then(sesiones); })
+    .then(()=>{ showToast(isNew?'Sesión registrada':'Sesión actualizada'); closeModal(); loadAllData().then(sesiones); })
     .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
@@ -3091,91 +3174,200 @@ function saveAusencia(isNew, id) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  MÓDULO: PORTAL FAMILIA (solo lectura)
+//  MÓDULO: PORTAL FAMILIA
 // ══════════════════════════════════════════════════════════════════════════
 function portalFamilia() {
+  const today = new Date().toISOString().slice(0,10);
   const email = currentUser?.email?.toLowerCase()||'';
-  const cli = DB.clientes.find(c=>String(c.EMAIL||'').toLowerCase()===email);
+  const cli   = DB.clientes.find(c=>String(c.EMAIL||'').toLowerCase()===email);
 
   if (!cli) {
     render(`<div class="stub">
       <div class="stub-icon">🏠</div>
       <h2>Bienvenido al Portal Familia</h2>
-      <p>No encontramos un perfil de cliente vinculado a <strong>${esc(email)}</strong>.<br>
+      <p>No encontramos un perfil vinculado a <strong>${esc(email)}</strong>.<br>
       Contacta con la academia para que vinculen tu cuenta.</p>
     </div>`);
     return;
   }
 
-  const misAlumnos = DB.alumnos.filter(a=>String(a.ID_CLIENTE||'')===String(cli.ID));
-  const idsAlumnos = new Set(misAlumnos.map(a=>String(a.ID)));
-  const misInsc    = DB.inscripciones.filter(i=>idsAlumnos.has(String(i.ID_ALUMNO||'')));
-  const misPagos   = DB.pagos.filter(p=>String(p.ID_CLIENTE||'')===String(cli.ID));
+  const cliId      = String(cli.ID||cli.ID_CLIENTE||'');
+  const misAlumnos = DB.alumnos.filter(a=>String(a.ID_CLIENTE||'')===cliId);
 
-  const rowsAlumnos = misAlumnos.map(a=>`
-    <tr>
-      <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
-      <td>${fmtFecha(a.FECHA_NAC)}</td>
-      <td>${esc(a.CURSO_ESCOLAR||'—')}</td>
-    </tr>`).join('') || `<tr><td colspan="3"><div class="empty"><p>Sin alumnos registrados</p></div></td></tr>`;
+  if (!misAlumnos.length) {
+    render(`<div class="stub"><div class="stub-icon">🎒</div><h2>Sin alumnos registrados</h2><p>Contacta con la academia.</p></div>`);
+    return;
+  }
 
-  const rowsInsc = misInsc.map(i=>{
-    const alum = DB.alumnos.find(a=>String(a.ID)===String(i.ID_ALUMNO));
-    const act  = DB.actividades.find(ac=>String(ac.ID)===String(i.ID_ACTIVIDAD));
-    const est  = String(i.ESTADO||'').toUpperCase();
-    const badgeE = est==='ACTIVA'?'badge-green':est==='BAJA'?'badge-red':'badge-amber';
-    return `<tr>
-      <td>${esc(alum?(alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim():i.ID_ALUMNO||'—')}</td>
-      <td>${esc(act?act.NOMBRE:i.ID_ACTIVIDAD||'—')}</td>
-      <td>${fmtFecha(i.FECHA_ALTA)}</td>
-      <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}</td>
-      <td><span class="badge ${badgeE}">${esc(est||'—')}</span></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="5"><div class="empty"><p>Sin inscripciones</p></div></td></tr>`;
+  const CARAS = [{v:'1',e:'😔',l:'Regular'},{v:'2',e:'😊',l:'Bien'},{v:'3',e:'🤩',l:'Genial'}];
 
-  const rowsPagos = misPagos.map(p=>{
-    const est = String(p.ESTADO||'').toUpperCase();
-    const badgeE = est==='PAGADO'?'badge-green':est==='PENDIENTE'?'badge-amber':'badge-red';
-    return `<tr>
-      <td>${fmtFecha(p.FECHA)}</td>
-      <td>${esc(p.CONCEPTO||'—')}</td>
-      <td class="mono">${fmtEur(p.TOTAL_FACTURADO)}</td>
-      <td class="mono" style="color:var(--g2)">${fmtEur(p.TOTAL_RECIBIDO)}</td>
-      <td><span class="badge ${badgeE}">${esc(est||'—')}</span></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="5"><div class="empty"><p>Sin pagos registrados</p></div></td></tr>`;
+  const tarjetas = misAlumnos.map(alumno => {
+    const aId   = String(alumno.ID_ALUMNO||alumno.ID||'');
+    const inscs = DB.inscripciones.filter(i =>
+      String(i.ID_ALUMNO||'')===aId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
+    );
 
-  const pendiente = misPagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
+    const actHoy = inscs.map(insc => {
+      const act = DB.actividades.find(a=>String(a.ID||'')===String(insc.ID_ACTIVIDAD||''));
+      if (!act) return null;
+      const linea = act.LINEA||act.NOMBRE||'';
+      if (esFutbol(linea)) {
+        const asist = DB.asistenciasFutbol.find(af =>
+          String(af.ID_ACTIVIDAD||'')===String(act.ID||'') && String(af.FECHA||'')===today
+        );
+        if (!asist) return null;
+        const presentes = String(asist.ALUMNOS_PRESENTES||'').split(',').filter(Boolean);
+        if (!presentes.includes(aId)) return null;
+        return {act, icono:'⚽'};
+      } else if (esExtraescolar(linea)) {
+        const asist = DB.asistenciasExtra.find(ae =>
+          String(ae.ID_ACTIVIDAD||'')===String(act.ID||'') && String(ae.FECHA||'')===today
+        );
+        if (!asist) return null;
+        return {act, icono:'🎨'};
+      }
+      return null;
+    }).filter(Boolean);
+
+    const nombre = `${alumno.NOMBRE||''} ${alumno.APELLIDOS||''}`.trim();
+    let edad = '';
+    if (alumno.FECHA_NAC) {
+      const d = new Date(alumno.FECHA_NAC);
+      const a = Math.floor((new Date()-d)/(365.25*24*3600*1000));
+      if (!isNaN(a)&&a>0) edad = `${a} años`;
+    }
+    const curso = alumno.CURSO_ESCOLAR||'';
+    const hasSep = actHoy.length > 0;
+
+    const bloques = actHoy.length > 0
+      ? actHoy.map((item, idx) => {
+          const actId = String(item.act.ID||'');
+          const rKey  = `sm_fam_val_${aId}_${actId}_${today}`;
+          const saved = (() => { try { return localStorage.getItem(rKey); } catch(_) { return null; } })();
+          const cara  = CARAS.find(c=>c.v===saved);
+
+          const ratingHtml = saved
+            ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--green-l);border-radius:8px">
+                <span style="font-size:30px">${cara.e}</span>
+                <div>
+                  <div style="font-weight:600">${cara.l}</div>
+                  <div style="font-size:11px;color:var(--text3)">Valorado hoy ✓</div>
+                </div>
+               </div>`
+            : `<div>
+                <p style="margin:0 0 8px;font-size:13px;color:var(--text2)">¿Cómo fue ${esFutbol(item.act.LINEA||'')?'el entrenamiento':'la actividad'}?</p>
+                <div style="display:flex;gap:8px">
+                  ${CARAS.map(c=>`
+                    <button onclick="famRating('${aId}','${actId}','${c.v}')" type="button"
+                      style="flex:1;padding:10px 6px;border:2px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;text-align:center;transition:border-color .15s">
+                      <div style="font-size:28px">${c.e}</div>
+                      <div style="font-size:11px;color:var(--text2);margin-top:3px">${c.l}</div>
+                    </button>`).join('')}
+                </div>
+               </div>`;
+
+          const sep = idx > 0 ? '<div style="border-top:1px dashed var(--border);margin:12px 0"></div>' : '';
+          return `${sep}
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:6px">${item.icono} ${esc(item.act.NOMBRE||'')}</div>
+              ${ratingHtml}
+            </div>`;
+        }).join('')
+      : `<div style="text-align:center;padding:14px 0;color:var(--text3);font-size:13px">Sin sesión registrada hoy</div>`;
+
+    return `
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:12px;${hasSep?'padding-bottom:12px;border-bottom:1px solid var(--border2);margin-bottom:12px':''}">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--green-l);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚽</div>
+          <div>
+            <div style="font-weight:700;font-size:15px">${esc(nombre)}</div>
+            <div style="font-size:12px;color:var(--text3)">${[edad,curso].filter(Boolean).join(' · ')}</div>
+          </div>
+        </div>
+        ${bloques}
+      </div>`;
+  }).join('');
+
+  const alumnoIds  = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
+  const allInscs   = DB.inscripciones.filter(i=>alumnoIds.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA');
+  const cliPagos   = DB.pagos.filter(p=>String(p.ID_CLIENTE||'')===cliId);
+  const pendiente  = cliPagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
 
   render(`
-    <div class="kpi-row" style="margin-bottom:16px">
-      <div class="kpi"><div class="kpi-n">${misAlumnos.length}</div><div class="kpi-l">Alumnos</div></div>
-      <div class="kpi"><div class="kpi-n">${misInsc.filter(i=>String(i.ESTADO||'').toUpperCase()==='ACTIVA').length}</div><div class="kpi-l">Actividades activas</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(pendiente)}</div><div class="kpi-l">Pendiente de pago</div></div>
-    </div>
-    <div style="display:grid;gap:16px">
-      <div class="card">
-        <div class="card-title">Mis alumnos</div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Nombre</th><th>Fecha nac.</th><th>Curso escolar</th></tr></thead>
-          <tbody>${rowsAlumnos}</tbody>
-        </table></div>
+    <div style="max-width:520px;margin:0 auto">
+      <div class="kpi-row" style="margin-bottom:16px">
+        <div class="kpi"><div class="kpi-n">${misAlumnos.length}</div><div class="kpi-l">Alumnos</div></div>
+        <div class="kpi"><div class="kpi-n">${allInscs.length}</div><div class="kpi-l">Actividades activas</div></div>
+        <div class="kpi"><div class="kpi-n" style="${pendiente>0?'color:var(--amber)':''}">${fmtEur(pendiente)}</div><div class="kpi-l">Pendiente</div></div>
       </div>
-      <div class="card">
-        <div class="card-title">Inscripciones</div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Alumno</th><th>Actividad</th><th>Fecha alta</th><th>Precio</th><th>Estado</th></tr></thead>
-          <tbody>${rowsInsc}</tbody>
-        </table></div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
+        Valoraciones — ${fmtFecha(today)}
       </div>
-      <div class="card">
-        <div class="card-title">Pagos</div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Recibido</th><th>Estado</th></tr></thead>
-          <tbody>${rowsPagos}</tbody>
-        </table></div>
-      </div>
+      ${tarjetas}
+
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-weight:600;padding:10px 0;color:var(--text2);font-size:14px;list-style:none;display:flex;justify-content:space-between;align-items:center">
+          <span>Inscripciones y pagos</span><span style="color:var(--text3)">▸</span>
+        </summary>
+        <div style="margin-top:12px;display:grid;gap:12px">
+          <div class="card">
+            <div class="card-title">Mis alumnos</div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Nombre</th><th>Fecha nac.</th><th>Curso</th></tr></thead>
+              <tbody>
+                ${misAlumnos.map(a=>`<tr>
+                  <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
+                  <td>${fmtFecha(a.FECHA_NAC)}</td>
+                  <td>${esc(a.CURSO_ESCOLAR||'—')}</td>
+                </tr>`).join('')||'<tr><td colspan="3" class="text-muted" style="text-align:center;padding:12px">Sin alumnos</td></tr>'}
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Inscripciones</div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Alumno</th><th>Actividad</th><th>Estado</th></tr></thead>
+              <tbody>
+                ${DB.inscripciones.filter(i=>alumnoIds.has(String(i.ID_ALUMNO||''))).map(i=>{
+                  const alum = misAlumnos.find(a=>String(a.ID_ALUMNO||a.ID||'')===String(i.ID_ALUMNO||''));
+                  const act  = DB.actividades.find(a=>String(a.ID||'')===String(i.ID_ACTIVIDAD||''));
+                  const est  = String(i.ESTADO||'').toUpperCase();
+                  return `<tr>
+                    <td>${esc(alum?(alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim():'—')}</td>
+                    <td>${esc(act?act.NOMBRE:i.ID_ACTIVIDAD||'—')}</td>
+                    <td><span class="badge ${est==='ACTIVA'?'badge-green':est==='BAJA'?'badge-red':'badge-amber'}">${esc(est||'—')}</span></td>
+                  </tr>`;
+                }).join('')||'<tr><td colspan="3" class="text-muted" style="text-align:center;padding:12px">Sin inscripciones</td></tr>'}
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Pagos</div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Estado</th></tr></thead>
+              <tbody>
+                ${cliPagos.map(p=>{
+                  const est=String(p.ESTADO||'').toUpperCase();
+                  return `<tr>
+                    <td>${fmtFecha(p.FECHA)}</td>
+                    <td>${esc(p.CONCEPTO||'—')}</td>
+                    <td class="mono">${fmtEur(p.TOTAL_FACTURADO)}</td>
+                    <td><span class="badge ${est==='PAGADO'?'badge-green':est==='PENDIENTE'?'badge-amber':'badge-red'}">${esc(est||'—')}</span></td>
+                  </tr>`;
+                }).join('')||'<tr><td colspan="4" class="text-muted" style="text-align:center;padding:12px">Sin pagos</td></tr>'}
+              </tbody>
+            </table></div>
+          </div>
+        </div>
+      </details>
     </div>`);
+}
+
+function famRating(aId, actId, val) {
+  const today = new Date().toISOString().slice(0,10);
+  try { localStorage.setItem(`sm_fam_val_${aId}_${actId}_${today}`, val); } catch(_) {}
+  portalFamilia();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
