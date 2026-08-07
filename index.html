@@ -940,6 +940,7 @@ function dashboard() {
 //  MÓDULO: CLIENTES
 // ══════════════════════════════════════════════════════════════════════════
 function clientes() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo cliente', () => modalCliente());
 
   const rows = DB.clientes.map(c => `
@@ -1040,6 +1041,7 @@ function guardarCliente(id) {
 //  MÓDULO: ALUMNOS
 // ══════════════════════════════════════════════════════════════════════════
 function alumnos() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo alumno', () => modalAlumno());
 
   const rows = DB.alumnos.map(a => {
@@ -1144,6 +1146,7 @@ function guardarAlumno(id) {
 //  MÓDULO: ACTIVIDADES (catálogo)
 // ══════════════════════════════════════════════════════════════════════════
 function actividadesCatalogo() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva actividad', () => modalActividad());
 
   const rows = DB.actividades.map(a => `
@@ -1399,6 +1402,7 @@ function rechazarPreinsc(id) {
 //  MÓDULO: INSCRIPCIONES
 // ══════════════════════════════════════════════════════════════════════════
 function inscripciones() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva inscripción', () => modalInscripcion());
 
   let filtroLinea = 'TODAS';
@@ -1530,6 +1534,7 @@ function guardarInscripcion(id) {
 //  MÓDULO: PAGOS
 // ══════════════════════════════════════════════════════════════════════════
 function pagos() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Registrar pago', () => modalPago());
 
   const rows = DB.pagos.map(p => {
@@ -1636,6 +1641,7 @@ async function sha256hex(texto) {
 }
 
 function facturas() {
+  document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores.</p></div>'); return; }
   topbarBtn('+ Nueva factura', () => modalFactura());
 
@@ -1767,6 +1773,7 @@ async function saveFactura(isNew, id) {
 //  MÓDULO: PERSONAL
 // ══════════════════════════════════════════════════════════════════════════
 function personal() {
+  document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores y coordinadores.</p></div>'); return; }
   topbarBtn('+ Nuevo trabajador', () => modalPersonal());
 
@@ -1868,6 +1875,7 @@ function guardarPersonal(id) {
 //  MÓDULO: NÓMINAS
 // ══════════════════════════════════════════════════════════════════════════
 function nominas() {
+  document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
   topbarBtn('+ Añadir nómina', () => modalNomina());
 
@@ -1961,6 +1969,7 @@ function guardarNomina(id) {
 //  MÓDULO: GASTOS
 // ══════════════════════════════════════════════════════════════════════════
 function gastos() {
+  document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
   topbarBtn('+ Registrar gasto', () => modalGasto());
 
@@ -2054,6 +2063,7 @@ function guardarGasto(id) {
 //  MÓDULO: BANCO
 // ══════════════════════════════════════════════════════════════════════════
 function banco() {
+  document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
   topbarBtn('+ Añadir movimiento', () => modalMovimiento());
 
@@ -2198,6 +2208,7 @@ function fiscal() {
 //  MÓDULO: AMPA SOCIOS
 // ══════════════════════════════════════════════════════════════════════════
 function ampaSocios() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo socio', () => modalSocio());
 
   const rows = DB.ampaSocios.map(s => `
@@ -2284,6 +2295,7 @@ function guardarSocio(id) {
 //  MÓDULO: AMPA ALUMNOS
 // ══════════════════════════════════════════════════════════════════════════
 function ampaAlumnos() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo alumno AMPA', () => modalAmpaAlumno());
 
   const rows = DB.ampaAlumnos.map(a => {
@@ -3176,6 +3188,7 @@ function saveSesion(isNew, id) {
 //  MÓDULO: AUSENCIAS (personal)
 // ══════════════════════════════════════════════════════════════════════════
 function ausencias() {
+  document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores.</p></div>'); return; }
   topbarBtn('+ Registrar ausencia', () => modalAusencia());
   const rows = DB.ausencias.map(a => {
