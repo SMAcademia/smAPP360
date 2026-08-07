@@ -626,28 +626,19 @@ function doLogin() {
   const raw  = document.getElementById('l-user').value.trim();
   const pass = document.getElementById('l-pass').value.trim();
   const err  = document.getElementById('login-err');
-  err.textContent = '';
-  if (!raw || !pass) { err.textContent = 'Completa usuario y contraseña.'; return; }
+  const btn  = document.getElementById('btn-login');
+  if (err) { err.style.color = ''; err.textContent = ''; }
+  if (!raw || !pass) { if (err) err.textContent = 'Completa usuario y contraseña.'; return; }
+
   if (!DB.personal || !DB.personal.length) {
-    err.textContent = window._gasLoading
-      ? 'Cargando datos del servidor, espera un momento…'
-      : 'Sin conexión al servidor. Pulsa "Reintentar" arriba.';
+    // Encolar credenciales: se validarán automáticamente cuando cargue GAS
+    _pendingCreds = { raw, pass };
+    if (btn) btn.disabled = true;
+    if (err) { err.style.color = 'var(--green)'; err.textContent = 'Conectando… validando en cuanto lleguen los datos.'; }
     return;
   }
 
-  const upper = raw.toUpperCase();
-
-  // Permite login por USERNAME o por EMAIL
-  const match = DB.personal.find(p => {
-    const active = String(p.ACTIVO || '').toUpperCase().startsWith('S');
-    const byUser = String(p.USERNAME || '').toUpperCase() === upper;
-    const byEmail= String(p.EMAIL    || '').toLowerCase()  === raw.toLowerCase();
-    return (byUser || byEmail) && String(p.PASSWORD || '') === pass && active;
-  });
-
-  if (!match) { err.textContent = 'Usuario o contraseña incorrectos.'; return; }
-
-  loginUser(match);
+  _validateCredentials(raw, pass);
 }
 
 function logout() {
@@ -3191,7 +3182,27 @@ function portalFamilia() {
 // ══════════════════════════════════════════════════════════════════════════
 window._gasLoading = false;
 let _gasRetry = 0;
-const GAS_MAX_RETRY = 3;
+let _pendingCreds = null; // credenciales en cola si GAS aún no ha cargado
+
+function _validateCredentials(raw, pass) {
+  const err = document.getElementById('login-err');
+  const btn = document.getElementById('btn-login');
+  if (err) { err.style.color = ''; err.textContent = ''; }
+  if (btn) btn.disabled = false;
+
+  const upper = raw.toUpperCase();
+  const match = DB.personal.find(p => {
+    const active = String(p.ACTIVO || '').toUpperCase().startsWith('S');
+    const byUser = String(p.USERNAME || '').toUpperCase() === upper;
+    const byEmail = String(p.EMAIL || '').toLowerCase() === raw.toLowerCase();
+    return (byUser || byEmail) && String(p.PASSWORD || '') === pass && active;
+  });
+  if (!match) {
+    if (err) { err.style.color = 'var(--red)'; err.textContent = 'Usuario o contraseña incorrectos.'; }
+    return;
+  }
+  loginUser(match);
+}
 
 function _gasLoaded(raw) {
   window._gasLoading = false;
@@ -3210,7 +3221,15 @@ function _gasLoaded(raw) {
     return;
   }
 
-  // Intentar restaurar sesión por sm_uid
+  // Procesar credenciales en cola (usuario pulsó Entrar antes de que cargara GAS)
+  if (_pendingCreds) {
+    const { raw, pass } = _pendingCreds;
+    _pendingCreds = null;
+    _validateCredentials(raw, pass);
+    return;
+  }
+
+  // Restaurar sesión por sm_uid
   try {
     const savedUid = localStorage.getItem('sm_uid');
     if (savedUid && DB.personal.length) {
@@ -3235,17 +3254,25 @@ function _gasFailed() {
   _gasRetry++;
   const lm = document.getElementById('login-loading');
 
-  if (_gasRetry <= GAS_MAX_RETRY) {
-    const seg = _gasRetry * 4;
-    if (lm) lm.textContent = `Sin respuesta. Reintentando en ${seg}s… (${_gasRetry}/${GAS_MAX_RETRY})`;
+  if (_gasRetry <= 3) {
+    const seg = _gasRetry * 5;
+    if (lm) lm.textContent = `Sin respuesta. Reintentando (${_gasRetry}/3) en ${seg}s…`;
     setTimeout(loadGasData, seg * 1000);
   } else {
     window._gasLoading = false;
     if (lm) lm.innerHTML =
-      'Sin conexión al servidor. ' +
+      'Sin conexión. ' +
       '<button onclick="_gasRetry=0;loadGasData()" ' +
       'style="background:var(--green);color:#fff;border:none;border-radius:4px;' +
-      'padding:3px 10px;font-size:12px;cursor:pointer;margin-left:4px">Reintentar</button>';
+      'padding:3px 10px;font-size:12px;cursor:pointer;margin-left:6px">Reintentar</button>';
+    // Desbloquear cualquier intento de login en cola
+    if (_pendingCreds) {
+      const err = document.getElementById('login-err');
+      const btn = document.getElementById('btn-login');
+      if (err) { err.style.color='var(--red)'; err.textContent='Sin conexión al servidor. Pulsa Reintentar.'; }
+      if (btn) btn.disabled = false;
+      _pendingCreds = null;
+    }
   }
 }
 
@@ -3254,7 +3281,7 @@ function loadGasData() {
   const lm = document.getElementById('login-loading');
   if (lm && !lm.querySelector('button')) lm.textContent = 'Conectando con el sistema…';
 
-  gasRequest('GET_ALL', {}, 15000)
+  gasRequest('GET_ALL', {}, 45000)   // 45s — GAS puede tardar en arrancar en frío
     .then(raw => {
       if (raw && raw.ok) _gasLoaded(raw);
       else _gasFailed();
