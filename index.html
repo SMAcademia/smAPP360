@@ -629,7 +629,10 @@ function doLogin() {
   err.textContent = '';
   if (!raw || !pass) { err.textContent = 'Completa usuario y contraseña.'; return; }
   if (!DB.personal || !DB.personal.length) {
-    err.textContent = 'El sistema aún está cargando, espera un momento.'; return;
+    err.textContent = window._gasLoading
+      ? 'Cargando datos del servidor, espera un momento…'
+      : 'Sin conexión al servidor. Pulsa "Reintentar" arriba.';
+    return;
   }
 
   const upper = raw.toUpperCase();
@@ -3184,12 +3187,85 @@ function portalFamilia() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  INIT
+//  INIT — carga de datos con reintentos
 // ══════════════════════════════════════════════════════════════════════════
+window._gasLoading = false;
+let _gasRetry = 0;
+const GAS_MAX_RETRY = 3;
+
+function _gasLoaded(raw) {
+  window._gasLoading = false;
+  normalizarDB(raw);
+
+  const lm = document.getElementById('login-loading');
+  if (lm) lm.textContent = '';
+
+  if (currentUser) {
+    const activo = DB.personal.find(x =>
+      String(x.ID_MONITOR) === String(currentUser.id) &&
+      String(x.ACTIVO || '').toUpperCase().startsWith('S')
+    );
+    if (!activo) { logout(); return; }
+    navigate(currentPage);
+    return;
+  }
+
+  // Intentar restaurar sesión por sm_uid
+  try {
+    const savedUid = localStorage.getItem('sm_uid');
+    if (savedUid && DB.personal.length) {
+      const p = DB.personal.find(x =>
+        String(x.ID_MONITOR) === savedUid &&
+        String(x.ACTIVO || '').toUpperCase().startsWith('S')
+      );
+      if (p) { loginUser(p); return; }
+      else { localStorage.removeItem('sm_uid'); localStorage.removeItem('sm_user'); }
+    }
+  } catch(_) {}
+
+  // Procesar credencial Google pendiente
+  if (window._pendingGoogle) {
+    const r = window._pendingGoogle;
+    window._pendingGoogle = null;
+    handleGoogleCredential(r);
+  }
+}
+
+function _gasFailed() {
+  _gasRetry++;
+  const lm = document.getElementById('login-loading');
+
+  if (_gasRetry <= GAS_MAX_RETRY) {
+    const seg = _gasRetry * 4;
+    if (lm) lm.textContent = `Sin respuesta. Reintentando en ${seg}s… (${_gasRetry}/${GAS_MAX_RETRY})`;
+    setTimeout(loadGasData, seg * 1000);
+  } else {
+    window._gasLoading = false;
+    if (lm) lm.innerHTML =
+      'Sin conexión al servidor. ' +
+      '<button onclick="_gasRetry=0;loadGasData()" ' +
+      'style="background:var(--green);color:#fff;border:none;border-radius:4px;' +
+      'padding:3px 10px;font-size:12px;cursor:pointer;margin-left:4px">Reintentar</button>';
+  }
+}
+
+function loadGasData() {
+  window._gasLoading = true;
+  const lm = document.getElementById('login-loading');
+  if (lm && !lm.querySelector('button')) lm.textContent = 'Conectando con el sistema…';
+
+  gasRequest('GET_ALL', {}, 15000)
+    .then(raw => {
+      if (raw && raw.ok) _gasLoaded(raw);
+      else _gasFailed();
+    })
+    .catch(_gasFailed);
+}
+
 function startApp() {
   initEmailJS();
 
-  // Restauración inmediata desde localStorage sin esperar a GAS
+  // Restauración inmediata de sesión desde localStorage (sin esperar a GAS)
   try {
     const saved = JSON.parse(localStorage.getItem('sm_user') || 'null');
     if (saved && saved.id && saved.rol) {
@@ -3203,67 +3279,19 @@ function startApp() {
     }
   } catch(_) {}
 
-  // Cargar caché de PERSONAL para que el login funcione sin esperar a GAS
+  // Caché de PERSONAL para login sin esperar a GAS
   try {
     const cache = JSON.parse(localStorage.getItem('sm_personal_cache') || 'null');
     if (cache && Array.isArray(cache.data) && cache.data.length &&
         (Date.now() - cache.ts < 24 * 3600 * 1000)) {
       DB.personal = cache.data;
+      const lm = document.getElementById('login-loading');
+      if (lm) lm.textContent = '';
     }
   } catch(_) {}
 
-  // Ocultar "Conectando..." en cuanto hay caché de personal (login disponible)
-  if (DB.personal && DB.personal.length) {
-    const lm = document.getElementById('login-loading');
-    if (lm) lm.textContent = '';
-  }
-
-  // Cargar datos completos de GAS en segundo plano
-  gasRequest('GET_ALL', {}, 20000)
-    .then(raw => {
-      if (!raw.ok) return;
-      normalizarDB(raw);
-
-      // Refrescar página actual con datos nuevos si ya hay sesión
-      if (currentUser) {
-        // Verificar que el usuario sigue activo en el sistema
-        const activo = DB.personal.find(x =>
-          String(x.ID_MONITOR) === String(currentUser.id) &&
-          String(x.ACTIVO || '').toUpperCase().startsWith('S')
-        );
-        if (!activo) { logout(); return; }
-        navigate(currentPage); // Refrescar con datos reales
-      }
-    })
-    .catch(() => {})
-    .finally(() => {
-      const loadMsg = document.getElementById('login-loading');
-      if (loadMsg) loadMsg.textContent = '';
-
-      // Si no hay sesión activa, intentar restaurar por sm_uid (fallback)
-      if (!currentUser) {
-        try {
-          const savedUid = localStorage.getItem('sm_uid');
-          if (savedUid && DB.personal && DB.personal.length) {
-            const p = DB.personal.find(x =>
-              String(x.ID_MONITOR) === savedUid &&
-              String(x.ACTIVO || '').toUpperCase().startsWith('S')
-            );
-            if (p) { loginUser(p); return; }
-            else { localStorage.removeItem('sm_uid'); localStorage.removeItem('sm_user'); }
-          }
-        } catch(_) {}
-      }
-
-      // Procesar credencial de Google que llegó antes de que cargaran los datos
-      if (window._pendingGoogle) {
-        const r = window._pendingGoogle;
-        window._pendingGoogle = null;
-        handleGoogleCredential(r);
-      }
-    });
+  loadGasData();
 }
-
 
 startApp();
 </script>
