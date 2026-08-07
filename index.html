@@ -505,6 +505,15 @@ function normalizarDB(raw) {
   DB.nominas              = raw.nominas              || [];
   DB.ampaSocios           = raw.ampaSocios           || [];
   DB.ampaAlumnos          = raw.ampaAlumnos          || [];
+
+  // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
+  try {
+    const campos = ['ID_MONITOR','EMAIL','USERNAME','PASSWORD','NOMBRE','APELLIDOS','ROL','ACTIVO'];
+    localStorage.setItem('sm_personal_cache', JSON.stringify({
+      ts: Date.now(),
+      data: DB.personal.map(p => { const o={}; campos.forEach(k=>o[k]=p[k]); return o; }),
+    }));
+  } catch(_) {}
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -528,6 +537,7 @@ function sendEmail(templateId, params) {
 // Inicializar Google Identity Services (llamado desde onload del script GIS)
 function initGIS() {
   if (!GOOGLE_CLIENT_ID) return;
+  clearTimeout(window._gisFallbackTimer);
   google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
     callback:  handleGoogleCredential,
@@ -539,6 +549,14 @@ function initGIS() {
     shape: 'rectangular', theme: 'filled_blue', locale: 'es',
   });
 }
+
+// Si GIS no carga en 6 segundos, mostrar mensaje alternativo
+window._gisFallbackTimer = setTimeout(function() {
+  const btn = document.getElementById('google-btn');
+  if (btn && !btn.children.length && document.getElementById('login-screen').style.display !== 'none') {
+    btn.innerHTML = '<p style="font-size:12px;color:#888;margin:4px 0">Acceso con Google no disponible ahora.<br>Usa usuario y contraseña.</p>';
+  }
+}, 6000);
 
 // Decodifica JWT de Google sin librería externa
 function parseJwt(token) {
@@ -3185,7 +3203,22 @@ function startApp() {
     }
   } catch(_) {}
 
-  // Cargar datos de GAS en segundo plano
+  // Cargar caché de PERSONAL para que el login funcione sin esperar a GAS
+  try {
+    const cache = JSON.parse(localStorage.getItem('sm_personal_cache') || 'null');
+    if (cache && Array.isArray(cache.data) && cache.data.length &&
+        (Date.now() - cache.ts < 24 * 3600 * 1000)) {
+      DB.personal = cache.data;
+    }
+  } catch(_) {}
+
+  // Ocultar "Conectando..." en cuanto hay caché de personal (login disponible)
+  if (DB.personal && DB.personal.length) {
+    const lm = document.getElementById('login-loading');
+    if (lm) lm.textContent = '';
+  }
+
+  // Cargar datos completos de GAS en segundo plano
   gasRequest('GET_ALL', {}, 20000)
     .then(raw => {
       if (!raw.ok) return;
