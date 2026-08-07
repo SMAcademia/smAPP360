@@ -229,6 +229,7 @@ tr:hover td{background:#f8f8f8}
     </div>
     <div class="login-err" id="login-err"></div>
     <button class="btn-login" id="btn-login" onclick="doLogin()">Entrar</button>
+    <div id="login-dbg" style="margin-top:12px;font-size:10px;color:#999;text-align:left;word-break:break-all;display:none"></div>
   </div>
 </div>
 
@@ -1159,7 +1160,7 @@ function modalActividad(a) {
       <div class="field"><label>Línea</label>
         <select id="ac-linea">
           <option value="EXTRAESCOLARES" ${esExtraescolar(a.LINEA)?'selected':''}  >Extraescolares</option>
-          <option value="SM FÚTBOL" ${esFutbol(a.LINEA)?'selected':''>Fútbol</option>
+          <option value="SM FÚTBOL" ${esFutbol(a.LINEA)?'selected':''}  >Fútbol</option>
         </select></div>
       <div class="field"><label>Tipo</label>
         <input id="ac-tipo" class="upper" value="${esc(a.TIPO||'')}"></div>
@@ -3276,17 +3277,33 @@ function _gasFailed() {
   }
 }
 
+function _dbg(msg) {
+  const el = document.getElementById('login-dbg');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML += '<div>' + new Date().toISOString().slice(11,19) + ' ' + msg + '</div>';
+}
+
 function loadGasData() {
   window._gasLoading = true;
   const lm = document.getElementById('login-loading');
   if (lm && !lm.querySelector('button')) lm.textContent = 'Conectando con el sistema…';
+  _dbg('GAS GET_ALL → intento ' + (_gasRetry + 1));
 
-  gasRequest('GET_ALL', {}, 45000)   // 45s — GAS puede tardar en arrancar en frío
+  gasRequest('GET_ALL', {}, 45000)
     .then(raw => {
-      if (raw && raw.ok) _gasLoaded(raw);
-      else _gasFailed();
+      if (raw && raw.ok) {
+        _dbg('GAS OK — personal:' + (raw.personal ? raw.personal.length : '?'));
+        _gasLoaded(raw);
+      } else {
+        _dbg('GAS error: ' + JSON.stringify(raw).slice(0, 80));
+        _gasFailed();
+      }
     })
-    .catch(_gasFailed);
+    .catch(err => {
+      _dbg('GAS catch: ' + (err && err.message ? err.message : String(err)));
+      _gasFailed();
+    });
 }
 
 function startApp() {
