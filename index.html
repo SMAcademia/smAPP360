@@ -228,7 +228,7 @@ tr:hover td{background:#f8f8f8}
         onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <div class="login-err" id="login-err"></div>
-    <button class="btn-login" id="btn-login" onclick="doLogin()" disabled>Entrar</button>
+    <button class="btn-login" id="btn-login" onclick="doLogin()">Entrar</button>
   </div>
 </div>
 
@@ -550,6 +550,14 @@ function parseJwt(token) {
 
 // Callback de Google Sign-In
 function handleGoogleCredential(response) {
+  // Si los datos aún no han cargado, encolar para procesar después
+  if (!DB.personal || !DB.personal.length) {
+    window._pendingGoogle = response;
+    const lm = document.getElementById('login-loading');
+    if (lm) lm.textContent = 'Verificando credenciales…';
+    return;
+  }
+
   const payload = parseJwt(response.credential);
   const email   = (payload.email || '').toLowerCase();
   document.getElementById('login-err').textContent = '';
@@ -578,8 +586,14 @@ function loginUser(p) {
     raw:    p,
   };
 
-  // Persistir sesión para restauración automática al recargar
-  try { localStorage.setItem('sm_uid', String(p.ID_MONITOR)); } catch(_) {}
+  // Persistir sesión completa para restauración inmediata al recargar
+  try {
+    localStorage.setItem('sm_uid', String(p.ID_MONITOR));
+    localStorage.setItem('sm_user', JSON.stringify({
+      id: currentUser.id, nombre: currentUser.nombre,
+      rol: currentUser.rol, email: currentUser.email, ampaId: currentUser.ampaId,
+    }));
+  } catch(_) {}
 
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display          = 'block';
@@ -596,6 +610,9 @@ function doLogin() {
   const err  = document.getElementById('login-err');
   err.textContent = '';
   if (!raw || !pass) { err.textContent = 'Completa usuario y contraseña.'; return; }
+  if (!DB.personal || !DB.personal.length) {
+    err.textContent = 'El sistema aún está cargando, espera un momento.'; return;
+  }
 
   const upper = raw.toUpperCase();
 
@@ -614,7 +631,7 @@ function doLogin() {
 
 function logout() {
   currentUser = null;
-  try { localStorage.removeItem('sm_uid'); } catch(_) {}
+  try { localStorage.removeItem('sm_uid'); localStorage.removeItem('sm_user'); } catch(_) {}
   if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
   document.getElementById('app').style.display          = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -3154,32 +3171,66 @@ function portalFamilia() {
 function startApp() {
   initEmailJS();
 
-  // Cargamos datos antes de mostrar login (PERSONAL necesario para validar)
+  // Restauración inmediata desde localStorage sin esperar a GAS
+  try {
+    const saved = JSON.parse(localStorage.getItem('sm_user') || 'null');
+    if (saved && saved.id && saved.rol) {
+      currentUser = saved;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display          = 'block';
+      document.getElementById('sidebar-nombre').textContent = currentUser.nombre || '';
+      document.getElementById('sidebar-rol').textContent    = currentUser.rol    || '';
+      applyRoleVisibility();
+      navigate(currentUser.rol === 'FAMILIA' ? 'portal-familia' : 'dashboard');
+    }
+  } catch(_) {}
+
+  // Cargar datos de GAS en segundo plano
   gasRequest('GET_ALL', {}, 20000)
     .then(raw => {
-      if (raw.ok) normalizarDB(raw);
+      if (!raw.ok) return;
+      normalizarDB(raw);
+
+      // Refrescar página actual con datos nuevos si ya hay sesión
+      if (currentUser) {
+        // Verificar que el usuario sigue activo en el sistema
+        const activo = DB.personal.find(x =>
+          String(x.ID_MONITOR) === String(currentUser.id) &&
+          String(x.ACTIVO || '').toUpperCase().startsWith('S')
+        );
+        if (!activo) { logout(); return; }
+        navigate(currentPage); // Refrescar con datos reales
+      }
     })
     .catch(() => {})
     .finally(() => {
       const loadMsg = document.getElementById('login-loading');
-      const loginBtn = document.getElementById('btn-login');
       if (loadMsg) loadMsg.textContent = '';
-      if (loginBtn) loginBtn.disabled = false;
 
-      // Restaurar sesión persistida
-      try {
-        const savedUid = localStorage.getItem('sm_uid');
-        if (savedUid && DB.personal && DB.personal.length) {
-          const p = DB.personal.find(x =>
-            String(x.ID_MONITOR) === savedUid &&
-            String(x.ACTIVO || '').toUpperCase().startsWith('S')
-          );
-          if (p) { loginUser(p); return; }
-          else localStorage.removeItem('sm_uid');
-        }
-      } catch(_) {}
+      // Si no hay sesión activa, intentar restaurar por sm_uid (fallback)
+      if (!currentUser) {
+        try {
+          const savedUid = localStorage.getItem('sm_uid');
+          if (savedUid && DB.personal && DB.personal.length) {
+            const p = DB.personal.find(x =>
+              String(x.ID_MONITOR) === savedUid &&
+              String(x.ACTIVO || '').toUpperCase().startsWith('S')
+            );
+            if (p) { loginUser(p); return; }
+            else { localStorage.removeItem('sm_uid'); localStorage.removeItem('sm_user'); }
+          }
+        } catch(_) {}
+      }
+
+      // Procesar credencial de Google que llegó antes de que cargaran los datos
+      if (window._pendingGoogle) {
+        const r = window._pendingGoogle;
+        window._pendingGoogle = null;
+        handleGoogleCredential(r);
+      }
     });
 }
+
 
 startApp();
 </script>
