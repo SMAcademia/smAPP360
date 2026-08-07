@@ -689,6 +689,14 @@ function applyRoleVisibility() {
         if (el) el.style.display = 'none';
       });
   }
+
+  // Para COORDINADOR: dentro de nav-personal solo mostrar registro-horario
+  if (rol === 'COORDINADOR') {
+    ['personal','ausencias','nominas'].forEach(page => {
+      const el = document.querySelector(`[data-page="${page}"]`);
+      if (el) el.style.display = 'none';
+    });
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -804,6 +812,22 @@ function fmtFecha(v) {
   if (!v) return '—';
   const s = String(v);
   if (s.includes('-')) { const [y,m,d] = s.split('-'); return `${d}/${m}/${y}`; }
+  return s;
+}
+
+function fmtHora(v) {
+  if (!v) return '—';
+  const s = String(v).trim();
+  if (!s || s === '—') return '—';
+  // Ya en formato HH:MM
+  if (/^\d{1,2}:\d{2}/.test(s)) return s.slice(0,5);
+  // GAS serializa TIME de Sheets como fecha base 1899-12-30 (ej: "1899-12-30T16:00:00.000Z")
+  try {
+    const d = new Date(s);
+    if (!isNaN(d) && d.getFullYear() <= 1900) {
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch(_) {}
   return s;
 }
 
@@ -2372,8 +2396,9 @@ function registroHorario() {
     btnEntrada = false; btnSalida = true;
   }
 
-  // Historial del usuario (o todos si es admin)
-  const historia = isAdmin()
+  const soloAdmin = currentUser?.rol === 'ADMIN';
+  // Historial del usuario (o todos si es ADMIN; coordinador solo ve el suyo)
+  const historia = soloAdmin
     ? [...DB.registroHorario].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')))
     : DB.registroHorario.filter(r => String(r.ID_MONITOR)===myId).sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')));
 
@@ -2383,16 +2408,16 @@ function registroHorario() {
     const es_corr  = String(r.TIPO||'').toUpperCase() === 'CORRECCION';
     const rowStyle = es_error ? 'opacity:.5;text-decoration:line-through;background:#fff5f5' : '';
     return `<tr style="${rowStyle}">
-      ${isAdmin() ? `<td>${p ? esc(p.NOMBRE) : esc(r.ID_MONITOR||'—')}</td>` : ''}
+      ${soloAdmin ? `<td>${p ? esc(p.NOMBRE) : esc(r.ID_MONITOR||'—')}</td>` : ''}
       <td>${fmtFecha(r.FECHA)}</td>
       <td>${esc(r.HORA_ENTRADA||'—')}</td>
       <td>${esc(r.HORA_SALIDA||'—')}</td>
       <td>${esc(r.HORAS_TRABAJADAS||'—')}</td>
       <td>${es_error ? '<span class="badge badge-red">ERROR</span>' : es_corr ? '<span class="badge badge-amber">CORRECCIÓN</span>' : '<span class="badge badge-green">OK</span>'}</td>
       <td style="font-size:11px;color:var(--text3)">${esc(r.JUSTIFICACION||'')}</td>
-      ${isAdmin() && !es_error ? `<td><button class="btn btn-sm btn-secondary" onclick="corregirFichaje('${esc(r.ID||'')}')">Corregir</button></td>` : '<td></td>'}
+      ${soloAdmin && !es_error ? `<td><button class="btn btn-sm btn-secondary" onclick="corregirFichaje('${esc(r.ID||'')}')">Corregir</button></td>` : '<td></td>'}
     </tr>`;
-  }).join('') || `<tr><td colspan="${isAdmin()?8:7}"><div class="empty"><div class="empty-icon">🕐</div><p>Sin registros</p></div></td></tr>`;
+  }).join('') || `<tr><td colspan="${soloAdmin?8:7}"><div class="empty"><div class="empty-icon">🕐</div><p>Sin registros</p></div></td></tr>`;
 
   render(`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
@@ -2421,14 +2446,14 @@ function registroHorario() {
       </div>
     </div>
     <div class="card" style="padding:14px 20px">
-      <div class="card-title">${isAdmin()?'Todos los registros':'Mis registros'}</div>
+      <div class="card-title">${soloAdmin?'Todos los registros':'Mis registros'}</div>
       <div class="table-toolbar">
         <input class="search-input" id="q-rh" placeholder="Buscar…" oninput="filterTable('q-rh','tbl-rh')">
-        ${isAdmin() ? '<span class="text-muted badge badge-amber" style="font-size:11px">Admin: puedes corregir cualquier fichaje</span>' : ''}
+        ${soloAdmin ? '<span class="text-muted badge badge-amber" style="font-size:11px">Admin: puedes corregir cualquier fichaje</span>' : ''}
       </div>
       <div class="table-wrap">
         <table id="tbl-rh">
-          <thead><tr>${isAdmin()?'<th>Persona</th>':''}<th>Fecha</th><th>Entrada</th><th>Salida</th><th>Horas</th><th>Estado</th><th>Nota</th><th></th></tr></thead>
+          <thead><tr>${soloAdmin?'<th>Persona</th>':''}<th>Fecha</th><th>Entrada</th><th>Salida</th><th>Horas</th><th>Estado</th><th>Nota</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -2704,7 +2729,7 @@ function asistenciasFutbol() {
   const actividades = DB.actividades.filter(a =>
     esFutbol(a.LINEA) && String(a.ACTIVA||'').toUpperCase().startsWith('S')
   );
-  const DIAS_BTN = [['L',0],['M',1],['X',2],['J',3],['V',4],['S',5]];
+  const DIAS_BTN = [['L',0],['M',1],['X',2],['J',3],['V',4],['S',5],['D',6]];
 
   render(`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -3036,6 +3061,7 @@ function testEmailJS() {
 //  MÓDULO: SESIONES (SM Fútbol)
 // ══════════════════════════════════════════════════════════════════════════
 function sesiones() {
+  document.getElementById('topbar-actions').innerHTML = '';
   const puedeCrea = isAdmin() || isEntrenador();
   if (puedeCrea) topbarBtn('+ Registrar sesión', () => modalSesion());
   const lista = isAdmin()
@@ -3048,7 +3074,7 @@ function sesiones() {
     return `<tr>
       <td class="mono">${esc(s.ID||'')}</td>
       <td>${fmtFecha(s.FECHA)}</td>
-      <td>${esc(s.HORA_INICIO||'—')} – ${esc(s.HORA_FIN||'—')}</td>
+      <td>${fmtHora(s.HORA_INICIO)} – ${fmtHora(s.HORA_FIN)}</td>
       <td><strong>${esc(s.GRUPO||'—')}</strong></td>
       <td>${esc(ent ? (ent.NOMBRE+' '+(ent.APELLIDOS||'')).trim() : s.ID_ENTRENADOR||'—')}</td>
       <td>${esc(s.LUGAR||'—')}</td>
@@ -3078,7 +3104,7 @@ function modalSesion(s) {
   const fechaVal = s.FECHA || new Date().toISOString().slice(0,10);
   const entrenadores = DB.personal.filter(p=>['ENTRENADOR','ADMIN','COORDINADOR'].includes(String(p.ROL||'').toUpperCase()))
     .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(s.ID_ENTRENADOR||'')===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
-  const DIAS_SEM = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const DIAS_SEM = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
   const DAYS_ES  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const dFecha   = fechaVal ? new Date(fechaVal + 'T12:00:00') : null;
   const dayName  = dFecha && !isNaN(dFecha) ? DAYS_ES[dFecha.getDay()] : '';
