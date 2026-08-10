@@ -1299,7 +1299,7 @@ function actividadesCatalogo() {
       <td>${esFutbol(a.LINEA) ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extraescolares</span>'}</td>
       <td>${esc(a.TIPO||'—')}</td>
       <td style="font-variant-numeric:tabular-nums;font-size:12px">${fmtDias(a.DIAS_SEMANA)}</td>
-      <td>${a.NUM_GRUPOS > 1 ? `<span class="badge badge-amber">${a.NUM_GRUPOS} grupos</span>` : '—'}</td>
+      <td>${a.NUM_GRUPOS ? `<span class="badge badge-amber">Gr.${a.NUM_GRUPOS}</span>` : '—'}</td>
       <td>${fmtEur(a.PRECIO)}</td>
       <td>${String(a.SUBVENCIONADA||'').toUpperCase().startsWith('S') ? '<span class="badge badge-amber">Subv.</span>' : '—'}</td>
       <td>${esc(a.CENTRO||'—')}</td>
@@ -1315,7 +1315,7 @@ function actividadesCatalogo() {
       </div>
       <div class="table-wrap">
         <table id="tbl-act">
-          <thead><tr><th>ID</th><th>Nombre</th><th>Línea</th><th>Tipo</th><th>Días</th><th>Grupos</th><th>Precio</th><th>Subv.</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Nombre</th><th>Línea</th><th>Tipo</th><th>Días</th><th>Grupo</th><th>Precio</th><th>Subv.</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -1360,11 +1360,12 @@ function modalActividad(a) {
             </label>`;
           }).join('')}
         </div></div>
-      <div class="field"><label>Nº de grupos</label>
+      <div class="field"><label>Nº de grupo</label>
         <select id="ac-grupos">
-          <option value="1" ${Number(a.NUM_GRUPOS||1)===1?'selected':''}>1 grupo</option>
-          <option value="2" ${Number(a.NUM_GRUPOS||0)===2?'selected':''}>2 grupos (A / B)</option>
-          <option value="3" ${Number(a.NUM_GRUPOS||0)===3?'selected':''}>3 grupos</option>
+          <option value="" ${!a.NUM_GRUPOS?'selected':''}>— Sin grupo —</option>
+          <option value="1" ${Number(a.NUM_GRUPOS)===1?'selected':''}>Grupo 1</option>
+          <option value="2" ${Number(a.NUM_GRUPOS)===2?'selected':''}>Grupo 2</option>
+          <option value="3" ${Number(a.NUM_GRUPOS)===3?'selected':''}>Grupo 3</option>
         </select></div>
       <div class="field span2"><label>Descripción</label>
         <textarea id="ac-desc">${esc(a.DESCRIPCION||'')}</textarea></div>
