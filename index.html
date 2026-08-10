@@ -868,6 +868,19 @@ ${htmlBody}
 function sinTildes(s) { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); }
 function esFutbol(l)       { const u=sinTildes(l); return u.includes('FUTBOL'); }
 function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
+function diasInscripcion(i) {
+  const raw = i.DIAS_SEMANA || i.DIA_SEMANA || '';
+  return String(raw).split(',').map(d => sinTildes(d.trim())).filter(Boolean);
+}
+const DIAS_SEMANA_ES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+function diaDeSemana(fechaStr) {
+  return DIAS_SEMANA_ES[new Date(fechaStr + 'T12:00:00').getDay()];
+}
+function fmtDias(raw) {
+  if (!raw) return '—';
+  const ABREV = {LUNES:'Lu',MARTES:'Ma',MIERCOLES:'Mi',JUEVES:'Ju',VIERNES:'Vi',SABADO:'Sa'};
+  return String(raw).split(',').map(d => ABREV[sinTildes(d.trim())] || d.trim().slice(0,2)).filter(Boolean).join(' ');
+}
 
 function fmtFecha(v) {
   if (!v) return '—';
@@ -1285,12 +1298,14 @@ function actividadesCatalogo() {
       <td><strong>${esc(a.NOMBRE)}</strong></td>
       <td>${esFutbol(a.LINEA) ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extraescolares</span>'}</td>
       <td>${esc(a.TIPO||'—')}</td>
+      <td style="font-variant-numeric:tabular-nums;font-size:12px">${fmtDias(a.DIAS_SEMANA)}</td>
+      <td>${a.NUM_GRUPOS > 1 ? `<span class="badge badge-amber">${a.NUM_GRUPOS} grupos</span>` : '—'}</td>
       <td>${fmtEur(a.PRECIO)}</td>
       <td>${String(a.SUBVENCIONADA||'').toUpperCase().startsWith('S') ? '<span class="badge badge-amber">Subv.</span>' : '—'}</td>
       <td>${esc(a.CENTRO||'—')}</td>
       <td>${String(a.ACTIVA||'').toUpperCase().startsWith('S') ? '<span class="badge badge-green">Activa</span>' : '<span class="badge badge-gray">Inactiva</span>'}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalActividad(${JSON.stringify(a)})'>Editar</button></td>
-    </tr>`).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📌</div><p>Sin actividades registradas</p></div></td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">📌</div><p>Sin actividades registradas</p></div></td></tr>`;
 
   render(`
     <div class="card" style="padding:14px 20px">
@@ -1300,7 +1315,7 @@ function actividadesCatalogo() {
       </div>
       <div class="table-wrap">
         <table id="tbl-act">
-          <thead><tr><th>ID</th><th>Nombre</th><th>Línea</th><th>Tipo</th><th>Precio</th><th>Subv.</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Nombre</th><th>Línea</th><th>Tipo</th><th>Días</th><th>Grupos</th><th>Precio</th><th>Subv.</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -1335,6 +1350,22 @@ function modalActividad(a) {
           <option value="SÍ" ${String(a.ACTIVA||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
           <option value="NO" ${String(a.ACTIVA||'').toUpperCase()==='NO'?'selected':''}>No</option>
         </select></div>
+      <div class="field span2"><label>Días de la semana que opera</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+          ${['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'].map(d=>{
+            const stored = sinTildes(d);
+            const checked = String(a.DIAS_SEMANA||'').split(',').some(x=>sinTildes(x.trim())===stored);
+            return `<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid var(--border2);border-radius:6px">
+              <input type="checkbox" name="ac-dias" value="${d}" ${checked?'checked':''}> ${d.slice(0,2)}
+            </label>`;
+          }).join('')}
+        </div></div>
+      <div class="field"><label>Nº de grupos</label>
+        <select id="ac-grupos">
+          <option value="1" ${Number(a.NUM_GRUPOS||1)===1?'selected':''}>1 grupo</option>
+          <option value="2" ${Number(a.NUM_GRUPOS||0)===2?'selected':''}>2 grupos (A / B)</option>
+          <option value="3" ${Number(a.NUM_GRUPOS||0)===3?'selected':''}>3 grupos</option>
+        </select></div>
       <div class="field span2"><label>Descripción</label>
         <textarea id="ac-desc">${esc(a.DESCRIPCION||'')}</textarea></div>
     </div>`,
@@ -1346,10 +1377,13 @@ function modalActividad(a) {
 function guardarActividad(id) {
   const nombre = document.getElementById('ac-nombre').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
+  const diasChecked = [...document.querySelectorAll('input[name=ac-dias]:checked')].map(cb=>cb.value);
   const row = {
     NOMBRE:       nombre,
     LINEA:        document.getElementById('ac-linea').value,
     TIPO:         document.getElementById('ac-tipo').value.trim(),
+    DIAS_SEMANA:  diasChecked.join(','),
+    NUM_GRUPOS:   document.getElementById('ac-grupos').value,
     PRECIO:       document.getElementById('ac-precio').value,
     CENTRO:       document.getElementById('ac-centro').value.trim(),
     SUBVENCIONADA:document.getElementById('ac-subv').value,
@@ -1553,14 +1587,15 @@ function inscripciones() {
         <td><strong>${alu?esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')):esc(i.ID_ALUMNO||'—')}</strong></td>
         <td>${act?esc(act.NOMBRE):esc(i.ID_ACTIVIDAD||'—')}</td>
         <td>${esFutbol(i.LINEA||'')?'⚽ Fútbol':'🎨 Extra'}</td>
-        <td>${esc(i.HORARIO||i.DIA_SEMANA||'—')}</td>
+        <td style="font-size:11px">${fmtDias(i.DIAS_SEMANA||i.DIA_SEMANA)}${i.GRUPO?' Gr.'+esc(i.GRUPO):''}</td>
+        <td style="font-size:11px;color:#555">${esc(i.HORARIO||'—')}</td>
         <td>${fmtEur(i.PRECIO_ACORDADO)}</td>
         <td>${esc(i.FORMA_PAGO||'—')}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
         <td><span class="badge ${est==='ACTIVA'?'bg':est==='BAJA'?'br':'ba'}">${esc(i.ESTADO||'—')}</span></td>
       </tr>`;
     }).join('');
-    exportarPDF('Inscripciones', kH+`<table><thead><tr><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Horario</th><th>Precio</th><th>Forma pago</th><th>Alta</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="8">Sin datos</td></tr>'}</tbody></table>`);
+    exportarPDF('Inscripciones', kH+`<table><thead><tr><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Días</th><th>Horario</th><th>Precio</th><th>Forma pago</th><th>Alta</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="9">Sin datos</td></tr>'}</tbody></table>`);
   }, 'btn-secondary');
 
   let filtroLinea = 'TODAS';
@@ -1587,14 +1622,15 @@ function inscripciones() {
         <td>${alu ? `<strong>${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</strong>` : `<span class="text-muted">${esc(i.ID_ALUMNO)}</span>`}</td>
         <td>${act ? esc(act.NOMBRE) : `<span class="text-muted">${esc(i.ID_ACTIVIDAD)}</span>`}</td>
         <td>${esFutbol(i.LINEA||'') ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
-        <td>${esc(i.HORARIO||'—')}</td>
+        <td style="font-size:12px">${fmtDias(i.DIAS_SEMANA||i.DIA_SEMANA)}${i.GRUPO?` <span class="badge badge-amber" style="font-size:10px">Gr.${esc(i.GRUPO)}</span>`:''}</td>
+        <td style="font-size:12px;color:var(--text3)">${esc(i.HORARIO||'—')}</td>
         <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}</td>
         <td>${esc(i.FORMA_PAGO||'—')}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
         <td>${badgeEstado(i.ESTADO)}</td>
         <td><button class="btn btn-sm btn-secondary" onclick='modalInscripcion(${JSON.stringify(i)})'>Editar</button></td>
       </tr>`;
-    }).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">✍️</div><p>Sin inscripciones</p></div></td></tr>`;
+    }).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">✍️</div><p>Sin inscripciones</p></div></td></tr>`;
 
     render(`
       <div style="display:grid;gap:16px">
@@ -1621,7 +1657,7 @@ function inscripciones() {
           </div>
           <div class="table-wrap">
             <table id="tbl-ins">
-              <thead><tr><th>ID</th><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Horario</th><th>Precio</th><th>Forma pago</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>ID</th><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Días</th><th>Horario</th><th>Precio</th><th>Forma pago</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
@@ -1643,19 +1679,35 @@ function modalInscripcion(i) {
   const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
     .map(a => `<option value="${a.ID_ALUMNO}" ${String(i.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`).join('');
   const opsAct = DB.actividades.filter(a => String(a.ACTIVA||'').toUpperCase().startsWith('S'))
-    .map(a => `<option value="${a.ID}" ${String(i.ID_ACTIVIDAD)===String(a.ID)?'selected':''}>${esc(a.NOMBRE)} (${a.LINEA})</option>`).join('');
+    .map(a => `<option value="${a.ID}" ${String(i.ID_ACTIVIDAD)===String(a.ID)?'selected':''}>${esc(a.NOMBRE)}${a.DIAS_SEMANA?' ('+fmtDias(a.DIAS_SEMANA)+')':' ('+a.LINEA+')'}</option>`).join('');
+
+  // Días que opera la actividad seleccionada (para pre-renderizar checkboxes)
+  const actSel = i.ID_ACTIVIDAD ? DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD)) : null;
+  const diasActRaw = actSel?.DIAS_SEMANA
+    ? String(actSel.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean)
+    : ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
+  const diasIns = diasInscripcion(i);
+
+  const _diasHtml = diasActRaw.map(d => {
+    const chk = diasIns.some(x => sinTildes(x) === sinTildes(d));
+    return `<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid var(--border2);border-radius:6px">
+      <input type="checkbox" name="i-dia" value="${d}" ${chk?'checked':''}> ${d.slice(0,2)}
+    </label>`;
+  }).join('');
 
   openModal(isNew ? 'Nueva inscripción' : 'Editar inscripción', `
     <div class="form-grid">
       <div class="field span2"><label>Alumno <span class="req">*</span></label>
         <select id="i-alu"><option value="">— Selecciona alumno —</option>${opsAlu}</select></div>
       <div class="field span2"><label>Actividad <span class="req">*</span></label>
-        <select id="i-act"><option value="">— Selecciona actividad —</option>${opsAct}</select></div>
-      <div class="field"><label>Día de la semana</label>
-        <select id="i-dia">
-          <option value="">—</option>
-          ${['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'].map(d=>`<option value="${d}" ${i.DIA_SEMANA===d?'selected':''}>${d}</option>`).join('')}
-        </select></div>
+        <select id="i-act" onchange="actualizarDiasInscripcion()"><option value="">— Selecciona actividad —</option>${opsAct}</select></div>
+      <div class="field span2">
+        <label>Días de asistencia</label>
+        <div id="dias-ins-checks" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          ${i.ID_ACTIVIDAD ? _diasHtml : '<span style="color:var(--text3);font-size:13px">Selecciona una actividad primero</span>'}
+        </div></div>
+      <div class="field"><label>Grupo (A, B…)</label>
+        <input id="i-grupo" placeholder="Opcional" value="${esc(i.GRUPO||'')}"></div>
       <div class="field"><label>Horario</label>
         <input id="i-horario" placeholder="p.ej. 16:00-17:00" value="${esc(i.HORARIO||'')}"></div>
       <div class="field"><label>Precio acordado (€)</label>
@@ -1691,11 +1743,13 @@ function guardarInscripcion(id) {
   if (!aluId || !actId) { showToast('Alumno y actividad son obligatorios','error'); return; }
 
   const act = DB.actividades.find(a => String(a.ID) === actId);
+  const dias = [...document.querySelectorAll('input[name=i-dia]:checked')].map(cb=>cb.value).join(',');
   const row = {
     ID_ALUMNO:       aluId,
     ID_ACTIVIDAD:    actId,
     LINEA:           act?.LINEA || 'EXTRAESCOLARES',
-    DIA_SEMANA:      document.getElementById('i-dia').value,
+    DIAS_SEMANA:     dias,
+    GRUPO:           (document.getElementById('i-grupo')?.value||'').trim(),
     HORARIO:         document.getElementById('i-horario').value.trim(),
     PRECIO_ACORDADO: document.getElementById('i-precio').value,
     DESCUENTO:       document.getElementById('i-dto').value || '0',
@@ -1709,6 +1763,25 @@ function guardarInscripcion(id) {
   writeToSheet('INSCRIPCIONES', row, id)
     .then(() => { showToast(id ? 'Inscripción actualizada' : 'Inscripción creada'); closeModal(); loadAllData().then(inscripciones); })
     .catch(err => showToast('Error: ' + err.message,'error'));
+}
+
+function actualizarDiasInscripcion() {
+  const actId = document.getElementById('i-act')?.value;
+  const cont  = document.getElementById('dias-ins-checks');
+  if (!cont) return;
+  if (!actId) {
+    cont.innerHTML = '<span style="color:var(--text3);font-size:13px">Selecciona una actividad primero</span>';
+    return;
+  }
+  const act = DB.actividades.find(a => String(a.ID) === actId);
+  const dias = act?.DIAS_SEMANA
+    ? String(act.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean)
+    : ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
+  cont.innerHTML = dias.map(d =>
+    `<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid var(--border2);border-radius:6px">
+      <input type="checkbox" name="i-dia" value="${d}"> ${d.slice(0,2)}
+    </label>`
+  ).join('');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -3180,10 +3253,18 @@ function cargarListaExtra() {
   const wrap   = document.getElementById('as-guardar-wrap');
   if (!actId || !cont) return;
 
-  // Alumnos inscritos en esta actividad
-  const inscs = DB.inscripciones.filter(i =>
-    String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
-  );
+  // Filtrar por día de la semana si la inscripción tiene DIAS_SEMANA configurado
+  const diaHoy = fecha ? sinTildes(diaDeSemana(fecha)) : '';
+
+  // Alumnos inscritos en esta actividad activos y con asistencia ese día
+  const inscs = DB.inscripciones.filter(i => {
+    if (String(i.ID_ACTIVIDAD) !== actId) return false;
+    if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+    const dias = diasInscripcion(i);
+    // Sin días configurados → se incluye siempre (compatibilidad con datos anteriores)
+    if (!dias.length) return true;
+    return dias.some(d => sinTildes(d) === diaHoy);
+  });
   const alumnos = inscs.map(i => DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(i.ID_ALUMNO))).filter(Boolean);
 
   if (!alumnos.length) {
@@ -3198,7 +3279,7 @@ function cargarListaExtra() {
 
   cont.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:13px;color:var(--text3)">${alumnos.length} alumnos inscritos</span>
+      <span style="font-size:13px;color:var(--text3)">${alumnos.length} alumnos${diaHoy?' · '+diaHoy.charAt(0)+diaHoy.slice(1).toLowerCase():''}</span>
       <div>
         <button class="btn btn-sm btn-secondary" onclick="marcarTodosExtra(true)">✓ Todos</button>
         <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="marcarTodosExtra(false)">✗ Ninguno</button>
