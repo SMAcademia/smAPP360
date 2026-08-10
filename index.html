@@ -698,8 +698,13 @@ function applyRoleVisibility() {
     });
   }
 
-  // Para AMPA: dentro de nav-extra solo mostrar el resumen, no el pase de lista
+  // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
+    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard']
+      .forEach(page => {
+        const el = document.querySelector(`[data-page="${page}"]`);
+        if (el) el.style.display = 'none';
+      });
     const elAsistExt = document.querySelector('[data-page="asistencias-extra"]');
     if (elAsistExt) elAsistExt.style.display = 'none';
   }
@@ -945,6 +950,7 @@ function stub() {
 //  MÓDULO: DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════
 function dashboard() {
+  if (isAmpa()) { navigate('extra-resumen'); return; }
   const alumnosActivos     = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S')).length;
   const inscripcionesActivas = DB.inscripciones.filter(i => String(i.ESTADO||'').toUpperCase() === 'ACTIVA').length;
   const pagosPendientes    = DB.pagos.filter(p => String(p.ESTADO||'').toUpperCase() === 'PENDIENTE').length;
