@@ -284,6 +284,9 @@ tr:hover td{background:#f8f8f8}
 
       <div class="nav-section" id="nav-extra">
         <div class="nav-section-label">SM Extraescolares</div>
+        <div class="nav-item" onclick="navigate('extra-resumen')" data-page="extra-resumen">
+          <span class="nav-icon">📊</span><span>Resumen</span>
+        </div>
         <div class="nav-item" onclick="navigate('asistencias-extra')" data-page="asistencias-extra">
           <span class="nav-icon">✅</span><span>Asistencia</span>
         </div>
@@ -713,6 +716,7 @@ const PAGE_META = {
   'facturas':           { title: 'Facturas',             sub: 'Registro VeriFactu' },
   'sesiones':           { title: 'Sesiones',             sub: 'SM Tecnificación Fútbol' },
   'asistencias-futbol': { title: 'Pase de lista',        sub: 'Asistencia sesiones fútbol' },
+  'extra-resumen':      { title: 'SM Extraescolares',    sub: 'Panel de actividades y asistencia' },
   'asistencias-extra':  { title: 'Asistencia',           sub: 'SM Extraescolares' },
   'personal':           { title: 'Trabajadores',         sub: 'Ficha de personal' },
   'ausencias':          { title: 'Ausencias',            sub: 'Bajas, vacaciones y permisos' },
@@ -738,6 +742,7 @@ const MODULES = {
   'facturas':           facturas,
   'sesiones':           sesiones,
   'asistencias-futbol': asistenciasFutbol,
+  'extra-resumen':      extraResumen,
   'asistencias-extra':  asistenciasExtra,
   'personal':           personal,
   'ausencias':          ausencias,
@@ -801,6 +806,22 @@ function filterTable(inputId, tableId) {
   const q   = document.getElementById(inputId).value.toLowerCase();
   const trs = document.querySelectorAll('#' + tableId + ' tbody tr');
   trs.forEach(tr => { tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+}
+
+// Exportar array de objetos a CSV descargable
+function exportarCSV(datos, nombre) {
+  if (!datos || !datos.length) { showToast('Sin datos para exportar', 'error'); return; }
+  const cols = Object.keys(datos[0]);
+  const escVal = v => '"' + String(v===null||v===undefined?'':v).replace(/"/g,'""') + '"';
+  const csv = [cols.join(';'), ...datos.map(r => cols.map(c => escVal(r[c])).join(';'))].join('\r\n');
+  const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  showToast('CSV exportado: ' + a.download);
 }
 
 // Formatear fecha ISO a DD/MM/AAAA
@@ -2210,34 +2231,101 @@ function fiscal() {
 function ampaSocios() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo socio', () => modalSocio());
+  topbarBtn('↓ Exportar CSV', () => exportarCSV(DB.ampaSocios, 'socios_ampa'), 'btn-secondary');
 
-  const rows = DB.ampaSocios.map(s => `
+  const socios  = DB.ampaSocios;
+  const activos = socios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO').length;
+  const bajas   = socios.length - activos;
+  const recauda = socios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO')
+                        .reduce((sum,s) => sum + (parseFloat(s.CUOTA_ANUAL)||0), 0);
+
+  // Altas por mes (últimos 6 meses)
+  const hoy  = new Date();
+  const meses = Array.from({length:6}, (_,i) => {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth()-(5-i), 1);
+    const key = d.toISOString().slice(0,7);
+    const cnt = socios.filter(s => String(s.FECHA_ALTA||'').startsWith(key)).length;
+    return {label: d.toLocaleString('es-ES',{month:'short'}), cnt};
+  });
+  const maxMes = Math.max(...meses.map(m=>m.cnt), 1);
+
+  // SVG donut activos/baja
+  const pct = socios.length ? activos/socios.length : 0;
+  const r = 46, cx2 = 60, cy2 = 60, sw = 22;
+  const circ = +(2*Math.PI*r).toFixed(1);
+  const off  = +(circ*(1-pct)).toFixed(1);
+  const donut = `<svg width="120" height="120" viewBox="0 0 120 120">
+    <circle cx="${cx2}" cy="${cy2}" r="${r}" fill="none" stroke="var(--border2)" stroke-width="${sw}"/>
+    <circle cx="${cx2}" cy="${cy2}" r="${r}" fill="none" stroke="var(--green)" stroke-width="${sw}"
+      stroke-dasharray="${circ}" stroke-dashoffset="${off}"
+      transform="rotate(-90 ${cx2} ${cy2})" style="transition:.5s"/>
+    <text x="${cx2}" y="${cy2-6}" text-anchor="middle" font-size="19" font-weight="800" fill="var(--text1)">${Math.round(pct*100)}%</text>
+    <text x="${cx2}" y="${cy2+11}" text-anchor="middle" font-size="10" fill="var(--text3)">activos</text>
+  </svg>`;
+
+  const barrasMes = meses.map(m => {
+    const h = m.cnt ? Math.max(4, Math.round(m.cnt/maxMes*72)) : 0;
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:11px;font-weight:700;color:var(--text2)">${m.cnt||''}</span>
+      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${h}px;background:var(--green);border-radius:3px 3px 0 0;min-height:${m.cnt?2:0}px"></div>
+      </div>
+      <span style="font-size:10px;color:var(--text3)">${m.label}</span>
+    </div>`;
+  }).join('');
+
+  const rows = socios.map(s => `
     <tr>
       <td class="mono">${esc(s.ID_SOCIO||s.ID||'')}</td>
-      <td><strong>${esc(s.NOMBRE)} ${esc(s.APELLIDOS||'')}</strong></td>
+      <td><strong>${esc(s.NOMBRE||'')} ${esc(s.APELLIDOS||'')}</strong></td>
       <td>${esc(s.EMAIL||'—')}</td>
-      <td>${esc(s.TELÉFONO||'—')}</td>
+      <td>${esc(s['TELÉFONO']||s.TELEFONO||'—')}</td>
       <td>${fmtFecha(s.FECHA_ALTA)}</td>
-      <td>${fmtEur(s.CUOTA_ANUAL)}</td>
+      <td class="mono">${fmtEur(s.CUOTA_ANUAL)}</td>
       <td>${badgeActivo(s.ESTADO||s.ACTIVO)}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalSocio(${JSON.stringify(s)})'>Editar</button></td>
     </tr>`).join('') || `<tr><td colspan="8"><div class="empty"><div class="empty-icon">🏫</div><p>Sin socios registrados</p></div></td></tr>`;
 
   render(`
-    <div class="kpis" style="margin-bottom:16px">
-      <div class="kpi"><div class="kpi-n">${DB.ampaSocios.filter(s=>String(s.ESTADO||s.ACTIVO||'').toUpperCase().startsWith('S')||String(s.ESTADO||'').toUpperCase()==='ACTIVO').length}</div><div class="kpi-l">Socios activos</div></div>
-      <div class="kpi"><div class="kpi-n">${fmtEur(DB.ampaSocios.reduce((s,x)=>s+(parseFloat(x.CUOTA_ANUAL)||0),0))}</div><div class="kpi-l">Cuotas totales</div></div>
-    </div>
-    <div class="card" style="padding:14px 20px">
-      <div class="table-toolbar">
-        <input class="search-input" id="q-soc" placeholder="Buscar…" oninput="filterTable('q-soc','tbl-soc')">
-        <span class="text-muted">${DB.ampaSocios.length} socios</span>
+    <div style="display:grid;gap:16px">
+      <div class="kpis" style="margin-bottom:0">
+        <div class="kpi"><div class="kpi-n">${socios.length}</div><div class="kpi-l">Total socios</div></div>
+        <div class="kpi"><div class="kpi-n" style="color:var(--green)">${activos}</div><div class="kpi-l">Activos</div></div>
+        <div class="kpi"><div class="kpi-n" style="color:var(--red)">${bajas}</div><div class="kpi-l">De baja</div></div>
+        <div class="kpi"><div class="kpi-n">${fmtEur(recauda)}</div><div class="kpi-l">Recaudación activos</div></div>
       </div>
-      <div class="table-wrap">
-        <table id="tbl-soc">
-          <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:16px">
+        <div class="card" style="display:flex;align-items:center;gap:20px;padding:20px 24px">
+          ${donut}
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <div style="width:12px;height:12px;border-radius:2px;background:var(--green);flex-shrink:0"></div>
+              <div><div style="font-weight:700">${activos} activos</div><div style="font-size:11px;color:var(--text3)">En regla</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:12px;height:12px;border-radius:2px;background:var(--border2);flex-shrink:0"></div>
+              <div><div style="font-weight:700">${bajas} de baja</div><div style="font-size:11px;color:var(--text3)">No activos</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Altas por mes (últimos 6 meses)</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasMes}</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div class="table-toolbar">
+          <input class="search-input" id="q-soc" placeholder="Buscar por nombre, email…" oninput="filterTable('q-soc','tbl-soc')">
+          <span class="text-muted">${socios.length} socios</span>
+        </div>
+        <div class="table-wrap">
+          <table id="tbl-soc">
+            <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
       </div>
     </div>`);
 }
@@ -2297,12 +2385,59 @@ function guardarSocio(id) {
 function ampaAlumnos() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo alumno AMPA', () => modalAmpaAlumno());
+  topbarBtn('↓ Exportar CSV', () => {
+    const datos = DB.ampaAlumnos.map(a => {
+      const soc = DB.ampaSocios.find(s=>String(s.ID_SOCIO||s.ID||'')===String(a.ID_SOCIO));
+      return {...a, SOCIO_NOMBRE: soc ? soc.NOMBRE+' '+(soc.APELLIDOS||'') : ''};
+    });
+    exportarCSV(datos, 'alumnos_ampa');
+  }, 'btn-secondary');
 
-  const rows = DB.ampaAlumnos.map(a => {
+  const alumnos  = DB.ampaAlumnos;
+  const activos  = alumnos.filter(a => String(a.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO').length;
+
+  // Agrupar por actividad
+  const byAct = {};
+  alumnos.forEach(a => {
+    const k = (a.ACTIVIDAD||'Sin asignar').trim() || 'Sin asignar';
+    byAct[k] = (byAct[k]||0) + 1;
+  });
+  const actArr   = Object.entries(byAct).sort(([,a],[,b]) => b-a);
+  const maxAct   = Math.max(...actArr.map(([,v])=>v), 1);
+  const centros  = new Set(alumnos.map(a=>a.CENTRO).filter(Boolean)).size;
+
+  // Barras horizontales por actividad
+  const hbarras = actArr.map(([nombre, cnt]) => `
+    <div style="display:grid;grid-template-columns:140px 1fr 32px;align-items:center;gap:8px;margin-bottom:9px">
+      <span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(nombre)}">${esc(nombre)}</span>
+      <div style="background:var(--border2);border-radius:3px;height:18px;overflow:hidden">
+        <div style="width:${Math.round(cnt/maxAct*100)}%;height:100%;background:var(--green);border-radius:3px"></div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:var(--text1);text-align:right">${cnt}</span>
+    </div>`).join('');
+
+  // Agrupar por centro (donut mini o simplemente barras)
+  const byCentro = {};
+  alumnos.forEach(a => {
+    const k = (a.CENTRO||'Sin centro').trim() || 'Sin centro';
+    byCentro[k] = (byCentro[k]||0) + 1;
+  });
+  const centroArr = Object.entries(byCentro).sort(([,a],[,b])=>b-a);
+  const maxCen = Math.max(...centroArr.map(([,v])=>v), 1);
+  const hCentros = centroArr.map(([nombre, cnt]) => `
+    <div style="display:grid;grid-template-columns:140px 1fr 32px;align-items:center;gap:8px;margin-bottom:9px">
+      <span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(nombre)}">${esc(nombre)}</span>
+      <div style="background:var(--border2);border-radius:3px;height:18px;overflow:hidden">
+        <div style="width:${Math.round(cnt/maxCen*100)}%;height:100%;background:#2563eb;border-radius:3px"></div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:var(--text1);text-align:right">${cnt}</span>
+    </div>`).join('');
+
+  const rows = alumnos.map(a => {
     const soc = DB.ampaSocios.find(s => String(s.ID_SOCIO||s.ID||'') === String(a.ID_SOCIO));
     return `<tr>
       <td class="mono">${esc(a.ID_ALUMNO_AMPA||a.ID||'')}</td>
-      <td><strong>${esc(a.NOMBRE_ALUMNO)} ${esc(a.APELLIDOS_ALUMNO||'')}</strong></td>
+      <td><strong>${esc(a.NOMBRE_ALUMNO||'')} ${esc(a.APELLIDOS_ALUMNO||'')}</strong></td>
       <td>${soc ? esc(soc.NOMBRE+' '+(soc.APELLIDOS||'')) : esc(a.ID_SOCIO||'—')}</td>
       <td>${esc(a.ACTIVIDAD||'—')}</td>
       <td>${esc(a.CENTRO||'—')}</td>
@@ -2312,16 +2447,37 @@ function ampaAlumnos() {
   }).join('') || `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🎒</div><p>Sin alumnos AMPA registrados</p></div></td></tr>`;
 
   render(`
-    <div class="card" style="padding:14px 20px">
-      <div class="table-toolbar">
-        <input class="search-input" id="q-aa" placeholder="Buscar…" oninput="filterTable('q-aa','tbl-aa')">
-        <span class="text-muted">${DB.ampaAlumnos.length} alumnos</span>
+    <div style="display:grid;gap:16px">
+      <div class="kpis" style="margin-bottom:0">
+        <div class="kpi"><div class="kpi-n">${alumnos.length}</div><div class="kpi-l">Total alumnos</div></div>
+        <div class="kpi"><div class="kpi-n" style="color:var(--green)">${activos}</div><div class="kpi-l">Activos</div></div>
+        <div class="kpi"><div class="kpi-n">${actArr.length}</div><div class="kpi-l">Actividades</div></div>
+        <div class="kpi"><div class="kpi-n">${centros}</div><div class="kpi-l">Centros</div></div>
       </div>
-      <div class="table-wrap">
-        <table id="tbl-aa">
-          <thead><tr><th>ID</th><th>Alumno</th><th>Socio / Familia</th><th>Actividad</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+
+      ${actArr.length ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-title">Alumnos por actividad</div>
+          <div style="margin-top:10px">${hbarras}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Alumnos por centro</div>
+          <div style="margin-top:10px">${hCentros}</div>
+        </div>
+      </div>` : ''}
+
+      <div class="card" style="padding:14px 20px">
+        <div class="table-toolbar">
+          <input class="search-input" id="q-aa" placeholder="Buscar por nombre, actividad…" oninput="filterTable('q-aa','tbl-aa')">
+          <span class="text-muted">${alumnos.length} alumnos</span>
+        </div>
+        <div class="table-wrap">
+          <table id="tbl-aa">
+            <thead><tr><th>ID</th><th>Alumno</th><th>Socio / Familia</th><th>Actividad</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
       </div>
     </div>`);
 }
@@ -2597,6 +2753,145 @@ function ejecutarCorreccion(idOriginal) {
   })
   .then(()=>{ showToast('Corrección aplicada'); closeModal(); loadAllData().then(registroHorario); })
   .catch(err=>{ showToast('Error: '+err.message,'error'); if(btn){btn.disabled=false;btn.textContent='Aplicar corrección';} });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: RESUMEN SM EXTRAESCOLARES
+// ══════════════════════════════════════════════════════════════════════════
+function extraResumen() {
+  document.getElementById('topbar-actions').innerHTML = '';
+  topbarBtn('↓ Exportar asistencia', () => exportarCSV(DB.asistenciasExtra, 'asistencia_extraescolares'), 'btn-secondary');
+
+  const actExtras = DB.actividades.filter(a =>
+    esExtraescolar(a.LINEA||a.NOMBRE||'') && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+  );
+
+  // Resumen por actividad
+  const resumen = actExtras.map(act => {
+    const actId     = String(act.ID);
+    const inscritos = DB.inscripciones.filter(i =>
+      String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
+    ).length;
+    const sesiones  = DB.asistenciasExtra.filter(a => String(a.ID_ACTIVIDAD)===actId);
+    const totPres   = sesiones.reduce((s,a)=>s+(parseInt(a.TOTAL_PRESENTES)||0),0);
+    const totPos    = sesiones.reduce((s,a)=>s+(parseInt(a.TOTAL_ALUMNOS)||0),0);
+    const tasa      = totPos ? Math.round(totPres/totPos*100) : null;
+    return {act, inscritos, nSesiones:sesiones.length, tasa};
+  });
+
+  // KPIs globales
+  const totalIns  = resumen.reduce((s,r)=>s+r.inscritos,0);
+  const totalSes  = resumen.reduce((s,r)=>s+r.nSesiones,0);
+  const tasasV    = resumen.filter(r=>r.tasa!==null).map(r=>r.tasa);
+  const tasaMed   = tasasV.length ? Math.round(tasasV.reduce((s,v)=>s+v,0)/tasasV.length) : null;
+  const colorTasa = t => t===null?'var(--text3)':t>=75?'var(--green)':t>=50?'var(--amber)':'var(--red)';
+
+  // Barras verticales: inscritos por actividad
+  const maxIns = Math.max(...resumen.map(r=>r.inscritos), 1);
+  const barrasIns = resumen.map(r => {
+    const h = r.inscritos ? Math.max(4, Math.round(r.inscritos/maxIns*72)) : 0;
+    const nom = (r.act.NOMBRE||'').length>14 ? (r.act.NOMBRE||'').slice(0,12)+'…' : (r.act.NOMBRE||'');
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:11px;font-weight:700;color:var(--text2)">${r.inscritos}</span>
+      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${h}px;background:var(--green);border-radius:3px 3px 0 0;min-height:${r.inscritos?2:0}px"></div>
+      </div>
+      <span style="font-size:10px;color:var(--text3);text-align:center;line-height:1.2">${esc(nom)}</span>
+    </div>`;
+  }).join('');
+
+  // Barras % asistencia por actividad
+  const barrasTasa = resumen.map(r => {
+    const v = r.tasa!==null ? r.tasa : 0;
+    const h = v ? Math.max(4, Math.round(v/100*72)) : 0;
+    const nom = (r.act.NOMBRE||'').length>14 ? (r.act.NOMBRE||'').slice(0,12)+'…' : (r.act.NOMBRE||'');
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:11px;font-weight:700;color:${colorTasa(r.tasa)}">${r.tasa!==null?r.tasa+'%':'—'}</span>
+      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${h}px;background:${colorTasa(r.tasa)};border-radius:3px 3px 0 0;min-height:${v?2:0}px;opacity:.85"></div>
+      </div>
+      <span style="font-size:10px;color:var(--text3);text-align:center;line-height:1.2">${esc(nom)}</span>
+    </div>`;
+  }).join('');
+
+  // Evolución: últimas 6 semanas (asistentes totales)
+  const now2 = new Date();
+  const semanas = Array.from({length:6}, (_,i) => {
+    const lun = new Date(now2); lun.setDate(now2.getDate()-now2.getDay()+1-(5-i)*7);
+    const vie = new Date(lun); vie.setDate(lun.getDate()+6);
+    const ini = lun.toISOString().slice(0,10);
+    const fin = vie.toISOString().slice(0,10);
+    const sess = DB.asistenciasExtra.filter(a=>String(a.FECHA)>=ini&&String(a.FECHA)<=fin);
+    const pres = sess.reduce((s,a)=>s+(parseInt(a.TOTAL_PRESENTES)||0),0);
+    const pos  = sess.reduce((s,a)=>s+(parseInt(a.TOTAL_ALUMNOS)||0),0);
+    const tasa = pos ? Math.round(pres/pos*100) : 0;
+    return {label:`S${i+1}`, pres, tasa};
+  });
+  const maxPres = Math.max(...semanas.map(s=>s.pres), 1);
+  const barrasSem = semanas.map(s => {
+    const h = s.pres ? Math.max(4, Math.round(s.pres/maxPres*72)) : 0;
+    const col = s.tasa>=75?'var(--green)':s.tasa>=50?'var(--amber)':'var(--red)';
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="font-size:11px;font-weight:700;color:var(--text2)">${s.pres||''}</span>
+      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${h}px;background:${col};border-radius:3px 3px 0 0;min-height:${s.pres?2:0}px"></div>
+      </div>
+      <span style="font-size:10px;color:var(--text3)">${s.label}</span>
+    </div>`;
+  }).join('');
+
+  // Tabla resumen por actividad
+  const tablaRows = resumen.map(r => `
+    <tr>
+      <td><strong>${esc(r.act.NOMBRE||'')}</strong></td>
+      <td>${esc(r.act.CENTRO||'—')}</td>
+      <td><strong>${r.inscritos}</strong></td>
+      <td>${r.nSesiones}</td>
+      <td>${r.tasa!==null?`<span style="font-weight:700;color:${colorTasa(r.tasa)}">${r.tasa}%</span>`:'—'}</td>
+    </tr>`).join('') || `<tr><td colspan="5"><div class="empty"><div class="empty-icon">🎨</div><p>Sin actividades extraescolares activas</p></div></td></tr>`;
+
+  render(`
+    <div style="display:grid;gap:16px">
+      <div class="kpis" style="margin-bottom:0">
+        <div class="kpi"><div class="kpi-n">${actExtras.length}</div><div class="kpi-l">Actividades activas</div></div>
+        <div class="kpi"><div class="kpi-n">${totalIns}</div><div class="kpi-l">Alumnos inscritos</div></div>
+        <div class="kpi"><div class="kpi-n">${totalSes}</div><div class="kpi-l">Sesiones registradas</div></div>
+        <div class="kpi"><div class="kpi-n" style="color:${colorTasa(tasaMed)}">${tasaMed!==null?tasaMed+'%':'—'}</div><div class="kpi-l">Asistencia media</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-title">Inscritos por actividad</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasIns||'<p style="font-size:12px;color:var(--text3)">Sin datos</p>'}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">% Asistencia por actividad</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasTasa||'<p style="font-size:12px;color:var(--text3)">Sin datos</p>'}</div>
+          <div style="display:flex;gap:10px;margin-top:8px;font-size:11px">
+            <span style="color:var(--green)">● ≥75%</span>
+            <span style="color:var(--amber)">● ≥50%</span>
+            <span style="color:var(--red)">● &lt;50%</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Asistentes por semana</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasSem}</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-title" style="margin:0">Resumen por actividad</div>
+          <button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">✅ Pasar lista hoy</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Actividad</th><th>Centro</th><th>Inscritos</th><th>Sesiones</th><th>% Asistencia</th></tr></thead>
+            <tbody>${tablaRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
