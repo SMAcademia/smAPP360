@@ -1673,63 +1673,96 @@ function inscripciones() {
   render_();
 }
 
+function _infoActividad(act) {
+  if (!act) return '';
+  const t = sinTildes(act.TIPO||'');
+  const esUnico = t.includes('SUELTA') || t.includes('ANUAL');
+  const parts = [];
+  if (act.NUM_GRUPOS) parts.push('Grupo ' + act.NUM_GRUPOS);
+  if (act.PRECIO)     parts.push(fmtEur(act.PRECIO) + (esUnico ? ' pago único' : '/mes'));
+  if (act.DIAS_SEMANA) parts.push(fmtDias(act.DIAS_SEMANA));
+  return parts.join(' · ');
+}
+
+function _insActEntryHtml(idx, i, locked) {
+  i = i || {};
+  const opsAct = DB.actividades.filter(a => String(a.ACTIVA||'').toUpperCase().startsWith('S'))
+    .map(a => `<option value="${a.ID}" ${String(i.ID_ACTIVIDAD)===String(a.ID)?'selected':''}>${esc(a.NOMBRE)}${a.DIAS_SEMANA?' ('+fmtDias(a.DIAS_SEMANA)+')':''}</option>`).join('');
+  const actSel = i.ID_ACTIVIDAD ? DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD)) : null;
+  const diasActRaw = actSel?.DIAS_SEMANA ? String(actSel.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean) : [];
+  const diasIns = diasInscripcion(i);
+  const diasHtml = diasActRaw.map(d => {
+    const chk = !diasIns.length || diasIns.some(x => sinTildes(x) === sinTildes(d));
+    return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border:1.5px solid var(--border2);border-radius:6px">
+      <input type="checkbox" class="ins-dia-cb" value="${d}" ${chk?'checked':''}> ${d.slice(0,2)}</label>`;
+  }).join('');
+  return `<div class="ins-act-entry" data-idx="${idx}" style="border:1px solid var(--border2);border-radius:8px;padding:12px;margin-bottom:8px;position:relative">
+    ${!locked?`<button type="button" onclick="quitarEntradaActIns(${idx})" title="Quitar" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;font-size:18px;color:var(--text3);line-height:1">×</button>`:''}
+    <div style="display:grid;grid-template-columns:1fr 90px 90px;gap:8px;align-items:end;padding-right:${locked?'0':'28px'}">
+      <div><label style="font-size:12px;font-weight:600">Actividad <span class="req">*</span></label>
+        <select class="ins-act-sel" ${locked?'disabled':''} onchange="actualizarEntradaActIns(${idx})" style="width:100%">
+          <option value="">— Selecciona —</option>${opsAct}</select></div>
+      <div><label style="font-size:12px;font-weight:600">H. inicio</label>
+        <input type="time" class="ins-hora-ini" value="${esc((i.HORARIO||'').split('-')[0]?.trim()||'')}"></div>
+      <div><label style="font-size:12px;font-weight:600">H. fin</label>
+        <input type="time" class="ins-hora-fin" value="${esc((i.HORARIO||'').split('-')[1]?.trim()||'')}"></div>
+    </div>
+    <div class="ins-act-info" style="font-size:12px;color:var(--text3);margin-top:6px;min-height:16px">${_infoActividad(actSel)}</div>
+    <div class="ins-dias-checks" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${diasHtml}</div>
+  </div>`;
+}
+
+function addInsActEntry() {
+  const list = document.getElementById('ins-act-list');
+  if (!list) return;
+  const idx = list.querySelectorAll('.ins-act-entry').length;
+  list.insertAdjacentHTML('beforeend', _insActEntryHtml(idx, {}));
+}
+
+function quitarEntradaActIns(idx) {
+  document.querySelector(`.ins-act-entry[data-idx="${idx}"]`)?.remove();
+}
+
+function actualizarEntradaActIns(idx) {
+  const entry = document.querySelector(`.ins-act-entry[data-idx="${idx}"]`);
+  if (!entry) return;
+  const actId = entry.querySelector('.ins-act-sel')?.value;
+  const act = actId ? DB.actividades.find(a => String(a.ID) === actId) : null;
+  entry.querySelector('.ins-act-info').textContent = _infoActividad(act);
+  const diasCont = entry.querySelector('.ins-dias-checks');
+  if (!diasCont) return;
+  if (!act?.DIAS_SEMANA) { diasCont.innerHTML = ''; return; }
+  diasCont.innerHTML = String(act.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean).map(d =>
+    `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border:1.5px solid var(--border2);border-radius:6px">
+      <input type="checkbox" class="ins-dia-cb" value="${d}" checked> ${d.slice(0,2)}</label>`
+  ).join('');
+}
+
 function modalInscripcion(i) {
   i = i || {};
   const isNew = !i.ID_INSCRIPCION;
-
   const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
     .map(a => `<option value="${a.ID_ALUMNO}" ${String(i.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`).join('');
-  const opsAct = DB.actividades.filter(a => String(a.ACTIVA||'').toUpperCase().startsWith('S'))
-    .map(a => `<option value="${a.ID}" ${String(i.ID_ACTIVIDAD)===String(a.ID)?'selected':''}>${esc(a.NOMBRE)}${a.DIAS_SEMANA?' ('+fmtDias(a.DIAS_SEMANA)+')':' ('+a.LINEA+')'}</option>`).join('');
-
-  // Días que opera la actividad seleccionada (para pre-renderizar checkboxes)
-  const actSel = i.ID_ACTIVIDAD ? DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD)) : null;
-  const diasActRaw = actSel?.DIAS_SEMANA
-    ? String(actSel.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean)
-    : ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
-  const diasIns = diasInscripcion(i);
-
-  const _diasHtml = diasActRaw.map(d => {
-    const chk = diasIns.some(x => sinTildes(x) === sinTildes(d));
-    return `<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid var(--border2);border-radius:6px">
-      <input type="checkbox" name="i-dia" value="${d}" ${chk?'checked':''}> ${d.slice(0,2)}
-    </label>`;
-  }).join('');
+  const dtoVal = i.DESCUENTO||'0';
+  const dtoSel = (!dtoVal||dtoVal==='0') ? '0' : dtoVal==='10' ? '10' : 'custom';
 
   openModal(isNew ? 'Nueva inscripción' : 'Editar inscripción', `
-    <div class="form-grid">
+    <div class="form-grid" style="margin-bottom:12px">
       <div class="field span2"><label>Alumno <span class="req">*</span></label>
         <select id="i-alu"><option value="">— Selecciona alumno —</option>${opsAlu}</select></div>
-      <div class="field span2"><label>Actividad <span class="req">*</span></label>
-        <select id="i-act" onchange="actualizarDiasInscripcion()"><option value="">— Selecciona actividad —</option>${opsAct}</select></div>
-      <div class="field span2">
-        <label>Días de asistencia</label>
-        <div id="dias-ins-checks" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${i.ID_ACTIVIDAD ? _diasHtml : '<span style="color:var(--text3);font-size:13px">Selecciona una actividad primero</span>'}
-        </div></div>
-      <div class="field"><label>Grupo</label>
-        <input id="i-grupo" readonly style="background:var(--bg2);cursor:default;color:${actSel?.NUM_GRUPOS?'var(--text1)':'var(--text3)'}"
-          value="${actSel?.NUM_GRUPOS ? 'Grupo '+actSel.NUM_GRUPOS : 'Sin grupo'}"></div>
-      <div class="field"><label>Hora inicio</label>
-        <input id="i-hora-ini" type="time" value="${esc((i.HORARIO||'').split('-')[0]?.trim()||'')}"></div>
-      <div class="field"><label>Hora fin</label>
-        <input id="i-hora-fin" type="time" value="${esc((i.HORARIO||'').split('-')[1]?.trim()||'')}"></div>
-      <div class="field"><label>Tipo de precio</label>
-        <select id="i-tipo-precio">
-          <option value="MENSUALIDAD" ${(i.TIPO_PRECIO||'MENSUALIDAD')==='MENSUALIDAD'?'selected':''}>Mensualidad</option>
-          <option value="PAGO_ÚNICO"  ${(i.TIPO_PRECIO||'')==='PAGO_ÚNICO'?'selected':''}>Pago único</option>
-        </select></div>
-      <div class="field"><label>Precio (€)</label>
-        <input id="i-precio" type="number" step="0.01" min="0" value="${esc(i.PRECIO_ACORDADO||'')}"></div>
+    </div>
+    <div id="ins-act-list">${_insActEntryHtml(0, i, !isNew)}</div>
+    ${isNew?`<button type="button" class="btn btn-secondary" style="width:100%;margin-bottom:16px" onclick="addInsActEntry()">+ Añadir actividad</button>`:''}
+    <div class="form-grid">
       <div class="field"><label>Descuento</label>
         <select id="i-dto-sel" onchange="toggleDescuentoIns()">
-          <option value="0"      ${(!i.DESCUENTO||i.DESCUENTO==='0')?'selected':''}>Sin descuento</option>
-          <option value="10"     ${i.DESCUENTO==='10'?'selected':''}>10% — 2.º hermano/a</option>
-          <option value="custom" ${i.DESCUENTO&&i.DESCUENTO!=='0'&&i.DESCUENTO!=='10'?'selected':''}>Personalizado</option>
+          <option value="0"      ${dtoSel==='0'?'selected':''}>Sin descuento</option>
+          <option value="10"     ${dtoSel==='10'?'selected':''}>10% — 2.º hermano/a</option>
+          <option value="custom" ${dtoSel==='custom'?'selected':''}>Personalizado</option>
         </select>
-        <div id="wrap-dto-custom" style="${i.DESCUENTO&&i.DESCUENTO!=='0'&&i.DESCUENTO!=='10'?'':'display:none'};margin-top:6px">
+        <div id="wrap-dto-custom" style="${dtoSel==='custom'?'':'display:none'};margin-top:6px">
           <input id="i-dto" type="number" min="0" max="100" step="1" placeholder="% descuento"
-            value="${esc(i.DESCUENTO&&i.DESCUENTO!=='0'&&i.DESCUENTO!=='10'?i.DESCUENTO:'')}">
+            value="${dtoSel==='custom'?esc(dtoVal):''}">
         </div></div>
       <div class="field"><label>Forma de pago</label>
         <select id="i-fpago">
@@ -1740,8 +1773,8 @@ function modalInscripcion(i) {
         <input id="i-falta" type="date" value="${esc(i.FECHA_ALTA||new Date().toISOString().slice(0,10))}"></div>
       <div class="field"><label>Estado</label>
         <select id="i-est">
-          <option value="ACTIVA" ${i.ESTADO==='ACTIVA'||!i.ESTADO?'selected':''}>Activa</option>
-          <option value="BAJA"   ${i.ESTADO==='BAJA'?'selected':''}>Baja</option>
+          <option value="ACTIVA"     ${i.ESTADO==='ACTIVA'||!i.ESTADO?'selected':''}>Activa</option>
+          <option value="BAJA"       ${i.ESTADO==='BAJA'?'selected':''}>Baja</option>
           <option value="SUSPENDIDA" ${i.ESTADO==='SUSPENDIDA'?'selected':''}>Suspendida</option>
         </select></div>
       <div class="field"><label>Fecha de baja</label>
@@ -1755,88 +1788,53 @@ function modalInscripcion(i) {
 }
 
 function guardarInscripcion(id) {
-  const aluId = document.getElementById('i-alu').value;
-  const actId = document.getElementById('i-act').value;
-  if (!aluId || !actId) { showToast('Alumno y actividad son obligatorios','error'); return; }
-
-  const act = DB.actividades.find(a => String(a.ID) === actId);
-  const dias = [...document.querySelectorAll('input[name=i-dia]:checked')].map(cb=>cb.value).join(',');
-  const hIni = document.getElementById('i-hora-ini').value;
-  const hFin = document.getElementById('i-hora-fin').value;
+  const aluId = document.getElementById('i-alu')?.value;
+  if (!aluId) { showToast('Selecciona un alumno','error'); return; }
   const dtoSel = document.getElementById('i-dto-sel').value;
-  const dto = dtoSel === 'custom' ? (document.getElementById('i-dto')?.value || '0') : dtoSel;
-  const row = {
-    ID_ALUMNO:       aluId,
-    ID_ACTIVIDAD:    actId,
-    LINEA:           act?.LINEA || 'EXTRAESCOLARES',
-    DIAS_SEMANA:     dias,
-    GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
-    HORARIO:         hIni && hFin ? hIni + '-' + hFin : hIni || hFin || '',
-    TIPO_PRECIO:     document.getElementById('i-tipo-precio').value,
-    PRECIO_ACORDADO: document.getElementById('i-precio').value,
-    DESCUENTO:       dto,
-    FORMA_PAGO:      document.getElementById('i-fpago').value,
-    FECHA_ALTA:      document.getElementById('i-falta').value,
-    ESTADO:          document.getElementById('i-est').value,
-    FECHA_BAJA:      document.getElementById('i-fbaja').value,
-    OBSERVACIONES:   document.getElementById('i-obs').value.trim(),
+  const dto    = dtoSel === 'custom' ? (document.getElementById('i-dto')?.value||'0') : dtoSel;
+  const common = {
+    ID_ALUMNO:     aluId,
+    DESCUENTO:     dto,
+    FORMA_PAGO:    document.getElementById('i-fpago').value,
+    FECHA_ALTA:    document.getElementById('i-falta').value,
+    ESTADO:        document.getElementById('i-est').value,
+    FECHA_BAJA:    document.getElementById('i-fbaja').value,
+    OBSERVACIONES: document.getElementById('i-obs').value.trim(),
   };
-
-  writeToSheet('INSCRIPCIONES', row, id)
-    .then(() => { showToast(id ? 'Inscripción actualizada' : 'Inscripción creada'); closeModal(); loadAllData().then(inscripciones); })
-    .catch(err => showToast('Error: ' + err.message,'error'));
+  const rows = [...document.querySelectorAll('.ins-act-entry')].map(entry => {
+    const actId = entry.querySelector('.ins-act-sel')?.value;
+    if (!actId) return null;
+    const act  = DB.actividades.find(a => String(a.ID) === actId);
+    const dias = [...entry.querySelectorAll('.ins-dia-cb:checked')].map(cb=>cb.value).join(',');
+    const hIni = entry.querySelector('.ins-hora-ini')?.value||'';
+    const hFin = entry.querySelector('.ins-hora-fin')?.value||'';
+    const t = sinTildes(act?.TIPO||'');
+    return { ...common,
+      ID_ACTIVIDAD:    actId,
+      LINEA:           act?.LINEA||'EXTRAESCOLARES',
+      DIAS_SEMANA:     dias,
+      GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
+      HORARIO:         hIni&&hFin ? hIni+'-'+hFin : hIni||hFin||'',
+      TIPO_PRECIO:     t.includes('SUELTA')||t.includes('ANUAL') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+      PRECIO_ACORDADO: act?.PRECIO||'',
+    };
+  }).filter(Boolean);
+  if (!rows.length) { showToast('Selecciona al menos una actividad','error'); return; }
+  if (id) {
+    writeToSheet('INSCRIPCIONES', rows[0], id)
+      .then(()=>{ showToast('Inscripción actualizada'); closeModal(); loadAllData().then(inscripciones); })
+      .catch(err=>showToast('Error: '+err.message,'error'));
+    return;
+  }
+  rows.reduce((p, row) => p.then(() => writeToSheet('INSCRIPCIONES', row, null)), Promise.resolve())
+    .then(()=>{ showToast(rows.length>1?`${rows.length} inscripciones creadas`:'Inscripción creada'); closeModal(); loadAllData().then(inscripciones); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
 function toggleDescuentoIns() {
   const sel = document.getElementById('i-dto-sel')?.value;
   const wrap = document.getElementById('wrap-dto-custom');
   if (wrap) wrap.style.display = sel === 'custom' ? '' : 'none';
-}
-
-function actualizarDiasInscripcion() {
-  const actId = document.getElementById('i-act')?.value;
-  const cont  = document.getElementById('dias-ins-checks');
-  const grpEl = document.getElementById('i-grupo');
-  if (!cont) return;
-  if (!actId) {
-    cont.innerHTML = '<span style="color:var(--text3);font-size:13px">Selecciona una actividad primero</span>';
-    if (grpEl) { grpEl.value = 'Sin grupo'; grpEl.style.color = 'var(--text3)'; }
-    return;
-  }
-  const act = DB.actividades.find(a => String(a.ID) === actId);
-  // Días
-  const dias = act?.DIAS_SEMANA
-    ? String(act.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean)
-    : ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
-  cont.innerHTML = dias.map(d =>
-    `<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;padding:5px 10px;border:1.5px solid var(--border2);border-radius:6px">
-      <input type="checkbox" name="i-dia" value="${d}"> ${d.slice(0,2)}
-    </label>`
-  ).join('');
-  // Grupo — fijado por la actividad, no editable
-  if (grpEl) {
-    if (act?.NUM_GRUPOS) {
-      grpEl.value = 'Grupo ' + act.NUM_GRUPOS;
-      grpEl.style.color = 'var(--text1)';
-    } else {
-      grpEl.value = 'Sin grupo';
-      grpEl.style.color = 'var(--text3)';
-    }
-  }
-  // Precio — se carga automáticamente desde la actividad
-  const precioEl = document.getElementById('i-precio');
-  if (precioEl && act?.PRECIO) precioEl.value = act.PRECIO;
-  // Tipo de precio — derivado del TIPO de la actividad
-  const tipoPrecioEl = document.getElementById('i-tipo-precio');
-  if (tipoPrecioEl && act) {
-    const t = sinTildes(act.TIPO || '');
-    const esUnico = t.includes('SUELTA') || t.includes('ANUAL');
-    const esMens  = t === 'MENSUALIDAD';
-    tipoPrecioEl.value = esUnico ? 'PAGO_ÚNICO' : 'MENSUALIDAD';
-    tipoPrecioEl.disabled = esUnico || esMens;
-    tipoPrecioEl.style.background = (esUnico || esMens) ? 'var(--bg2)' : '';
-    tipoPrecioEl.style.cursor     = (esUnico || esMens) ? 'default' : '';
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
