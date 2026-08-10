@@ -389,9 +389,9 @@ tr:hover td{background:#f8f8f8}
 const GAS_URL  = 'https://script.google.com/macros/s/AKfycby6PHeBX1EPH0wrmNF-ixgvs7T8sy5pgzzpquTFb-dtt7W4G1mg2wY8B-IL_wJ9NgT_cQ/exec';
 const APP_VER  = '2.0';
 const CURSO    = '2026-2027';
-const NIF_EMISOR      = 'B00000000';                 // ← CIF/NIF real de la entidad
-const NOMBRE_EMISOR   = 'SM ACADEMIA';               // ← Nombre o razón social
-const DOMICILIO_EMISOR = 'C/ Ejemplo, 1 — 35000 Las Palmas de Gran Canaria'; // ← Domicilio fiscal
+const NIF_EMISOR       = '45766626F';
+const NOMBRE_EMISOR    = 'ANTONIO SAMUEL MARTÍN RIVERA';
+const DOMICILIO_EMISOR = 'C/ TEOBALDO POWER, 15 4º IZQ. LAS PALMAS DE GRAN CANARIA';
 
 // ── Google Identity Services ──────────────────────────────────────────────
 // Obtén tu Client ID en console.cloud.google.com → APIs → Credenciales → OAuth 2.0
@@ -2117,59 +2117,55 @@ function facturas() {
   topbarBtn('+ Nueva factura', () => modalFactura());
   topbarBtn('↓ PDF lista', () => {
     const totalF = DB.facturas.reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
-    const cobF   = DB.facturas.filter(f=>String(f.ESTADO||'').toUpperCase()==='COBRADA').reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
-    const kHtml = `<div class="kpis">
+    const cobF   = DB.facturas.filter(f=>String(f.ESTADO_AEAT||'').toUpperCase()==='COBRADA').reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+    const kHtml  = `<div class="kpis">
       <div class="kpi"><div class="kpi-n">${DB.facturas.length}</div><div class="kpi-l">Facturas</div></div>
       <div class="kpi"><div class="kpi-n">${fmtEur(totalF)}</div><div class="kpi-l">Total facturado</div></div>
       <div class="kpi"><div class="kpi-n">${fmtEur(cobF)}</div><div class="kpi-l">Cobrado</div></div>
       <div class="kpi"><div class="kpi-n">${fmtEur(totalF-cobF)}</div><div class="kpi-l">Pendiente</div></div>
     </div>`;
     const filas = DB.facturas.map(f => {
-      const est = String(f.ESTADO||'EMITIDA').toUpperCase();
+      const est = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
       const col = est==='COBRADA'?'#e8f5e9':est==='ANULADA'?'#ffebee':'#fff8e1';
       return `<tr style="background:${col}">
-        <td class="mono">${esc(f.ID||'')}</td>
-        <td>${fmtFecha(f.FECHA)}</td>
-        <td>${esc(f.NOMBRE_CLIENTE||'—')}</td>
-        <td>${esc(f.DESCRIPCION||'—')}</td>
-        <td style="text-align:right">${fmtEur(f.BASE_IMPONIBLE)}</td>
-        <td style="text-align:right">${esc(f.TIPO_IMPUESTO||'EXENTO')}</td>
-        <td style="text-align:right">${fmtEur(f.CUOTA_IMPUESTO||0)}</td>
+        <td class="mono">${esc(f.ID_FACTURA||'')}</td>
+        <td>${fmtFecha(f.FECHA_EXP)}</td>
+        <td>${esc(f.SERIE||'SM')}-${esc(String(f.NUMERO||''))}</td>
+        <td>${esc(f.CLIENTE_NOMBRE||'—')}</td>
+        <td>${esc(f.CONCEPTO||'—')}</td>
         <td style="text-align:right;font-weight:700">${fmtEur(f.TOTAL)}</td>
         <td>${est}</td>
-        <td style="font-size:9px;font-family:monospace">${(f.HUELLA||'').substring(0,16)}…</td>
+        <td style="font-size:9px;font-family:monospace">${(f.HASH_ACTUAL||'').substring(0,16)}…</td>
       </tr>`;
     }).join('');
     exportarPDF(`Registro de facturas — ${NOMBRE_EMISOR}`, kHtml+`<table>
-      <thead><tr><th>Nº</th><th>Fecha</th><th>Cliente</th><th>Descripción</th><th>Base imp.</th><th>Impuesto</th><th>Cuota</th><th>Total</th><th>Estado</th><th>Huella (inicio)</th></tr></thead>
-      <tbody>${filas||'<tr><td colspan="10">Sin facturas</td></tr>'}</tbody></table>
+      <thead><tr><th>ID Factura</th><th>Fecha exp.</th><th>Serie-Nº</th><th>Cliente</th><th>Concepto</th><th>Total</th><th>Estado AEAT</th><th>Hash (inicio)</th></tr></thead>
+      <tbody>${filas||'<tr><td colspan="8">Sin facturas</td></tr>'}</tbody></table>
       <p style="font-size:9px;color:#888;margin-top:10px">NIF emisor: ${NIF_EMISOR} · VeriFactu RD 1007/2023</p>`);
   }, 'btn-secondary');
 
   const rows = DB.facturas.map(f => {
-    const estado = String(f.ESTADO||'EMITIDA').toUpperCase();
+    const estado = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
     const badgeE = estado==='COBRADA' ? 'badge-green' : estado==='ANULADA' ? 'badge-red' : 'badge-amber';
     const fJson  = JSON.stringify(f).replace(/'/g,'&#39;');
     return `<tr>
-      <td class="mono"><strong>${esc(f.ID||'')}</strong></td>
-      <td>${fmtFecha(f.FECHA)}</td>
-      <td>${esc(f.NOMBRE_CLIENTE||f.ID_CLIENTE||'—')}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.DESCRIPCION||'—')}</td>
-      <td class="mono" style="text-align:right">${fmtEur(f.BASE_IMPONIBLE)}</td>
-      <td style="text-align:right">${esc(f.TIPO_IMPUESTO||'EXENTO')}</td>
-      <td class="mono" style="text-align:right">${fmtEur(f.CUOTA_IMPUESTO||0)}</td>
+      <td class="mono"><strong>${esc(f.ID_FACTURA||'')}</strong></td>
+      <td>${fmtFecha(f.FECHA_EXP)}</td>
+      <td class="mono">${esc(f.SERIE||'SM')}-${String(f.NUMERO||'').padStart(3,'0')}</td>
+      <td>${esc(f.CLIENTE_NOMBRE||'—')}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.CONCEPTO||'—')}</td>
       <td class="mono" style="text-align:right"><strong>${fmtEur(f.TOTAL)}</strong></td>
       <td><span class="badge ${badgeE}">${esc(estado)}</span></td>
-      <td class="mono" style="font-size:10px;color:var(--text3)" title="${esc(f.HUELLA||'')}">${(f.HUELLA||'').substring(0,10)}…</td>
+      <td class="mono" style="font-size:10px;color:var(--text3)" title="${esc(f.HASH_ACTUAL||'')}">${(f.HASH_ACTUAL||'').substring(0,10)}…</td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" style="background:var(--g1);color:#fff;margin-right:4px" onclick='exportarFacturaPDF(${fJson})'>↓ PDF</button>
         <button class="btn btn-sm btn-secondary" onclick='modalFactura(${fJson})'>Editar</button>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><p>Sin facturas registradas</p></div></td></tr>`;
+  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">🧾</div><p>Sin facturas registradas</p></div></td></tr>`;
 
-  const total = DB.facturas.reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
-  const cobradas = DB.facturas.filter(f=>String(f.ESTADO||'').toUpperCase()==='COBRADA').reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+  const total    = DB.facturas.reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+  const cobradas = DB.facturas.filter(f=>String(f.ESTADO_AEAT||'').toUpperCase()==='COBRADA').reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
 
   render(`
     <div class="kpi-row" style="margin-bottom:16px">
@@ -2181,11 +2177,11 @@ function facturas() {
     <div class="card" style="padding:14px 20px">
       <div class="table-toolbar">
         <input class="search-input" id="q-fac" placeholder="Buscar…" oninput="filterTable('q-fac','tbl-fac')">
-        <span class="text-muted">${DB.facturas.length} facturas · NIF emisor: ${NIF_EMISOR}</span>
+        <span class="text-muted">${DB.facturas.length} facturas · NIF: ${NIF_EMISOR}</span>
       </div>
       <div class="table-wrap">
         <table id="tbl-fac">
-          <thead><tr><th>Nº</th><th>Fecha</th><th>Cliente</th><th>Descripción</th><th>Base imp.</th><th>Impuesto</th><th>Cuota</th><th>Total</th><th>Estado</th><th>Huella</th><th></th></tr></thead>
+          <thead><tr><th>ID Factura</th><th>Fecha exp.</th><th>Serie-Nº</th><th>Cliente</th><th>Concepto</th><th>Total</th><th>Estado AEAT</th><th>Hash actual</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -2194,21 +2190,31 @@ function facturas() {
 
 function modalFactura(f) {
   f = f || {};
-  const isNew = !f.ID;
-  const clientes = DB.clientes.map(c=>`<option value="${esc(c.ID)}" ${f.ID_CLIENTE===c.ID?'selected':''}>${esc(c.NOMBRE||'')} ${esc(c.APELLIDOS||'')}</option>`).join('');
+  const isNew = !f.ID_FACTURA;
+  // Pre-seleccionar cliente: por ID si existe, sino por nombre
+  const clientes = DB.clientes.map(c => {
+    const sel = f.ID_CLIENTE
+      ? f.ID_CLIENTE === c.ID_CLIENTE
+      : (f.CLIENTE_NOMBRE && (`${c.NOMBRE||''} ${c.APELLIDOS||''}`.trim() === f.CLIENTE_NOMBRE));
+    return `<option value="${esc(c.ID_CLIENTE||c.ID)}" ${sel?'selected':''}>${esc(c.NOMBRE||'')} ${esc(c.APELLIDOS||'')}</option>`;
+  }).join('');
   openModal(isNew ? 'Nueva factura VeriFactu' : 'Editar factura', `
     <div class="form-grid">
-      <div class="field"><label>Fecha <span class="req">*</span></label>
-        <input type="date" id="fac-fecha" value="${esc(f.FECHA||new Date().toISOString().slice(0,10))}"></div>
+      <div class="field"><label>Fecha expedición <span class="req">*</span></label>
+        <input type="date" id="fac-fecha" value="${esc(f.FECHA_EXP||new Date().toISOString().slice(0,10))}"></div>
+      <div class="field"><label>Serie</label>
+        <input id="fac-serie" class="upper" value="${esc(f.SERIE||'SM')}" style="width:80px"></div>
       <div class="field"><label>Cliente <span class="req">*</span></label>
         <select id="fac-cli">${clientes}</select></div>
-      <div class="field" style="grid-column:span 2"><label>Descripción <span class="req">*</span></label>
-        <input id="fac-desc" value="${esc(f.DESCRIPCION||'')}"></div>
+      <div class="field"><label>NIF / DNI receptor</label>
+        <input id="fac-nif-rec" class="upper" value="${esc(f.CLIENTE_NIF||f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>
+      <div class="field" style="grid-column:span 2"><label>Concepto <span class="req">*</span></label>
+        <input id="fac-desc" value="${esc(f.CONCEPTO||'')}"></div>
       <div class="field"><label>Base imponible (€) <span class="req">*</span></label>
-        <input type="number" step="0.01" id="fac-base" value="${esc(f.BASE_IMPONIBLE||'')}" oninput="calcTotalFac()"></div>
-      <div class="field"><label>Impuesto</label>
+        <input type="number" step="0.01" id="fac-base" value="${esc(f.BASE_IMPONIBLE||f.TOTAL||'')}" oninput="calcTotalFac()"></div>
+      <div class="field"><label>Régimen fiscal</label>
         <select id="fac-imp" onchange="calcTotalFac()">
-          <option value="EXENTO" ${(f.TIPO_IMPUESTO||'EXENTO')==='EXENTO'?'selected':''}>Exento</option>
+          <option value="EXENTO" ${(f.TIPO_IMPUESTO||'EXENTO')==='EXENTO'?'selected':''}>Exento (educación / deporte)</option>
           <option value="IGIC 7%" ${f.TIPO_IMPUESTO==='IGIC 7%'?'selected':''}>IGIC 7%</option>
           <option value="IGIC 3%" ${f.TIPO_IMPUESTO==='IGIC 3%'?'selected':''}>IGIC 3%</option>
         </select></div>
@@ -2216,25 +2222,24 @@ function modalFactura(f) {
         <input type="number" step="0.01" id="fac-cuota" value="${esc(f.CUOTA_IMPUESTO||'0')}" readonly></div>
       <div class="field"><label>Total (€)</label>
         <input type="number" step="0.01" id="fac-total" value="${esc(f.TOTAL||'')}" readonly style="font-weight:700"></div>
-      <div class="field"><label>NIF / DNI receptor</label>
-        <input id="fac-nif-rec" class="upper" value="${esc(f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>
-      <div class="field"><label>Estado</label>
+      <div class="field"><label>Estado AEAT</label>
         <select id="fac-estado">
-          ${['EMITIDA','COBRADA','ANULADA'].map(s=>`<option value="${s}" ${(f.ESTADO||'EMITIDA')===s?'selected':''}>${s}</option>`).join('')}
+          ${['EMITIDA','COBRADA','ANULADA'].map(s=>`<option value="${s}" ${(f.ESTADO_AEAT||'EMITIDA')===s?'selected':''}>${s}</option>`).join('')}
         </select></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="saveFactura(${JSON.stringify(isNew)},${JSON.stringify(f.ID||null)})">${isNew?'Crear factura':'Guardar cambios'}</button>`);
+     <button class="btn btn-primary" onclick="saveFactura(${JSON.stringify(isNew)},${JSON.stringify(f.ID_FACTURA||null)})">${isNew?'Crear factura':'Guardar cambios'}</button>`);
   calcTotalFac();
-  // auto-uppercase NIF receptor
   const nifEl = document.getElementById('fac-nif-rec');
   if (nifEl) nifEl.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
+  const serEl = document.getElementById('fac-serie');
+  if (serEl) serEl.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
 }
 
 function calcTotalFac() {
-  const base = parseFloat(document.getElementById('fac-base')?.value||0)||0;
-  const imp  = document.getElementById('fac-imp')?.value||'EXENTO';
-  const pct  = imp==='IGIC 7%' ? 0.07 : imp==='IGIC 3%' ? 0.03 : 0;
+  const base  = parseFloat(document.getElementById('fac-base')?.value||0)||0;
+  const imp   = document.getElementById('fac-imp')?.value||'EXENTO';
+  const pct   = imp==='IGIC 7%' ? 0.07 : imp==='IGIC 3%' ? 0.03 : 0;
   const cuota = parseFloat((base * pct).toFixed(2));
   const total = parseFloat((base + cuota).toFixed(2));
   const cEl = document.getElementById('fac-cuota'); if(cEl) cEl.value = cuota.toFixed(2);
@@ -2244,6 +2249,7 @@ function calcTotalFac() {
 async function saveFactura(isNew, id) {
   const cliId  = document.getElementById('fac-cli')?.value||'';
   const fecha  = document.getElementById('fac-fecha')?.value||'';
+  const serie  = (document.getElementById('fac-serie')?.value||'SM').trim().toUpperCase();
   const desc   = document.getElementById('fac-desc')?.value.trim()||'';
   const base   = parseFloat(document.getElementById('fac-base')?.value)||0;
   const imp    = document.getElementById('fac-imp')?.value||'EXENTO';
@@ -2252,128 +2258,140 @@ async function saveFactura(isNew, id) {
   const estado = document.getElementById('fac-estado')?.value||'EMITIDA';
   const nifRec = (document.getElementById('fac-nif-rec')?.value||'').trim().toUpperCase();
   if (!cliId||!fecha||!desc||!base) { showToast('Rellena todos los campos obligatorios','error'); return; }
-  const cli = DB.clientes.find(c=>c.ID===cliId)||{};
-  let huellaAnt = '0'.repeat(64);
-  if (isNew && DB.facturas.length>0) {
-    const sorted = [...DB.facturas].sort((a,b)=>String(a.FECHA)<String(b.FECHA)?-1:1);
-    huellaAnt = sorted[sorted.length-1].HUELLA || '0'.repeat(64);
+  const cli = DB.clientes.find(c=>(c.ID_CLIENTE||c.ID)===cliId)||{};
+  // Numeración: máximo existente + 1 (resistente a borrados)
+  const nextNum = isNew
+    ? Math.max(0, ...DB.facturas.map(f=>parseInt(f.NUMERO)||0)) + 1
+    : (DB.facturas.find(f=>f.ID_FACTURA===id)?.NUMERO || 0);
+  const numFac  = id || (`${serie}-${String(nextNum).padStart(3,'0')}`);
+  // Hash anterior: última factura por fecha
+  let hashAnt = '0'.repeat(64);
+  if (isNew && DB.facturas.length > 0) {
+    const sorted = [...DB.facturas].sort((a,b)=>String(a.FECHA_EXP)<String(b.FECHA_EXP)?-1:1);
+    hashAnt = sorted[sorted.length-1].HASH_ACTUAL || '0'.repeat(64);
   }
-  const numFac = id || ('SM-' + String(DB.facturas.length+1).padStart(3,'0'));
-  const cadena = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${huellaAnt}`;
-  const huella = await sha256hex(cadena);
+  // Cadena VeriFactu: NIF_EMISOR|Serie-Número|FechaExp|ImporteTotal|HashAnterior
+  const cadena = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${hashAnt}`;
+  const hashActual = await sha256hex(cadena);
   const row = {
-    FECHA:           fecha,
-    ID_CLIENTE:      cliId,
-    NOMBRE_CLIENTE:  `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim(),
-    NIF_RECEPTOR:    nifRec,
-    DESCRIPCION:     desc,
-    BASE_IMPONIBLE:  base,
-    TIPO_IMPUESTO:   imp,
-    CUOTA_IMPUESTO:  cuota,
-    TOTAL:           total,
-    ESTADO:          estado,
-    HUELLA_ANT:      isNew ? huellaAnt : undefined,
-    HUELLA:          huella,
-    NIF_EMISOR:      NIF_EMISOR,
-    NOMBRE_EMISOR:   NOMBRE_EMISOR,
+    ...(isNew ? { ID_FACTURA: numFac } : {}),
+    FECHA_EXP:        fecha,
+    SERIE:            serie,
+    NUMERO:           nextNum,
+    TOTAL:            total,
+    CLIENTE_NOMBRE:   `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim(),
+    CLIENTE_NIF:      nifRec,
+    NIF_RECEPTOR:     nifRec,
+    NOMBRE_EMISOR:    NOMBRE_EMISOR,
+    DOMICILIO_EMISOR: DOMICILIO_EMISOR,
+    CONCEPTO:         desc,
+    HASH_ANTERIOR:    isNew ? hashAnt : undefined,
+    HASH_ACTUAL:      hashActual,
+    ESTADO_AEAT:      estado,
+    // Campos fiscales adicionales (añadir columnas al sheet para persistirlos)
+    BASE_IMPONIBLE:   base,
+    TIPO_IMPUESTO:    imp,
+    CUOTA_IMPUESTO:   cuota,
+    NIF_EMISOR:       NIF_EMISOR,
+    ID_CLIENTE:       cliId,
   };
   writeToSheet('FACTURAS', row, isNew ? null : id)
-    .then(()=>{ showToast(isNew?'Factura creada con huella VeriFactu':'Factura actualizada'); closeModal(); loadAllData().then(facturas); })
+    .then(()=>{ showToast(isNew?`Factura ${numFac} creada con huella VeriFactu`:'Factura actualizada'); closeModal(); loadAllData().then(facturas); })
     .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
 // ── Exportar factura individual como PDF ─────────────────────────────────
 function exportarFacturaPDF(f) {
-  const numFac   = String(f.ID||'—');
-  const fecha    = fmtFecha(f.FECHA);
-  const cli      = f.NOMBRE_CLIENTE||f.ID_CLIENTE||'—';
-  const nifRec   = f.NIF_RECEPTOR||'';
-  const desc     = f.DESCRIPCION||'—';
-  const base     = parseFloat(f.BASE_IMPONIBLE||0);
-  const imp      = f.TIPO_IMPUESTO||'EXENTO';
-  const cuota    = parseFloat(f.CUOTA_IMPUESTO||0);
-  const total    = parseFloat(f.TOTAL||0);
-  const estado   = String(f.ESTADO||'EMITIDA').toUpperCase();
-  const huella   = f.HUELLA||'';
-  const huellaAnt= f.HUELLA_ANT||'';
-  const nifEmisor= f.NIF_EMISOR||NIF_EMISOR;
-  const nombreEmisor = f.NOMBRE_EMISOR||NOMBRE_EMISOR;
+  const numFac    = String(f.ID_FACTURA||`${f.SERIE||'SM'}-${String(f.NUMERO||'').padStart(3,'0')}`||'—');
+  const fecha     = fmtFecha(f.FECHA_EXP);
+  const cli       = f.CLIENTE_NOMBRE||'—';
+  const nifRec    = f.CLIENTE_NIF||f.NIF_RECEPTOR||'';
+  const desc      = f.CONCEPTO||'—';
+  const total     = parseFloat(f.TOTAL||0);
+  // Si hay desglose fiscal guardado, mostrarlo; si no, tratar como exento
+  const base      = parseFloat(f.BASE_IMPONIBLE||0) || total;
+  const imp       = f.TIPO_IMPUESTO||'EXENTO';
+  const cuota     = parseFloat(f.CUOTA_IMPUESTO||0);
+  const estado    = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
+  const hashActual= f.HASH_ACTUAL||'';
+  const hashAnt   = f.HASH_ANTERIOR||'';
+  const nifEmisor = f.NIF_EMISOR||NIF_EMISOR;
+  const nomEmisor = f.NOMBRE_EMISOR||NOMBRE_EMISOR;
+  const domEmisor = f.DOMICILIO_EMISOR||DOMICILIO_EMISOR;
 
   const estadoColor = estado==='COBRADA'?'#1b5e20':estado==='ANULADA'?'#b71c1c':'#b45309';
   const rowsImpuesto = imp==='EXENTO'
-    ? `<tr><td>Base imponible</td><td style="text-align:right">${fmtEur(base)}</td></tr>
-       <tr><td style="color:#666">Exención fiscal (educación / formación)</td><td style="text-align:right;color:#666">Exento</td></tr>`
+    ? `<tr><td>Importe</td><td style="text-align:right">${fmtEur(total)}</td></tr>
+       <tr><td style="color:#666;font-size:11px">Operación exenta — Art. 20.Uno.9º LIGIC (actividades educativas/deportivas)</td><td style="text-align:right;color:#666">Exento</td></tr>`
     : `<tr><td>Base imponible</td><td style="text-align:right">${fmtEur(base)}</td></tr>
-       <tr><td>${imp}</td><td style="text-align:right">${fmtEur(cuota)}</td></tr>`;
+       <tr><td>${esc(imp)}</td><td style="text-align:right">${fmtEur(cuota)}</td></tr>`;
 
   const body = `
 <style>
-.inv-box{border:1px solid #ddd;border-radius:6px;padding:16px 20px;margin-bottom:16px}
-.inv-parties{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:16px}
-.inv-party h3{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:6px}
-.inv-party p{font-size:12px;line-height:1.6;margin:0}
-.inv-lines{width:100%;border-collapse:collapse;margin-bottom:16px}
-.inv-lines td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px}
+.inv-box{border:1px solid #ddd;border-radius:6px;padding:16px 20px;margin-bottom:14px}
+.inv-parties{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.inv-party h3{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;margin-bottom:5px}
+.inv-party p{font-size:12px;line-height:1.7;margin:0}
+.inv-lines{width:100%;border-collapse:collapse;margin-bottom:14px}
+.inv-lines th{background:#f4f4f4;padding:7px 10px;text-align:left;font-size:10px;font-weight:700}
+.inv-lines td{padding:8px 10px;border-bottom:1px solid #eee;font-size:12px}
 .inv-lines tr:last-child td{border-bottom:none}
-.inv-total{display:flex;justify-content:flex-end}
-.inv-total table{width:260px;border-collapse:collapse}
-.inv-total td{padding:5px 10px;font-size:12px}
-.inv-total .total-row td{font-size:14px;font-weight:800;border-top:2px solid #2e7d32;padding-top:8px}
-.vf-box{background:#f8f8f8;border:1px solid #e0e0e0;border-left:3px solid #2e7d32;border-radius:4px;padding:10px 14px;margin-top:16px;font-size:9px;color:#555;line-height:1.7}
-.vf-box strong{color:#2e7d32;display:block;margin-bottom:2px;font-size:10px}
-.mono{font-family:monospace;word-break:break-all}
-.estado-badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;background:${estadoColor}}
+.inv-total{display:flex;justify-content:flex-end;margin-top:8px}
+.inv-total table{width:280px;border-collapse:collapse}
+.inv-total td{padding:5px 10px;font-size:12px;border-bottom:1px solid #f0f0f0}
+.inv-total .total-row td{font-size:15px;font-weight:800;border-top:2px solid #2e7d32;border-bottom:none;padding-top:9px;color:#2e7d32}
+.vf-box{background:#f8f8f8;border:1px solid #e0e0e0;border-left:4px solid #2e7d32;border-radius:4px;padding:10px 14px;margin-top:14px;font-size:9px;color:#555;line-height:1.8}
+.vf-box strong{color:#2e7d32;display:block;margin-bottom:3px;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.mono{font-family:monospace;word-break:break-all;font-size:9px}
+.estado-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:10px;font-weight:800;letter-spacing:.05em;color:#fff;background:${estadoColor}}
 </style>
 
-<div class="inv-box" style="display:flex;justify-content:space-between;align-items:flex-start">
+<div class="inv-box" style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">
   <div>
-    <div style="font-size:24px;font-weight:900;color:#2e7d32;letter-spacing:-.5px">${esc(nombreEmisor)}</div>
-    <div style="font-size:11px;color:#666;margin-top:4px">${esc(DOMICILIO_EMISOR)}</div>
-    <div style="font-size:11px;color:#666">NIF/CIF: ${esc(nifEmisor)}</div>
+    <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px">Emisor</div>
+    <div style="font-size:20px;font-weight:900;color:#2e7d32;line-height:1.2">${esc(nomEmisor)}</div>
+    <div style="font-size:11px;color:#666;margin-top:5px;line-height:1.6">${esc(domEmisor)}<br>NIF: <strong>${esc(nifEmisor)}</strong></div>
   </div>
-  <div style="text-align:right">
-    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em">Factura</div>
-    <div style="font-size:22px;font-weight:800;color:#111">${esc(numFac)}</div>
-    <div style="font-size:11px;color:#666;margin-top:2px">${fecha}</div>
-    <div style="margin-top:6px"><span class="estado-badge">${estado}</span></div>
+  <div style="text-align:right;flex-shrink:0">
+    <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.1em">Factura</div>
+    <div style="font-size:26px;font-weight:900;color:#111;letter-spacing:-1px">${esc(numFac)}</div>
+    <div style="font-size:12px;color:#555;margin-top:2px">${fecha}</div>
+    <div style="margin-top:8px"><span class="estado-pill">${estado}</span></div>
   </div>
 </div>
 
-<div class="inv-parties inv-box">
-  <div class="inv-party">
-    <h3>Emisor</h3>
-    <p><strong>${esc(nombreEmisor)}</strong><br>${esc(DOMICILIO_EMISOR)}<br>NIF: ${esc(nifEmisor)}</p>
-  </div>
+<div class="inv-box inv-parties">
   <div class="inv-party">
     <h3>Receptor</h3>
-    <p><strong>${esc(cli)}</strong>${nifRec?`<br>NIF: ${esc(nifRec)}`:'<br><span style="color:#aaa;font-size:10px">Sin NIF registrado</span>'}</p>
+    <p><strong>${esc(cli)}</strong>${nifRec?`<br>NIF: ${esc(nifRec)}`:'<br><span style="color:#ccc;font-size:10px">Sin NIF</span>'}</p>
+  </div>
+  <div class="inv-party" style="text-align:right">
+    <h3>Datos de emisión</h3>
+    <p>Fecha: <strong>${fecha}</strong><br>Serie: <strong>${esc(f.SERIE||'SM')}</strong> &nbsp;Nº: <strong>${esc(String(f.NUMERO||''))}</strong></p>
   </div>
 </div>
 
 <div class="inv-box">
-  <h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:10px">Concepto</h3>
   <table class="inv-lines">
-    <thead><tr style="background:#f4f4f4"><th style="padding:7px 10px;text-align:left;font-size:10px">Descripción</th><th style="padding:7px 10px;text-align:right;font-size:10px">Importe</th></tr></thead>
-    <tbody>
-      <tr><td>${esc(desc)}</td><td style="text-align:right">${fmtEur(base)}</td></tr>
-    </tbody>
+    <thead><tr><th>Concepto</th><th style="text-align:right">Importe</th></tr></thead>
+    <tbody><tr><td>${esc(desc)}</td><td style="text-align:right">${fmtEur(imp==='EXENTO'?total:base)}</td></tr></tbody>
   </table>
   <div class="inv-total">
     <table>
       ${rowsImpuesto}
-      <tr class="total-row"><td><strong>TOTAL</strong></td><td style="text-align:right"><strong>${fmtEur(total)}</strong></td></tr>
+      <tr class="total-row"><td><strong>TOTAL A PAGAR</strong></td><td style="text-align:right"><strong>${fmtEur(total)}</strong></td></tr>
     </table>
   </div>
 </div>
 
 <div class="vf-box">
-  <strong>VeriFactu — Registro de factura verificable (RD 1007/2023)</strong>
-  NIF Emisor: ${esc(nifEmisor)} &nbsp;|&nbsp; Serie-Número: ${esc(numFac)} &nbsp;|&nbsp; Fecha: ${fecha} &nbsp;|&nbsp; Total: ${fmtEur(total)}<br>
-  Huella (SHA-256): <span class="mono">${esc(huella)}</span><br>
-  Huella anterior: <span class="mono">${esc(huellaAnt||'0'.repeat(64))}</span>
+  <strong>VeriFactu · Registro verificable (RD 1007/2023)</strong>
+  <span>NIF emisor: ${esc(nifEmisor)} &nbsp;·&nbsp; Serie-Nº: ${esc(numFac)} &nbsp;·&nbsp; Fecha: ${fecha} &nbsp;·&nbsp; Total: ${fmtEur(total)}</span><br>
+  Hash actual&nbsp;&nbsp;: <span class="mono">${esc(hashActual||'—')}</span><br>
+  Hash anterior: <span class="mono">${esc(hashAnt||'0'.repeat(64))}</span>
 </div>`;
 
-  exportarPDF(`Factura ${numFac} — ${esc(nombreEmisor)}`, body);
+  exportarPDF(`Factura ${numFac} — ${esc(nomEmisor)}`, body);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
