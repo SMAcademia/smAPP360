@@ -1590,7 +1590,7 @@ function inscripciones() {
         <td>${esFutbol(i.LINEA||'')?'⚽ Fútbol':'🎨 Extra'}</td>
         <td style="font-size:11px">${fmtDias(i.DIAS_SEMANA||i.DIA_SEMANA)}${i.GRUPO?' Gr.'+esc(i.GRUPO):''}</td>
         <td style="font-size:11px;color:#555">${esc(i.HORARIO||'—')}</td>
-        <td>${fmtEur(i.PRECIO_ACORDADO)}</td>
+        <td>${fmtEur(i.PRECIO_ACORDADO)}<br><span style="font-size:10px;color:#555">${i.TIPO_PRECIO==='PAGO_ÚNICO'?'Pago único':'Mensualidad'}${i.DESCUENTO&&i.DESCUENTO!=='0'?' · -'+i.DESCUENTO+'%':''}</span></td>
         <td>${esc(i.FORMA_PAGO||'—')}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
         <td><span class="badge ${est==='ACTIVA'?'bg':est==='BAJA'?'br':'ba'}">${esc(i.ESTADO||'—')}</span></td>
@@ -1625,7 +1625,7 @@ function inscripciones() {
         <td>${esFutbol(i.LINEA||'') ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
         <td style="font-size:12px">${fmtDias(i.DIAS_SEMANA||i.DIA_SEMANA)}${i.GRUPO?` <span class="badge badge-amber" style="font-size:10px">Gr.${esc(i.GRUPO)}</span>`:''}</td>
         <td style="font-size:12px;color:var(--text3)">${esc(i.HORARIO||'—')}</td>
-        <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}</td>
+        <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}<br><span style="font-size:11px;color:var(--text3)">${i.TIPO_PRECIO==='PAGO_ÚNICO'?'Único':'Mens.'}${i.DESCUENTO&&i.DESCUENTO!=='0'?' −'+i.DESCUENTO+'%':''}</span></td>
         <td>${esc(i.FORMA_PAGO||'—')}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
         <td>${badgeEstado(i.ESTADO)}</td>
@@ -1710,16 +1710,31 @@ function modalInscripcion(i) {
       <div class="field"><label>Grupo</label>
         <input id="i-grupo" readonly style="background:var(--bg2);cursor:default;color:${actSel?.NUM_GRUPOS?'var(--text1)':'var(--text3)'}"
           value="${actSel?.NUM_GRUPOS ? 'Grupo '+actSel.NUM_GRUPOS : 'Sin grupo'}"></div>
-      <div class="field"><label>Horario</label>
-        <input id="i-horario" placeholder="p.ej. 16:00-17:00" value="${esc(i.HORARIO||'')}"></div>
-      <div class="field"><label>Precio acordado (€)</label>
-        <input id="i-precio" type="number" step="0.01" value="${esc(i.PRECIO_ACORDADO||'')}"></div>
-      <div class="field"><label>Descuento (€)</label>
-        <input id="i-dto" type="number" step="0.01" value="${esc(i.DESCUENTO||'0')}"></div>
+      <div class="field"><label>Hora inicio</label>
+        <input id="i-hora-ini" type="time" value="${esc((i.HORARIO||'').split('-')[0]?.trim()||'')}"></div>
+      <div class="field"><label>Hora fin</label>
+        <input id="i-hora-fin" type="time" value="${esc((i.HORARIO||'').split('-')[1]?.trim()||'')}"></div>
+      <div class="field"><label>Tipo de precio</label>
+        <select id="i-tipo-precio">
+          <option value="MENSUALIDAD" ${(i.TIPO_PRECIO||'MENSUALIDAD')==='MENSUALIDAD'?'selected':''}>Mensualidad</option>
+          <option value="PAGO_ÚNICO"  ${(i.TIPO_PRECIO||'')==='PAGO_ÚNICO'?'selected':''}>Pago único</option>
+        </select></div>
+      <div class="field"><label>Precio (€)</label>
+        <input id="i-precio" type="number" step="0.01" min="0" value="${esc(i.PRECIO_ACORDADO||'')}"></div>
+      <div class="field"><label>Descuento</label>
+        <select id="i-dto-sel" onchange="toggleDescuentoIns()">
+          <option value="0"      ${(!i.DESCUENTO||i.DESCUENTO==='0')?'selected':''}>Sin descuento</option>
+          <option value="10"     ${i.DESCUENTO==='10'?'selected':''}>10% — 2.º hermano/a</option>
+          <option value="custom" ${i.DESCUENTO&&i.DESCUENTO!=='0'&&i.DESCUENTO!=='10'?'selected':''}>Personalizado</option>
+        </select>
+        <div id="wrap-dto-custom" style="${i.DESCUENTO&&i.DESCUENTO!=='0'&&i.DESCUENTO!=='10'?'':'display:none'};margin-top:6px">
+          <input id="i-dto" type="number" min="0" max="100" step="1" placeholder="% descuento"
+            value="${esc(i.DESCUENTO&&i.DESCUENTO!=='0'&&i.DESCUENTO!=='10'?i.DESCUENTO:'')}">
+        </div></div>
       <div class="field"><label>Forma de pago</label>
         <select id="i-fpago">
           <option value="">—</option>
-          ${['MENSUAL','TRIMESTRAL','SEMESTRAL','ANUAL','ÚNICO'].map(f=>`<option value="${f}" ${(i.FORMA_PAGO||'')=== f?'selected':''}>${f}</option>`).join('')}
+          ${['BIZUM','TRANSFERENCIA','TARJETA'].map(f=>`<option value="${f}" ${(i.FORMA_PAGO||'')=== f?'selected':''}>${f}</option>`).join('')}
         </select></div>
       <div class="field"><label>Fecha de alta</label>
         <input id="i-falta" type="date" value="${esc(i.FECHA_ALTA||new Date().toISOString().slice(0,10))}"></div>
@@ -1746,15 +1761,20 @@ function guardarInscripcion(id) {
 
   const act = DB.actividades.find(a => String(a.ID) === actId);
   const dias = [...document.querySelectorAll('input[name=i-dia]:checked')].map(cb=>cb.value).join(',');
+  const hIni = document.getElementById('i-hora-ini').value;
+  const hFin = document.getElementById('i-hora-fin').value;
+  const dtoSel = document.getElementById('i-dto-sel').value;
+  const dto = dtoSel === 'custom' ? (document.getElementById('i-dto')?.value || '0') : dtoSel;
   const row = {
     ID_ALUMNO:       aluId,
     ID_ACTIVIDAD:    actId,
     LINEA:           act?.LINEA || 'EXTRAESCOLARES',
     DIAS_SEMANA:     dias,
     GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
-    HORARIO:         document.getElementById('i-horario').value.trim(),
+    HORARIO:         hIni && hFin ? hIni + '-' + hFin : hIni || hFin || '',
+    TIPO_PRECIO:     document.getElementById('i-tipo-precio').value,
     PRECIO_ACORDADO: document.getElementById('i-precio').value,
-    DESCUENTO:       document.getElementById('i-dto').value || '0',
+    DESCUENTO:       dto,
     FORMA_PAGO:      document.getElementById('i-fpago').value,
     FECHA_ALTA:      document.getElementById('i-falta').value,
     ESTADO:          document.getElementById('i-est').value,
@@ -1765,6 +1785,12 @@ function guardarInscripcion(id) {
   writeToSheet('INSCRIPCIONES', row, id)
     .then(() => { showToast(id ? 'Inscripción actualizada' : 'Inscripción creada'); closeModal(); loadAllData().then(inscripciones); })
     .catch(err => showToast('Error: ' + err.message,'error'));
+}
+
+function toggleDescuentoIns() {
+  const sel = document.getElementById('i-dto-sel')?.value;
+  const wrap = document.getElementById('wrap-dto-custom');
+  if (wrap) wrap.style.display = sel === 'custom' ? '' : 'none';
 }
 
 function actualizarDiasInscripcion() {
