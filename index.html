@@ -1847,35 +1847,70 @@ function toggleDescuentoIns() {
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: PAGOS
 // ══════════════════════════════════════════════════════════════════════════
+function _waLinkPago(p) {
+  const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+  const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
+  const telRaw = (cli?.['TELÉFONO'] || cli?.TELEFONO || '').replace(/\D/g,'');
+  if (!telRaw) return '';
+  const tel = telRaw.length === 9 ? '34'+telRaw : telRaw;
+  const tutor   = cli ? (cli.NOMBRE||'').split(' ')[0] : '';
+  const alumno  = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
+  const mes     = p.MES || '';
+  const importe = fmtEur(p.TOTAL_FACTURADO);
+  const concepto = p.CONCEPTO || 'actividad extraescolar';
+  const msg = encodeURIComponent(
+    `Hola ${tutor}, te recordamos que el pago de ${importe} correspondiente a ${concepto} (${mes}) de SM Academia está pendiente.\n\nEl plazo de pago es del 1 al 10 de cada mes. Puedes realizarlo por Bizum o transferencia bancaria.\n\n¡Gracias! 🙏\nSM Academia`
+  );
+  return `<a href="https://wa.me/${tel}?text=${msg}" target="_blank"
+    class="btn btn-sm" style="background:#25D366;color:#fff;white-space:nowrap">📲 WA</a>`;
+}
+
 function pagos() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Registrar pago', () => modalPago());
 
+  const diaHoy = new Date().getDate();
+  const reclamacionActiva = diaHoy >= 11;
+
   const rows = DB.pagos.map(p => {
     const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+    const pendiente = String(p.ESTADO||'').toUpperCase() === 'PENDIENTE';
+    const btnWA = reclamacionActiva && pendiente ? _waLinkPago(p) : '';
     return `<tr>
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
       <td>${esc(p.MES||'—')}</td>
       <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : esc(p.ID_ALUMNO||'—')}</td>
       <td>${esc(p.CONCEPTO||'—')}</td>
-      <td>${fmtEur(p.TOTAL_FACTURADO)}</td>
-      <td>${fmtEur(p.TOTAL_RECIBIDO)}</td>
+      <td class="mono">${fmtEur(p.TOTAL_FACTURADO)}</td>
+      <td class="mono">${fmtEur(p.TOTAL_RECIBIDO)}</td>
       <td>${esc(p.FORMA_PAGO||'—')}</td>
       <td>${badgeEstado(p.ESTADO)}</td>
-      <td><button class="btn btn-sm btn-secondary" onclick='modalPago(${JSON.stringify(p)})'>Editar</button></td>
+      <td style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-sm btn-secondary" onclick='modalPago(${JSON.stringify(p)})'>Editar</button>
+        ${btnWA}
+      </td>
     </tr>`;
   }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">💳</div><p>Sin pagos registrados</p></div></td></tr>`;
 
   const totalPend = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
   const totalCobr = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const nPendMes  = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE'&&String(p.MES||'').startsWith(new Date().toISOString().slice(0,7))).length;
+
+  const bannerReclamacion = reclamacionActiva && nPendMes > 0
+    ? `<div style="background:#e7f7e8;border:1px solid #25D366;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+        📲 <strong>Período de reclamación activo</strong> (día ${diaHoy}).
+        <strong>${nPendMes}</strong> pago${nPendMes>1?'s':''} pendiente${nPendMes>1?'s':''} este mes — los botones WhatsApp están disponibles.
+      </div>` : '';
 
   render(`
     <div class="kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="kpi-n">${DB.pagos.length}</div><div class="kpi-l">Total pagos</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(totalPend)}</div><div class="kpi-l">Pendiente de cobro</div></div>
-      <div class="kpi"><div class="kpi-n">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:${totalCobr>0?'var(--green)':'var(--text1)'}">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:${totalPend>0?'var(--amber)':'var(--text1)'}">${fmtEur(totalPend)}</div><div class="kpi-l">Pendiente de cobro</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:${nPendMes>0?'var(--red)':'var(--green)'}">${nPendMes}</div><div class="kpi-l">Pendientes mes actual</div></div>
     </div>
     <div class="card" style="padding:14px 20px">
+      ${bannerReclamacion}
       <div class="table-toolbar">
         <input class="search-input" id="q-pag" placeholder="Buscar…" oninput="filterTable('q-pag','tbl-pag')">
         <span class="text-muted">${DB.pagos.length} pagos</span>
