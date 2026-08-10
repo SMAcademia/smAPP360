@@ -326,9 +326,6 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('ampa-socios')" data-page="ampa-socios">
           <span class="nav-icon">🏫</span><span>Socios</span>
         </div>
-        <div class="nav-item" onclick="navigate('ampa-alumnos')" data-page="ampa-alumnos">
-          <span class="nav-icon">🎒</span><span>Alumnos AMPA</span>
-        </div>
       </div>
 
       <div class="nav-section" id="nav-familia">
@@ -508,7 +505,6 @@ function normalizarDB(raw) {
   DB.preinscripciones     = raw.preinscripciones     || [];
   DB.nominas              = raw.nominas              || [];
   DB.ampaSocios           = raw.ampaSocios           || [];
-  DB.ampaAlumnos          = raw.ampaAlumnos          || [];
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
   try {
@@ -726,7 +722,6 @@ const PAGE_META = {
   'banco':              { title: 'Banco (BBVA)',         sub: 'Movimientos bancarios' },
   'fiscal':             { title: 'Fiscal',               sub: 'Resúmenes trimestrales y anuales' },
   'ampa-socios':        { title: 'Socios AMPA',          sub: 'Gestión del padrón de socios' },
-  'ampa-alumnos':       { title: 'Alumnos AMPA',         sub: 'Fichas de alumnos vinculados' },
   'portal-familia':     { title: 'Portal Familia',       sub: 'Inscripciones, pagos y asistencias' },
   'configuracion':      { title: 'Configuración',        sub: 'Ajustes del sistema' },
 };
@@ -752,7 +747,6 @@ const MODULES = {
   'banco':              banco,
   'fiscal':             fiscal,
   'ampa-socios':        ampaSocios,
-  'ampa-alumnos':       ampaAlumnos,
   'portal-familia':     portalFamilia,
   'configuracion':      configuracion,
 };
@@ -2686,171 +2680,6 @@ function guardarSocio(id) {
     .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-//  MÓDULO: AMPA ALUMNOS
-// ══════════════════════════════════════════════════════════════════════════
-function ampaAlumnos() {
-  document.getElementById('topbar-actions').innerHTML = '';
-  topbarBtn('+ Nuevo alumno AMPA', () => modalAmpaAlumno());
-  topbarBtn('↓ Exportar PDF', () => {
-    const alu2 = DB.ampaAlumnos;
-    const actP = alu2.filter(a=>String(a.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').length;
-    const byA2 = {}; alu2.forEach(a=>{const k=(a.ACTIVIDAD||'Sin asignar').trim()||'Sin asignar';byA2[k]=(byA2[k]||0)+1;});
-    const kHtml = `<div class="kpis">
-      <div class="kpi"><div class="kpi-n">${alu2.length}</div><div class="kpi-l">Total alumnos</div></div>
-      <div class="kpi"><div class="kpi-n">${actP}</div><div class="kpi-l">Activos</div></div>
-      <div class="kpi"><div class="kpi-n">${Object.keys(byA2).length}</div><div class="kpi-l">Actividades</div></div>
-      <div class="kpi"><div class="kpi-n">${new Set(alu2.map(a=>a.CENTRO).filter(Boolean)).size}</div><div class="kpi-l">Centros</div></div>
-    </div>`;
-    const filas = alu2.map(a=>{
-      const soc=DB.ampaSocios.find(s=>String(s.ID_SOCIO||s.ID||'')===String(a.ID_SOCIO));
-      return `<tr>
-        <td><strong>${esc(a.NOMBRE_ALUMNO||'')} ${esc(a.APELLIDOS_ALUMNO||'')}</strong></td>
-        <td>${soc?esc(soc.NOMBRE+' '+(soc.APELLIDOS||'')):esc(a.ID_SOCIO||'—')}</td>
-        <td>${esc(a.ACTIVIDAD||'—')}</td>
-        <td>${esc(a.CENTRO||'—')}</td>
-        <td><span class="badge ${String(a.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO'?'bg':'br'}">${esc(a.ESTADO||'ACTIVO')}</span></td>
-      </tr>`;
-    }).join('');
-    exportarPDF('Alumnos AMPA', kHtml+`<table><thead><tr><th>Alumno</th><th>Socio/Familia</th><th>Actividad</th><th>Centro</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="5">Sin datos</td></tr>'}</tbody></table>`);
-  }, 'btn-secondary');
-
-  const alumnos  = DB.ampaAlumnos;
-  const activos  = alumnos.filter(a => String(a.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO').length;
-
-  // Agrupar por actividad
-  const byAct = {};
-  alumnos.forEach(a => {
-    const k = (a.ACTIVIDAD||'Sin asignar').trim() || 'Sin asignar';
-    byAct[k] = (byAct[k]||0) + 1;
-  });
-  const actArr   = Object.entries(byAct).sort(([,a],[,b]) => b-a);
-  const maxAct   = Math.max(...actArr.map(([,v])=>v), 1);
-  const centros  = new Set(alumnos.map(a=>a.CENTRO).filter(Boolean)).size;
-
-  // Barras horizontales por actividad
-  const hbarras = actArr.map(([nombre, cnt]) => `
-    <div style="display:grid;grid-template-columns:140px 1fr 32px;align-items:center;gap:8px;margin-bottom:9px">
-      <span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(nombre)}">${esc(nombre)}</span>
-      <div style="background:var(--border2);border-radius:3px;height:18px;overflow:hidden">
-        <div style="width:${Math.round(cnt/maxAct*100)}%;height:100%;background:var(--green);border-radius:3px"></div>
-      </div>
-      <span style="font-size:13px;font-weight:700;color:var(--text1);text-align:right">${cnt}</span>
-    </div>`).join('');
-
-  // Agrupar por centro (donut mini o simplemente barras)
-  const byCentro = {};
-  alumnos.forEach(a => {
-    const k = (a.CENTRO||'Sin centro').trim() || 'Sin centro';
-    byCentro[k] = (byCentro[k]||0) + 1;
-  });
-  const centroArr = Object.entries(byCentro).sort(([,a],[,b])=>b-a);
-  const maxCen = Math.max(...centroArr.map(([,v])=>v), 1);
-  const hCentros = centroArr.map(([nombre, cnt]) => `
-    <div style="display:grid;grid-template-columns:140px 1fr 32px;align-items:center;gap:8px;margin-bottom:9px">
-      <span style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(nombre)}">${esc(nombre)}</span>
-      <div style="background:var(--border2);border-radius:3px;height:18px;overflow:hidden">
-        <div style="width:${Math.round(cnt/maxCen*100)}%;height:100%;background:#2563eb;border-radius:3px"></div>
-      </div>
-      <span style="font-size:13px;font-weight:700;color:var(--text1);text-align:right">${cnt}</span>
-    </div>`).join('');
-
-  const rows = alumnos.map(a => {
-    const soc = DB.ampaSocios.find(s => String(s.ID_SOCIO||s.ID||'') === String(a.ID_SOCIO));
-    return `<tr>
-      <td class="mono">${esc(a.ID_ALUMNO_AMPA||a.ID||'')}</td>
-      <td><strong>${esc(a.NOMBRE_ALUMNO||'')} ${esc(a.APELLIDOS_ALUMNO||'')}</strong></td>
-      <td>${soc ? esc(soc.NOMBRE+' '+(soc.APELLIDOS||'')) : esc(a.ID_SOCIO||'—')}</td>
-      <td>${esc(a.ACTIVIDAD||'—')}</td>
-      <td>${esc(a.CENTRO||'—')}</td>
-      <td>${badgeEstado(a.ESTADO||'ACTIVO')}</td>
-      <td><button class="btn btn-sm btn-secondary" onclick='modalAmpaAlumno(${JSON.stringify(a)})'>Editar</button></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🎒</div><p>Sin alumnos AMPA registrados</p></div></td></tr>`;
-
-  render(`
-    <div style="display:grid;gap:16px">
-      <div class="kpis" style="margin-bottom:0">
-        <div class="kpi"><div class="kpi-n">${alumnos.length}</div><div class="kpi-l">Total alumnos</div></div>
-        <div class="kpi"><div class="kpi-n" style="color:var(--green)">${activos}</div><div class="kpi-l">Activos</div></div>
-        <div class="kpi"><div class="kpi-n">${actArr.length}</div><div class="kpi-l">Actividades</div></div>
-        <div class="kpi"><div class="kpi-n">${centros}</div><div class="kpi-l">Centros</div></div>
-      </div>
-
-      ${actArr.length ? `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div class="card">
-          <div class="card-title">Alumnos por actividad</div>
-          <div style="margin-top:10px">${hbarras}</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Alumnos por centro</div>
-          <div style="margin-top:10px">${hCentros}</div>
-        </div>
-      </div>` : ''}
-
-      <div class="card" style="padding:14px 20px">
-        <div class="table-toolbar">
-          <input class="search-input" id="q-aa" placeholder="Buscar por nombre, actividad…" oninput="filterTable('q-aa','tbl-aa')">
-          <span class="text-muted">${alumnos.length} alumnos</span>
-        </div>
-        <div class="table-wrap">
-          <table id="tbl-aa">
-            <thead><tr><th>ID</th><th>Alumno</th><th>Socio / Familia</th><th>Actividad</th><th>Centro</th><th>Estado</th><th></th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>`);
-}
-
-function modalAmpaAlumno(a) {
-  a = a || {};
-  const id = a.ID_ALUMNO_AMPA || a.ID || null;
-  const isNew = !id;
-  const opsSoc = DB.ampaSocios.map(s=>`<option value="${s.ID_SOCIO||s.ID||''}" ${String(a.ID_SOCIO)===String(s.ID_SOCIO||s.ID||'')?'selected':''}>${esc(s.NOMBRE+' '+(s.APELLIDOS||''))}</option>`).join('');
-
-  openModal(isNew?'Nuevo alumno AMPA':'Editar alumno AMPA',`
-    <div class="form-grid">
-      <div class="field"><label>Nombre alumno <span class="req">*</span></label>
-        <input id="aa-nom" class="upper" value="${esc(a.NOMBRE_ALUMNO||'')}"></div>
-      <div class="field"><label>Apellidos alumno</label>
-        <input id="aa-ape" class="upper" value="${esc(a.APELLIDOS_ALUMNO||'')}"></div>
-      <div class="field span2"><label>Socio / familia</label>
-        <select id="aa-soc"><option value="">— Sin socio vinculado —</option>${opsSoc}</select></div>
-      <div class="field"><label>Actividad</label>
-        <input id="aa-act" class="upper" value="${esc(a.ACTIVIDAD||'')}"></div>
-      <div class="field"><label>Centro</label>
-        <input id="aa-centro" class="upper" value="${esc(a.CENTRO||'')}"></div>
-      <div class="field"><label>Estado</label>
-        <select id="aa-est">
-          <option value="ACTIVO" ${(a.ESTADO||'ACTIVO')==='ACTIVO'?'selected':''}>Activo</option>
-          <option value="BAJA"   ${a.ESTADO==='BAJA'?'selected':''}>Baja</option>
-        </select></div>
-    </div>`,
-    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="guardarAmpaAlumno(${isNew?'null':`'${id}'`})">Guardar</button>`);
-  ['aa-nom','aa-ape','aa-act','aa-centro'].forEach(i2=>{
-    const el=document.getElementById(i2);
-    if(el)el.addEventListener('input',function(){const p2=this.selectionStart;this.value=this.value.toUpperCase();try{this.setSelectionRange(p2,p2)}catch(_){}});
-  });
-}
-
-function guardarAmpaAlumno(id) {
-  const nombre = document.getElementById('aa-nom').value.trim();
-  if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
-  const row = {
-    NOMBRE_ALUMNO:    nombre,
-    APELLIDOS_ALUMNO: document.getElementById('aa-ape').value.trim(),
-    ID_SOCIO:         document.getElementById('aa-soc').value,
-    ACTIVIDAD:        document.getElementById('aa-act').value.trim(),
-    CENTRO:           document.getElementById('aa-centro').value.trim(),
-    ESTADO:           document.getElementById('aa-est').value,
-  };
-  writeToSheet('AMPA_ALUMNOS', row, id)
-    .then(()=>{ showToast('Alumno AMPA guardado'); closeModal(); loadAllData().then(ampaAlumnos); })
-    .catch(err=>showToast('Error: '+err.message,'error'));
-}
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: REGISTRO HORARIO
 // ══════════════════════════════════════════════════════════════════════════
