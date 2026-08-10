@@ -1707,8 +1707,9 @@ function modalInscripcion(i) {
         <div id="dias-ins-checks" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
           ${i.ID_ACTIVIDAD ? _diasHtml : '<span style="color:var(--text3);font-size:13px">Selecciona una actividad primero</span>'}
         </div></div>
-      <div class="field"><label>Grupo (A, B…)</label>
-        <input id="i-grupo" placeholder="Opcional" value="${esc(i.GRUPO||'')}"></div>
+      <div class="field"><label>Grupo</label>
+        <input id="i-grupo" readonly style="background:var(--bg2);cursor:default;color:${actSel?.NUM_GRUPOS?'var(--text1)':'var(--text3)'}"
+          value="${actSel?.NUM_GRUPOS ? 'Grupo '+actSel.NUM_GRUPOS : 'Sin grupo'}"></div>
       <div class="field"><label>Horario</label>
         <input id="i-horario" placeholder="p.ej. 16:00-17:00" value="${esc(i.HORARIO||'')}"></div>
       <div class="field"><label>Precio acordado (€)</label>
@@ -1750,7 +1751,7 @@ function guardarInscripcion(id) {
     ID_ACTIVIDAD:    actId,
     LINEA:           act?.LINEA || 'EXTRAESCOLARES',
     DIAS_SEMANA:     dias,
-    GRUPO:           (document.getElementById('i-grupo')?.value||'').trim(),
+    GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
     HORARIO:         document.getElementById('i-horario').value.trim(),
     PRECIO_ACORDADO: document.getElementById('i-precio').value,
     DESCUENTO:       document.getElementById('i-dto').value || '0',
@@ -1769,12 +1770,15 @@ function guardarInscripcion(id) {
 function actualizarDiasInscripcion() {
   const actId = document.getElementById('i-act')?.value;
   const cont  = document.getElementById('dias-ins-checks');
+  const grpEl = document.getElementById('i-grupo');
   if (!cont) return;
   if (!actId) {
     cont.innerHTML = '<span style="color:var(--text3);font-size:13px">Selecciona una actividad primero</span>';
+    if (grpEl) { grpEl.value = 'Sin grupo'; grpEl.style.color = 'var(--text3)'; }
     return;
   }
   const act = DB.actividades.find(a => String(a.ID) === actId);
+  // Días
   const dias = act?.DIAS_SEMANA
     ? String(act.DIAS_SEMANA).split(',').map(d=>d.trim()).filter(Boolean)
     : ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
@@ -1783,6 +1787,16 @@ function actualizarDiasInscripcion() {
       <input type="checkbox" name="i-dia" value="${d}"> ${d.slice(0,2)}
     </label>`
   ).join('');
+  // Grupo — fijado por la actividad, no editable
+  if (grpEl) {
+    if (act?.NUM_GRUPOS) {
+      grpEl.value = 'Grupo ' + act.NUM_GRUPOS;
+      grpEl.style.color = 'var(--text1)';
+    } else {
+      grpEl.value = 'Sin grupo';
+      grpEl.style.color = 'var(--text3)';
+    }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
