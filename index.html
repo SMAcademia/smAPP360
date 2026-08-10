@@ -1823,6 +1823,9 @@ function actualizarDiasInscripcion() {
       grpEl.style.color = 'var(--text3)';
     }
   }
+  // Precio — se carga automáticamente desde la actividad
+  const precioEl = document.getElementById('i-precio');
+  if (precioEl && act?.PRECIO) precioEl.value = act.PRECIO;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
