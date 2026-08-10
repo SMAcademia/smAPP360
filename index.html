@@ -2907,166 +2907,249 @@ function ejecutarCorreccion(idOriginal) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  MÓDULO: RESUMEN SM EXTRAESCOLARES
+//  MÓDULO: RESUMEN SM EXTRAESCOLARES — Dashboard AMPA
 // ══════════════════════════════════════════════════════════════════════════
 function extraResumen() {
   document.getElementById('topbar-actions').innerHTML = '';
-  topbarBtn('↓ Exportar PDF', () => {
-    const actExP = DB.actividades.filter(a=>esExtraescolar(a.LINEA||a.NOMBRE||'')&&String(a.ACTIVA||'').toUpperCase().startsWith('S'));
-    const resP = actExP.map(act=>{
-      const aId=String(act.ID);
-      const ins=DB.inscripciones.filter(i=>String(i.ID_ACTIVIDAD)===aId&&String(i.ESTADO||'').toUpperCase()==='ACTIVA').length;
-      const ses=DB.asistenciasExtra.filter(a=>String(a.ID_ACTIVIDAD)===aId);
-      const tp=ses.reduce((s,a)=>s+(parseInt(a.TOTAL_PRESENTES)||0),0);
-      const to=ses.reduce((s,a)=>s+(parseInt(a.TOTAL_ALUMNOS)||0),0);
-      return {nom:act.NOMBRE||'', centro:act.CENTRO||'—', ins, nSes:ses.length, tasa:to?Math.round(tp/to*100):null};
-    });
-    const totIns=resP.reduce((s,r)=>s+r.ins,0); const totSes=resP.reduce((s,r)=>s+r.nSes,0);
-    const tv=resP.filter(r=>r.tasa!==null).map(r=>r.tasa);
-    const tm=tv.length?Math.round(tv.reduce((s,v)=>s+v,0)/tv.length):null;
-    const kHtml=`<div class="kpis">
-      <div class="kpi"><div class="kpi-n">${actExP.length}</div><div class="kpi-l">Actividades</div></div>
-      <div class="kpi"><div class="kpi-n">${totIns}</div><div class="kpi-l">Inscritos</div></div>
-      <div class="kpi"><div class="kpi-n">${totSes}</div><div class="kpi-l">Sesiones</div></div>
-      <div class="kpi"><div class="kpi-n">${tm!==null?tm+'%':'—'}</div><div class="kpi-l">Asistencia media</div></div>
-    </div>`;
-    const filas=resP.map(r=>`<tr>
-      <td><strong>${esc(r.nom)}</strong></td><td>${esc(r.centro)}</td>
-      <td>${r.ins}</td><td>${r.nSes}</td>
-      <td><strong>${r.tasa!==null?r.tasa+'%':'—'}</strong></td>
-    </tr>`).join('');
-    exportarPDF('SM Extraescolares — Resumen de asistencia', kHtml+`<table><thead><tr><th>Actividad</th><th>Centro</th><th>Inscritos</th><th>Sesiones</th><th>% Asistencia</th></tr></thead><tbody>${filas||'<tr><td colspan="5">Sin datos</td></tr>'}</tbody></table>`);
-  }, 'btn-secondary');
 
+  const hoy      = new Date();
+  const mesActK  = hoy.toISOString().slice(0,7);
+  const mesAntK  = new Date(hoy.getFullYear(), hoy.getMonth()-1, 1).toISOString().slice(0,7);
+  const añoActK  = String(hoy.getFullYear());
+  const mesAntLabel = new Date(mesAntK+'-15').toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+  const colorTasa = t => t===null?'var(--text3)':t>=75?'var(--green)':t>=50?'var(--amber)':'var(--red)';
+
+  // Actividades extraescolares activas
   const actExtras = DB.actividades.filter(a =>
     esExtraescolar(a.LINEA||a.NOMBRE||'') && String(a.ACTIVA||'').toUpperCase().startsWith('S')
   );
 
-  // Resumen por actividad
-  const resumen = actExtras.map(act => {
-    const actId     = String(act.ID);
-    const inscritos = DB.inscripciones.filter(i =>
-      String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
-    ).length;
-    const sesiones  = DB.asistenciasExtra.filter(a => String(a.ID_ACTIVIDAD)===actId);
-    const totPres   = sesiones.reduce((s,a)=>s+(parseInt(a.TOTAL_PRESENTES)||0),0);
-    const totPos    = sesiones.reduce((s,a)=>s+(parseInt(a.TOTAL_ALUMNOS)||0),0);
-    const tasa      = totPos ? Math.round(totPres/totPos*100) : null;
-    return {act, inscritos, nSesiones:sesiones.length, tasa};
+  // Inscripciones activas extraescolares
+  const insExtras = DB.inscripciones.filter(i =>
+    esExtraescolar(i.LINEA||'') && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
+  );
+
+  // KPI: socios AMPA activos
+  const sociosActivos = DB.ampaSocios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO');
+  const kSocios = sociosActivos.length;
+
+  // KPI: alumnos únicos en extraescolares
+  const alusExtrasIds = [...new Set(insExtras.map(i => String(i.ID_ALUMNO)))];
+  const kAlumnos = alusExtrasIds.length;
+
+  // KPI: altas este mes
+  const kAltasMes = insExtras.filter(i => String(i.FECHA_ALTA||'').startsWith(mesActK)).length;
+
+  // KPI: pagos mes actual
+  const pagosMes = DB.pagos.filter(p => String(p.MES||'').startsWith(mesActK));
+  const cobradoMes  = pagosMes.filter(p => String(p.ESTADO||'').toUpperCase()==='PAGADO')
+    .reduce((s,p) => s+(parseFloat(p.TOTAL_RECIBIDO)||parseFloat(p.TOTAL_FACTURADO)||0), 0);
+  const pendienteMes = pagosMes.filter(p => String(p.ESTADO||'').toUpperCase()==='PENDIENTE')
+    .reduce((s,p) => s+(parseFloat(p.TOTAL_FACTURADO)||0), 0);
+  const totalDonutVal = cobradoMes + pendienteMes || 1;
+  const pctCobrado = cobradoMes / totalDonutVal;
+
+  // KPI: asistencia mes anterior por actividad
+  const sesAnt = DB.asistenciasExtra.filter(a => String(a.FECHA||'').startsWith(mesAntK));
+  const asistActMes = actExtras.map(act => {
+    const aId   = String(act.ID);
+    const sesSel = sesAnt.filter(s => String(s.ID_ACTIVIDAD)===aId);
+    const tp    = sesSel.reduce((s,a) => s+(parseInt(a.TOTAL_PRESENTES)||0), 0);
+    const to    = sesSel.reduce((s,a) => s+(parseInt(a.TOTAL_ALUMNOS)||0), 0);
+    return {act, tasa: to ? Math.round(tp/to*100) : null};
   });
+  const tasasValidas = asistActMes.filter(x => x.tasa!==null).map(x => x.tasa);
+  const tasaMed = tasasValidas.length
+    ? Math.round(tasasValidas.reduce((s,v)=>s+v,0)/tasasValidas.length) : null;
 
-  // KPIs globales
-  const totalIns  = resumen.reduce((s,r)=>s+r.inscritos,0);
-  const totalSes  = resumen.reduce((s,r)=>s+r.nSesiones,0);
-  const tasasV    = resumen.filter(r=>r.tasa!==null).map(r=>r.tasa);
-  const tasaMed   = tasasV.length ? Math.round(tasasV.reduce((s,v)=>s+v,0)/tasasV.length) : null;
-  const colorTasa = t => t===null?'var(--text3)':t>=75?'var(--green)':t>=50?'var(--amber)':'var(--red)';
+  // Asistencia por alumno (mes anterior)
+  const aluAsistMes = alusExtrasIds.map(aluId => {
+    const alu    = DB.alumnos.find(a => String(a.ID_ALUMNO||a.ID)===aluId);
+    const actIds = [...new Set(insExtras.filter(i => String(i.ID_ALUMNO)===aluId).map(i => String(i.ID_ACTIVIDAD)))];
+    let totSes = 0, totPres = 0;
+    actIds.forEach(aId => {
+      const sesSel = sesAnt.filter(s => String(s.ID_ACTIVIDAD)===aId);
+      totSes += sesSel.length;
+      sesSel.forEach(s => {
+        const presentes = String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).filter(Boolean);
+        if (presentes.includes(aluId)) totPres++;
+      });
+    });
+    const tasa = totSes ? Math.round(totPres/totSes*100) : null;
+    return {aluId, nombre: alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : aluId, tasa, totSes, totPres};
+  }).filter(x => x.totSes>0).sort((a,b) => (a.tasa??101)-(b.tasa??101));
 
-  // Barras verticales: inscritos por actividad
-  const maxIns = Math.max(...resumen.map(r=>r.inscritos), 1);
-  const barrasIns = resumen.map(r => {
-    const h = r.inscritos ? Math.max(4, Math.round(r.inscritos/maxIns*72)) : 0;
-    const nom = (r.act.NOMBRE||'').length>14 ? (r.act.NOMBRE||'').slice(0,12)+'…' : (r.act.NOMBRE||'');
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
-      <span style="font-size:11px;font-weight:700;color:var(--text2)">${r.inscritos}</span>
-      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
-        <div style="width:100%;height:${h}px;background:var(--green);border-radius:3px 3px 0 0;min-height:${r.inscritos?2:0}px"></div>
+  const kAlertaAsist = aluAsistMes.filter(x => x.tasa!==null && x.tasa<50).length;
+
+  // Chart: barras horizontales — alumnos por actividad
+  const maxInsAct = Math.max(...actExtras.map(act => insExtras.filter(i=>String(i.ID_ACTIVIDAD)===String(act.ID)).length), 1);
+  const barrasInsH = actExtras.map(act => {
+    const v   = insExtras.filter(i => String(i.ID_ACTIVIDAD)===String(act.ID)).length;
+    const pct = Math.round(v/maxInsAct*100);
+    return `<div style="display:grid;grid-template-columns:130px 1fr 28px;align-items:center;gap:8px;margin-bottom:7px">
+      <span style="font-size:12px;color:var(--text2);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-align:right" title="${esc(act.NOMBRE||'')}">${esc((act.NOMBRE||'').length>18?(act.NOMBRE||'').slice(0,16)+'…':(act.NOMBRE||''))}</span>
+      <div style="background:var(--border2);border-radius:3px;height:14px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--green);border-radius:3px;min-width:${v?2:0}px"></div>
       </div>
-      <span style="font-size:10px;color:var(--text3);text-align:center;line-height:1.2">${esc(nom)}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--text1);font-variant-numeric:tabular-nums">${v}</span>
     </div>`;
-  }).join('');
+  }).join('') || '<p style="font-size:12px;color:var(--text3)">Sin datos</p>';
 
-  // Barras % asistencia por actividad
-  const barrasTasa = resumen.map(r => {
-    const v = r.tasa!==null ? r.tasa : 0;
-    const h = v ? Math.max(4, Math.round(v/100*72)) : 0;
+  // Chart: barras verticales — % asistencia mes anterior por actividad (semáforo)
+  const barrasTasaV = asistActMes.map(r => {
+    const v   = r.tasa!==null ? r.tasa : 0;
+    const h   = v ? Math.max(4, Math.round(v/100*72)) : 0;
     const nom = (r.act.NOMBRE||'').length>14 ? (r.act.NOMBRE||'').slice(0,12)+'…' : (r.act.NOMBRE||'');
     return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
       <span style="font-size:11px;font-weight:700;color:${colorTasa(r.tasa)}">${r.tasa!==null?r.tasa+'%':'—'}</span>
       <div style="flex:1;width:100%;display:flex;align-items:flex-end">
-        <div style="width:100%;height:${h}px;background:${colorTasa(r.tasa)};border-radius:3px 3px 0 0;min-height:${v?2:0}px;opacity:.85"></div>
+        <div style="width:100%;height:${h}px;background:${colorTasa(r.tasa)};border-radius:3px 3px 0 0;min-height:${v?2:0}px"></div>
       </div>
       <span style="font-size:10px;color:var(--text3);text-align:center;line-height:1.2">${esc(nom)}</span>
     </div>`;
-  }).join('');
+  }).join('') || '<p style="font-size:12px;color:var(--text3)">Sin sesiones registradas</p>';
 
-  // Evolución: últimas 6 semanas (asistentes totales)
-  const now2 = new Date();
-  const semanas = Array.from({length:6}, (_,i) => {
-    const lun = new Date(now2); lun.setDate(now2.getDate()-now2.getDay()+1-(5-i)*7);
-    const vie = new Date(lun); vie.setDate(lun.getDate()+6);
-    const ini = lun.toISOString().slice(0,10);
-    const fin = vie.toISOString().slice(0,10);
-    const sess = DB.asistenciasExtra.filter(a=>String(a.FECHA)>=ini&&String(a.FECHA)<=fin);
-    const pres = sess.reduce((s,a)=>s+(parseInt(a.TOTAL_PRESENTES)||0),0);
-    const pos  = sess.reduce((s,a)=>s+(parseInt(a.TOTAL_ALUMNOS)||0),0);
-    const tasa = pos ? Math.round(pres/pos*100) : 0;
-    return {label:`S${i+1}`, pres, tasa};
-  });
-  const maxPres = Math.max(...semanas.map(s=>s.pres), 1);
-  const barrasSem = semanas.map(s => {
-    const h = s.pres ? Math.max(4, Math.round(s.pres/maxPres*72)) : 0;
-    const col = s.tasa>=75?'var(--green)':s.tasa>=50?'var(--amber)':'var(--red)';
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
-      <span style="font-size:11px;font-weight:700;color:var(--text2)">${s.pres||''}</span>
-      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
-        <div style="width:100%;height:${h}px;background:${col};border-radius:3px 3px 0 0;min-height:${s.pres?2:0}px"></div>
-      </div>
-      <span style="font-size:10px;color:var(--text3)">${s.label}</span>
+  // Chart: donut SVG — mensualidades cobradas vs pendientes
+  const rD = 30, circD = 2*Math.PI*rD;
+  const dashCob = (pctCobrado*circD).toFixed(1);
+  const dashPend = (circD - pctCobrado*circD).toFixed(1);
+  const donutSvg = `<svg width="100" height="100" viewBox="0 0 90 90" style="transform:rotate(-90deg)">
+    <circle cx="45" cy="45" r="${rD}" fill="none" stroke="var(--red)" stroke-width="13"/>
+    <circle cx="45" cy="45" r="${rD}" fill="none" stroke="var(--green)" stroke-width="13"
+      stroke-dasharray="${dashCob} ${dashPend}" stroke-dashoffset="0"/>
+  </svg>`;
+
+  // Tabla asistencia por alumno
+  const tablaAlumRows = aluAsistMes.map(x => {
+    const alerta = x.tasa!==null && x.tasa<50;
+    return `<tr style="${alerta?'background:var(--red-l)':''}">
+      <td><strong>${esc(x.nombre)}</strong></td>
+      <td style="text-align:center;font-variant-numeric:tabular-nums">${x.totPres}/${x.totSes}</td>
+      <td style="text-align:center"><span style="font-weight:700;color:${colorTasa(x.tasa)}">${x.tasa!==null?x.tasa+'%':'—'}</span></td>
+      <td style="text-align:center">${alerta?'<span class="badge" style="background:var(--red-l);color:var(--red);font-size:11px">&#9888; &lt;50%</span>':''}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--text3);font-size:13px;padding:16px">Sin sesiones registradas en ${mesAntLabel}</td></tr>`;
+
+  // PDF export (registered after computing all vars)
+  topbarBtn('↓ Exportar PDF', () => {
+    const kHtml = `<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${kSocios}</div><div class="kpi-l">Socios AMPA activos</div></div>
+      <div class="kpi"><div class="kpi-n">${kAlumnos}</div><div class="kpi-l">Alumnos extraescolares</div></div>
+      <div class="kpi"><div class="kpi-n">+${kAltasMes}</div><div class="kpi-l">Altas este mes</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(cobradoMes)}</div><div class="kpi-l">Cobrado ${mesActK}</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(pendienteMes)}</div><div class="kpi-l">Pendiente ${mesActK}</div></div>
+      <div class="kpi"><div class="kpi-n">${tasaMed!==null?tasaMed+'%':'—'}</div><div class="kpi-l">Asistencia media</div></div>
+      <div class="kpi"><div class="kpi-n">${kAlertaAsist}</div><div class="kpi-l">Alertas &lt;50%</div></div>
     </div>`;
-  }).join('');
-
-  // Tabla resumen por actividad
-  const tablaRows = resumen.map(r => `
-    <tr>
-      <td><strong>${esc(r.act.NOMBRE||'')}</strong></td>
-      <td>${esc(r.act.CENTRO||'—')}</td>
-      <td><strong>${r.inscritos}</strong></td>
-      <td>${r.nSesiones}</td>
-      <td>${r.tasa!==null?`<span style="font-weight:700;color:${colorTasa(r.tasa)}">${r.tasa}%</span>`:'—'}</td>
-    </tr>`).join('') || `<tr><td colspan="5"><div class="empty"><div class="empty-icon">🎨</div><p>Sin actividades extraescolares activas</p></div></td></tr>`;
+    const filasPDF = aluAsistMes.map(x => `<tr ${x.tasa!==null&&x.tasa<50?'style="background:#fff0f0"':''}>
+      <td><strong>${esc(x.nombre)}</strong></td>
+      <td>${x.totPres}/${x.totSes}</td>
+      <td><strong style="color:${colorTasa(x.tasa)}">${x.tasa!==null?x.tasa+'%':'—'}</strong></td>
+      <td>${x.tasa!==null&&x.tasa<50?'⚠ Alerta':''}</td>
+    </tr>`).join('');
+    exportarPDF(`Dashboard AMPA — ${mesAntLabel}`, kHtml+`
+      <table><thead><tr><th>Alumno</th><th>Sesiones</th><th>% Asistencia</th><th>Alerta</th></tr></thead>
+      <tbody>${filasPDF||'<tr><td colspan="4">Sin datos</td></tr>'}</tbody></table>`);
+  }, 'btn-secondary');
 
   render(`
     <div style="display:grid;gap:16px">
+
+      <!-- KPIs fila 1: operativo -->
       <div class="kpis" style="margin-bottom:0">
-        <div class="kpi"><div class="kpi-n">${actExtras.length}</div><div class="kpi-l">Actividades activas</div></div>
-        <div class="kpi"><div class="kpi-n">${totalIns}</div><div class="kpi-l">Alumnos inscritos</div></div>
-        <div class="kpi"><div class="kpi-n">${totalSes}</div><div class="kpi-l">Sesiones registradas</div></div>
-        <div class="kpi"><div class="kpi-n" style="color:${colorTasa(tasaMed)}">${tasaMed!==null?tasaMed+'%':'—'}</div><div class="kpi-l">Asistencia media</div></div>
+        <div class="kpi">
+          <div class="kpi-n">${kSocios}</div>
+          <div class="kpi-l">Socios AMPA activos</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-n">${kAlumnos}</div>
+          <div class="kpi-l">Alumnos extraescolares</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-n">${actExtras.length}</div>
+          <div class="kpi-l">Actividades activas</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-n" style="color:${kAltasMes>0?'var(--green)':'var(--text1)'}">+${kAltasMes}</div>
+          <div class="kpi-l">Altas este mes</div>
+        </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <!-- KPIs fila 2: financiero + asistencia -->
+      <div class="kpis" style="margin-bottom:0">
+        <div class="kpi">
+          <div class="kpi-n">${fmtEur(cobradoMes)}</div>
+          <div class="kpi-l">Cobrado ${mesActK}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-n" style="color:${pendienteMes>0?'var(--amber)':'var(--text1)'}">${fmtEur(pendienteMes)}</div>
+          <div class="kpi-l">Pendiente ${mesActK}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-n" style="color:${colorTasa(tasaMed)}">${tasaMed!==null?tasaMed+'%':'—'}</div>
+          <div class="kpi-l">Asistencia ${mesAntLabel}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-n" style="color:${kAlertaAsist>0?'var(--red)':'var(--green)'}">${kAlertaAsist}</div>
+          <div class="kpi-l">Alumnos &lt;50% asistencia</div>
+        </div>
+      </div>
+
+      <!-- Gráficos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 220px;gap:16px;align-items:start">
         <div class="card">
-          <div class="card-title">Inscritos por actividad</div>
-          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasIns||'<p style="font-size:12px;color:var(--text3)">Sin datos</p>'}</div>
+          <div class="card-title">Alumnos inscritos por actividad</div>
+          <div style="margin-top:12px">${barrasInsH}</div>
         </div>
         <div class="card">
-          <div class="card-title">% Asistencia por actividad</div>
-          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasTasa||'<p style="font-size:12px;color:var(--text3)">Sin datos</p>'}</div>
+          <div class="card-title">Asistencia por actividad — ${mesAntLabel}</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:12px">${barrasTasaV}</div>
           <div style="display:flex;gap:10px;margin-top:8px;font-size:11px">
             <span style="color:var(--green)">● ≥75%</span>
             <span style="color:var(--amber)">● ≥50%</span>
             <span style="color:var(--red)">● &lt;50%</span>
           </div>
         </div>
-        <div class="card">
-          <div class="card-title">Asistentes por semana</div>
-          <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:8px">${barrasSem}</div>
+        <div class="card" style="display:flex;flex-direction:column;align-items:center">
+          <div class="card-title" style="width:100%;text-align:center">Mensualidades ${mesActK}</div>
+          <div style="position:relative;margin:10px auto 6px">
+            ${donutSvg}
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+              <span style="font-weight:700;font-size:15px;color:var(--green)">${Math.round(pctCobrado*100)}%</span>
+              <span style="font-size:10px;color:var(--text3)">cobrado</span>
+            </div>
+          </div>
+          <div style="font-size:12px;display:flex;flex-direction:column;gap:5px;width:100%;padding:0 4px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="color:var(--green)">● Cobrado</span>
+              <strong style="font-variant-numeric:tabular-nums">${fmtEur(cobradoMes)}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="color:var(--red)">● Pendiente</span>
+              <strong style="font-variant-numeric:tabular-nums">${fmtEur(pendienteMes)}</strong>
+            </div>
+          </div>
         </div>
       </div>
 
+      <!-- Tabla asistencia por alumno mes anterior -->
       <div class="card" style="padding:14px 20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div class="card-title" style="margin:0">Resumen por actividad</div>
-          <button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">✅ Pasar lista hoy</button>
+          <div class="card-title" style="margin:0">Asistencia por alumno — ${mesAntLabel}</div>
+          <button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">Pasar lista hoy</button>
         </div>
+        ${kAlertaAsist>0?`<div style="background:var(--amber-l);border:1px solid var(--amber);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+          <strong>⚠ ${kAlertaAsist} alumno${kAlertaAsist>1?'s':''}</strong> con menos del 50% de asistencia en ${mesAntLabel}.
+          Revisa antes de emitir recibos para evitar reclamaciones.
+        </div>`:''}
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Actividad</th><th>Centro</th><th>Inscritos</th><th>Sesiones</th><th>% Asistencia</th></tr></thead>
-            <tbody>${tablaRows}</tbody>
+            <thead><tr><th>Alumno</th><th style="text-align:center">Presencias/Sesiones</th><th style="text-align:center">% Asistencia</th><th style="text-align:center">Estado</th></tr></thead>
+            <tbody>${tablaAlumRows}</tbody>
           </table>
         </div>
       </div>
+
     </div>`);
 }
 
