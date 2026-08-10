@@ -1830,7 +1830,7 @@ function actualizarDiasInscripcion() {
   const tipoPrecioEl = document.getElementById('i-tipo-precio');
   if (tipoPrecioEl && act) {
     const t = sinTildes(act.TIPO || '');
-    const esUnico = t.includes('SUELTA') || t.includes('ANUAL') || t === '1 SESION / SEMANA' || t === '1 SESION/SEMANA';
+    const esUnico = t.includes('SUELTA') || t.includes('ANUAL');
     const esMens  = t === 'MENSUALIDAD';
     tipoPrecioEl.value = esUnico ? 'PAGO_ÚNICO' : 'MENSUALIDAD';
     tipoPrecioEl.disabled = esUnico || esMens;
