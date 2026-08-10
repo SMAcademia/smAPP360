@@ -1826,6 +1826,17 @@ function actualizarDiasInscripcion() {
   // Precio — se carga automáticamente desde la actividad
   const precioEl = document.getElementById('i-precio');
   if (precioEl && act?.PRECIO) precioEl.value = act.PRECIO;
+  // Tipo de precio — derivado del TIPO de la actividad
+  const tipoPrecioEl = document.getElementById('i-tipo-precio');
+  if (tipoPrecioEl && act) {
+    const t = sinTildes(act.TIPO || '');
+    const esUnico = t.includes('SUELTA') || t.includes('ANUAL') || t === '1 SESION / SEMANA' || t === '1 SESION/SEMANA';
+    const esMens  = t === 'MENSUALIDAD';
+    tipoPrecioEl.value = esUnico ? 'PAGO_ÚNICO' : 'MENSUALIDAD';
+    tipoPrecioEl.disabled = esUnico || esMens;
+    tipoPrecioEl.style.background = (esUnico || esMens) ? 'var(--bg2)' : '';
+    tipoPrecioEl.style.cursor     = (esUnico || esMens) ? 'default' : '';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
