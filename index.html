@@ -1849,20 +1849,79 @@ function toggleDescuentoIns() {
 // ══════════════════════════════════════════════════════════════════════════
 function _waLinkPago(p) {
   const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
-  const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
+  const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE||p.ID_CLIENTE)) : null;
   const telRaw = (cli?.['TELÉFONO'] || cli?.TELEFONO || '').replace(/\D/g,'');
   if (!telRaw) return '';
-  const tel = telRaw.length === 9 ? '34'+telRaw : telRaw;
+  const tel     = telRaw.length === 9 ? '34'+telRaw : telRaw;
   const tutor   = cli ? (cli.NOMBRE||'').split(' ')[0] : '';
-  const alumno  = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
+  const importe = fmtEur(p.TOTAL_ESPERADO || p.IMPORTE);
+  const servicio = p.SERVICIO || 'actividad extraescolar';
   const mes     = p.MES || '';
-  const importe = fmtEur(p.TOTAL_FACTURADO);
-  const concepto = p.CONCEPTO || 'actividad extraescolar';
   const msg = encodeURIComponent(
-    `Hola ${tutor}, te recordamos que el pago de ${importe} correspondiente a ${concepto} (${mes}) de SM Academia está pendiente.\n\nEl plazo de pago es del 1 al 10 de cada mes. Puedes realizarlo por Bizum o transferencia bancaria.\n\n¡Gracias! 🙏\nSM Academia`
+    `Hola ${tutor}, te recordamos que el pago de ${importe} correspondiente a ${servicio} (${mes}) de SM Academia está pendiente.\n\nEl plazo de pago es del 1 al 10 de cada mes. Puedes realizarlo por Bizum o transferencia bancaria.\n\n¡Gracias! 🙏\nSM Academia`
   );
   return `<a href="https://wa.me/${tel}?text=${msg}" target="_blank"
     class="btn btn-sm" style="background:#25D366;color:#fff;white-space:nowrap">📲 WA</a>`;
+}
+
+function _opcionesInscPago(aluId, selId) {
+  const inscs = DB.inscripciones.filter(i =>
+    String(i.ID_ALUMNO) === String(aluId) && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
+  );
+  const opts = inscs.map(i => {
+    const act   = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+    const nom   = act ? act.NOMBRE : (i.ID_ACTIVIDAD||'Actividad');
+    const grp   = i.GRUPO ? ' Gr.'+i.GRUPO : '';
+    const bruto = parseFloat(i.PRECIO_ACORDADO||0);
+    const dto   = parseFloat(i.DESCUENTO||0);
+    const descEur = Math.round(bruto * dto/100 * 100)/100;
+    const neto  = Math.round((bruto - descEur) * 100)/100;
+    const sel   = String(selId) === String(i.ID_INSCRIPCION) ? 'selected' : '';
+    return `<option value="${esc(i.ID_INSCRIPCION)}" ${sel}
+      data-linea="${esc(i.LINEA||'')}"
+      data-servicio="${esc(nom+grp)}"
+      data-importe="${bruto.toFixed(2)}"
+      data-desc="${descEur.toFixed(2)}"
+      data-neto="${neto.toFixed(2)}"
+      data-cliente="${esc(i.ID_CLIENTE||'')}"
+    >${esc(nom+grp)} — ${fmtEur(neto)}${dto?` (${dto}% dto.)`:''}${i.TIPO_PRECIO==='PAGO_ÚNICO'?' · pago único':''}</option>`;
+  }).join('');
+  const alu   = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(aluId));
+  const socio = alu ? DB.ampaSocios.find(s =>
+    sinTildes(s.NOMBRE||'') === sinTildes(alu.NOMBRE||'') ||
+    String(s.ID_SOCIO||'') === String(alu.ID_CLIENTE||'')
+  ) : null;
+  const optSocio = socio
+    ? `<option value="CUOTA_SOCIO" data-linea="AMPA" data-servicio="CUOTA SOCIO AMPA ${new Date().getFullYear()}"
+        data-importe="${parseFloat(socio.CUOTA_ANUAL||0).toFixed(2)}" data-desc="0" data-neto="${parseFloat(socio.CUOTA_ANUAL||0).toFixed(2)}" data-cliente="${esc(alu?.ID_CLIENTE||'')}">
+        Cuota socio AMPA ${new Date().getFullYear()} — ${fmtEur(socio.CUOTA_ANUAL)}</option>` : '';
+  return opts + optSocio || '<option value="" disabled>Sin inscripciones activas</option>';
+}
+
+function actualizarInscPago() {
+  const aluId = document.getElementById('p-alu')?.value;
+  const sel   = document.getElementById('p-insc');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Selecciona inscripción / concepto —</option>'
+    + (aluId ? _opcionesInscPago(aluId, '') : '');
+  document.getElementById('p-linea')  && (document.getElementById('p-linea').value  = '');
+  document.getElementById('p-fact')   && (document.getElementById('p-fact').value   = '');
+  document.getElementById('p-desc')   && (document.getElementById('p-desc').value   = '');
+  document.getElementById('p-neto')   && (document.getElementById('p-neto').value   = '');
+  document.getElementById('p-cli')    && (document.getElementById('p-cli').value    = '');
+}
+
+function autorellenarPago() {
+  const sel = document.getElementById('p-insc');
+  if (!sel || !sel.value) return;
+  const o = sel.options[sel.selectedIndex];
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('p-linea', o.dataset.linea  || '');
+  set('p-serv',  o.dataset.servicio || '');
+  set('p-fact',  o.dataset.importe || '');
+  set('p-desc',  o.dataset.desc    || '');
+  set('p-neto',  o.dataset.neto    || '');
+  set('p-cli',   o.dataset.cliente || '');
 }
 
 function pagos() {
@@ -1871,42 +1930,46 @@ function pagos() {
 
   const diaHoy = new Date().getDate();
   const reclamacionActiva = diaHoy >= 11;
+  const mesActK = new Date().toISOString().slice(0,7);
 
   const rows = DB.pagos.map(p => {
     const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
     const pendiente = String(p.ESTADO||'').toUpperCase() === 'PENDIENTE';
     const btnWA = reclamacionActiva && pendiente ? _waLinkPago(p) : '';
+    const lineaBadge = p.LINEA ? `<span class="badge badge-blue" style="font-size:10px;margin-right:4px">${esc(p.LINEA)}</span>` : '';
     return `<tr>
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
       <td>${esc(p.MES||'—')}</td>
       <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : esc(p.ID_ALUMNO||'—')}</td>
-      <td>${esc(p.CONCEPTO||'—')}</td>
-      <td class="mono">${fmtEur(p.TOTAL_FACTURADO)}</td>
+      <td>${lineaBadge}${esc(p.SERVICIO||'—')}</td>
+      <td class="mono">${fmtEur(p.IMPORTE)}</td>
+      <td class="mono">${p.DESC_EUR&&parseFloat(p.DESC_EUR)>0?'−'+fmtEur(p.DESC_EUR):'—'}</td>
+      <td class="mono"><strong>${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</strong></td>
       <td class="mono">${fmtEur(p.TOTAL_RECIBIDO)}</td>
-      <td>${esc(p.FORMA_PAGO||'—')}</td>
+      <td>${esc(p.MÉTODO||'—')}</td>
       <td>${badgeEstado(p.ESTADO)}</td>
       <td style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-sm btn-secondary" onclick='modalPago(${JSON.stringify(p)})'>Editar</button>
         ${btnWA}
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">💳</div><p>Sin pagos registrados</p></div></td></tr>`;
+  }).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">💳</div><p>Sin pagos registrados</p></div></td></tr>`;
 
-  const totalPend = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
-  const totalCobr = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-  const nPendMes  = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE'&&String(p.MES||'').startsWith(new Date().toISOString().slice(0,7))).length;
+  const totalEsperado = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE)||0),0);
+  const totalCobr     = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const nPendMes      = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE'&&String(p.MES||'').startsWith(mesActK)).length;
 
   const bannerReclamacion = reclamacionActiva && nPendMes > 0
     ? `<div style="background:#e7f7e8;border:1px solid #25D366;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
         📲 <strong>Período de reclamación activo</strong> (día ${diaHoy}).
-        <strong>${nPendMes}</strong> pago${nPendMes>1?'s':''} pendiente${nPendMes>1?'s':''} este mes — los botones WhatsApp están disponibles.
+        <strong>${nPendMes}</strong> pago${nPendMes>1?'s':''} pendiente${nPendMes>1?'s':''} este mes.
       </div>` : '';
 
   render(`
     <div class="kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="kpi-n">${DB.pagos.length}</div><div class="kpi-l">Total pagos</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:${totalCobr>0?'var(--green)':'var(--text1)'}">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:${totalPend>0?'var(--amber)':'var(--text1)'}">${fmtEur(totalPend)}</div><div class="kpi-l">Pendiente de cobro</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:${totalEsperado>0?'var(--amber)':'var(--text1)'}">${fmtEur(totalEsperado)}</div><div class="kpi-l">Pendiente de cobro</div></div>
       <div class="kpi"><div class="kpi-n" style="color:${nPendMes>0?'var(--red)':'var(--green)'}">${nPendMes}</div><div class="kpi-l">Pendientes mes actual</div></div>
     </div>
     <div class="card" style="padding:14px 20px">
@@ -1917,7 +1980,7 @@ function pagos() {
       </div>
       <div class="table-wrap">
         <table id="tbl-pag">
-          <thead><tr><th>ID</th><th>Mes</th><th>Alumno</th><th>Concepto</th><th>Facturado</th><th>Recibido</th><th>Forma</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Mes</th><th>Alumno</th><th>Servicio</th><th class="mono">Importe</th><th class="mono">Dto.</th><th class="mono">Esperado</th><th class="mono">Recibido</th><th>Método</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -1927,58 +1990,115 @@ function pagos() {
 function modalPago(p) {
   p = p || {};
   const isNew = !p.ID_PAGO && !p.ID;
-  const id = p.ID_PAGO || p.ID || null;
-  const opsAlu = DB.alumnos.filter(a=>String(a.ACTIVO||'').toUpperCase().startsWith('S'))
-    .map(a=>`<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`).join('');
+  const id    = p.ID_PAGO || p.ID || null;
+  const mesActual = new Date().toISOString().slice(0,7);
 
-  openModal(isNew?'Registrar pago':'Editar pago',`
+  const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
+    .map(a => `<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`)
+    .join('');
+
+  const insOps = p.ID_ALUMNO
+    ? '<option value="">— Selecciona —</option>' + _opcionesInscPago(String(p.ID_ALUMNO), p.ID_INSCRIPCION||'')
+    : '<option value="">— Selecciona primero un alumno —</option>';
+
+  openModal(isNew ? 'Registrar pago' : 'Editar pago', `
     <div class="form-grid">
-      <div class="field span2"><label>Alumno <span class="req">*</span></label>
-        <select id="p-alu"><option value="">— Selecciona —</option>${opsAlu}</select></div>
-      <div class="field"><label>Mes (ej: septiembre 2026)</label>
-        <input id="p-mes" value="${esc(p.MES||'')}"></div>
-      <div class="field"><label>Concepto</label>
-        <input id="p-concepto" class="upper" value="${esc(p.CONCEPTO||'')}"></div>
-      <div class="field"><label>Total facturado (€)</label>
-        <input id="p-fact" type="number" step="0.01" value="${esc(p.TOTAL_FACTURADO||'')}"></div>
-      <div class="field"><label>Total recibido (€)</label>
-        <input id="p-recib" type="number" step="0.01" value="${esc(p.TOTAL_RECIBIDO||'')}"></div>
-      <div class="field"><label>Forma de pago</label>
-        <select id="p-forma">
-          ${['EFECTIVO','TRANSFERENCIA','DOMICILIACIÓN','BIZUM'].map(f=>`<option value="${f}" ${p.FORMA_PAGO===f?'selected':''}>${f}</option>`).join('')}
-        </select></div>
-      <div class="field"><label>Estado</label>
-        <select id="p-estado">
+      <div class="field span2">
+        <label>Alumno <span class="req">*</span></label>
+        <select id="p-alu" onchange="actualizarInscPago()" ${!isNew?'disabled':''}>
+          <option value="">— Selecciona —</option>${opsAlu}
+        </select>
+      </div>
+      <div class="field span2">
+        <label>Inscripción / Concepto <span class="req">*</span></label>
+        <select id="p-insc" onchange="autorellenarPago()" ${!isNew?'disabled':''}>
+          ${insOps}
+        </select>
+      </div>
+      <div class="field">
+        <label>Línea</label>
+        <input id="p-linea" readonly value="${esc(p.LINEA||'')}">
+      </div>
+      <div class="field">
+        <label>Servicio</label>
+        <input id="p-serv" readonly value="${esc(p.SERVICIO||'')}">
+      </div>
+      <div class="field">
+        <label>Mes (YYYY-MM)</label>
+        <input id="p-mes" value="${esc(p.MES||mesActual)}" placeholder="${mesActual}">
+      </div>
+      <div class="field">
+        <label>Importe base (€)</label>
+        <input id="p-fact" type="number" step="0.01" readonly value="${esc(p.IMPORTE||'')}">
+      </div>
+      <div class="field">
+        <label>Descuento (€)</label>
+        <input id="p-desc" type="number" step="0.01" readonly value="${esc(p.DESC_EUR||'0')}">
+      </div>
+      <div class="field">
+        <label>Total esperado (€)</label>
+        <input id="p-neto" type="number" step="0.01" readonly value="${esc(p.TOTAL_ESPERADO||p.IMPORTE||'')}">
+      </div>
+      <div class="field">
+        <label>Total recibido (€)</label>
+        <input id="p-recib" type="number" step="0.01" value="${esc(p.TOTAL_RECIBIDO||'')}">
+      </div>
+      <div class="field">
+        <label>Método de pago</label>
+        <select id="p-metodo">
+          ${['BIZUM','TRANSFERENCIA','EFECTIVO','DOMICILIACIÓN'].map(f=>`<option value="${f}" ${(p.MÉTODO||'BIZUM')===f?'selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Estado</label>
+        <select id="p-estado" onchange="document.getElementById('p-fecha').value=this.value==='PAGADO'?new Date().toISOString().slice(0,10):document.getElementById('p-fecha').value">
           <option value="PENDIENTE" ${(p.ESTADO||'PENDIENTE')==='PENDIENTE'?'selected':''}>Pendiente</option>
           <option value="PAGADO"    ${p.ESTADO==='PAGADO'?'selected':''}>Pagado</option>
           <option value="PARCIAL"   ${p.ESTADO==='PARCIAL'?'selected':''}>Parcial</option>
-        </select></div>
-      <div class="field"><label>Fecha pago</label>
-        <input id="p-fecha" type="date" value="${esc(p.FECHA_PAGO||'')}"></div>
-      <div class="field span2"><label>Notas</label><textarea id="p-notas">${esc(p.NOTAS||'')}</textarea></div>
+        </select>
+      </div>
+      <div class="field">
+        <label>Fecha pago</label>
+        <input id="p-fecha" type="date" value="${esc(p.FECHA||'')}">
+      </div>
+      <input type="hidden" id="p-cli" value="${esc(p.ID_CLIENTE||'')}">
+      <div class="field span2">
+        <label>Notas</label>
+        <textarea id="p-notas">${esc(p.NOTAS||'')}</textarea>
+      </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="guardarPago(${isNew?'null':`'${id}'`})">Guardar</button>`);
+     <button class="btn btn-primary" onclick="guardarPago(${isNew?'null':`'${id}'`})">Guardar</button>`
+  );
 }
 
 function guardarPago(id) {
-  const aluId = document.getElementById('p-alu').value;
-  if (!aluId) { showToast('Selecciona un alumno','error'); return; }
+  const aluId = document.getElementById('p-alu')?.value;
+  if (!aluId) { showToast('Selecciona un alumno', 'error'); return; }
+  const inscSel = document.getElementById('p-insc')?.value;
+  if (!inscSel) { showToast('Selecciona inscripción o concepto', 'error'); return; }
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
   const row = {
-    ID_ALUMNO:       aluId,
-    MES:             document.getElementById('p-mes').value.trim(),
-    CONCEPTO:        document.getElementById('p-concepto').value.trim(),
-    TOTAL_FACTURADO: document.getElementById('p-fact').value,
-    TOTAL_RECIBIDO:  document.getElementById('p-recib').value,
-    FORMA_PAGO:      document.getElementById('p-forma').value,
-    ESTADO:          document.getElementById('p-estado').value,
-    FECHA_PAGO:      document.getElementById('p-fecha').value,
-    NOTAS:           document.getElementById('p-notas').value.trim(),
+    ID_ALUMNO:      aluId,
+    ID_CLIENTE:     document.getElementById('p-cli')?.value || '',
+    ID_INSCRIPCION: inscSel !== 'CUOTA_SOCIO' ? inscSel : '',
+    LINEA:          document.getElementById('p-linea')?.value || '',
+    SERVICIO:       document.getElementById('p-serv')?.value || '',
+    MES:            document.getElementById('p-mes')?.value.trim() || '',
+    IMPORTE:        document.getElementById('p-fact')?.value || '',
+    DESC_EUR:       document.getElementById('p-desc')?.value || '0',
+    TOTAL_ESPERADO: document.getElementById('p-neto')?.value || '',
+    TOTAL_RECIBIDO: document.getElementById('p-recib')?.value || '',
+    MÉTODO:         document.getElementById('p-metodo')?.value || '',
+    ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
+    FECHA:          document.getElementById('p-fecha')?.value || '',
+    NOTAS:          document.getElementById('p-notas')?.value.trim() || '',
   };
   if (!id) row.FECHA_REGISTRO = new Date().toISOString().slice(0,10);
   writeToSheet('PAGOS', row, id)
-    .then(()=>{ showToast(id?'Pago actualizado':'Pago registrado'); closeModal(); loadAllData().then(pagos); })
-    .catch(err=>showToast('Error: '+err.message,'error'));
+    .then(() => { showToast(id ? 'Pago actualizado' : 'Pago registrado'); closeModal(); loadAllData().then(pagos); })
+    .catch(err => { showToast('Error: '+err.message, 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -2992,9 +3112,9 @@ function extraResumen() {
   // KPI: pagos mes actual
   const pagosMes = DB.pagos.filter(p => String(p.MES||'').startsWith(mesActK));
   const cobradoMes  = pagosMes.filter(p => String(p.ESTADO||'').toUpperCase()==='PAGADO')
-    .reduce((s,p) => s+(parseFloat(p.TOTAL_RECIBIDO)||parseFloat(p.TOTAL_FACTURADO)||0), 0);
+    .reduce((s,p) => s+(parseFloat(p.TOTAL_RECIBIDO)||0), 0);
   const pendienteMes = pagosMes.filter(p => String(p.ESTADO||'').toUpperCase()==='PENDIENTE')
-    .reduce((s,p) => s+(parseFloat(p.TOTAL_FACTURADO)||0), 0);
+    .reduce((s,p) => s+(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE)||0), 0);
   const totalDonutVal = cobradoMes + pendienteMes || 1;
   const pctCobrado = cobradoMes / totalDonutVal;
 
@@ -4187,7 +4307,7 @@ function portalFamilia() {
   const alumnoIds  = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
   const allInscs   = DB.inscripciones.filter(i=>alumnoIds.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA');
   const cliPagos   = DB.pagos.filter(p=>String(p.ID_CLIENTE||'')===cliId);
-  const pendiente  = cliPagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_FACTURADO)||0),0);
+  const pendiente  = cliPagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE)||0),0);
 
   render(`
     <div style="max-width:520px;margin:0 auto">
@@ -4247,8 +4367,8 @@ function portalFamilia() {
                   const est=String(p.ESTADO||'').toUpperCase();
                   return `<tr>
                     <td>${fmtFecha(p.FECHA)}</td>
-                    <td>${esc(p.CONCEPTO||'—')}</td>
-                    <td class="mono">${fmtEur(p.TOTAL_FACTURADO)}</td>
+                    <td>${esc(p.SERVICIO||'—')}</td>
+                    <td class="mono">${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</td>
                     <td><span class="badge ${est==='PAGADO'?'badge-green':est==='PENDIENTE'?'badge-amber':'badge-red'}">${esc(est||'—')}</span></td>
                   </tr>`;
                 }).join('')||'<tr><td colspan="4" class="text-muted" style="text-align:center;padding:12px">Sin pagos</td></tr>'}
