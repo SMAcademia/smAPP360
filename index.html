@@ -389,7 +389,9 @@ tr:hover td{background:#f8f8f8}
 const GAS_URL  = 'https://script.google.com/macros/s/AKfycby6PHeBX1EPH0wrmNF-ixgvs7T8sy5pgzzpquTFb-dtt7W4G1mg2wY8B-IL_wJ9NgT_cQ/exec';
 const APP_VER  = '2.0';
 const CURSO    = '2026-2027';
-const NIF_EMISOR = 'B00000000'; // ← Sustituye por el NIF/CIF real de la entidad
+const NIF_EMISOR      = 'B00000000';                 // ← CIF/NIF real de la entidad
+const NOMBRE_EMISOR   = 'SM ACADEMIA';               // ← Nombre o razón social
+const DOMICILIO_EMISOR = 'C/ Ejemplo, 1 — 35000 Las Palmas de Gran Canaria'; // ← Domicilio fiscal
 
 // ── Google Identity Services ──────────────────────────────────────────────
 // Obtén tu Client ID en console.cloud.google.com → APIs → Credenciales → OAuth 2.0
@@ -2113,10 +2115,41 @@ function facturas() {
   document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores.</p></div>'); return; }
   topbarBtn('+ Nueva factura', () => modalFactura());
+  topbarBtn('↓ PDF lista', () => {
+    const totalF = DB.facturas.reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+    const cobF   = DB.facturas.filter(f=>String(f.ESTADO||'').toUpperCase()==='COBRADA').reduce((s,f)=>s+(parseFloat(f.TOTAL)||0),0);
+    const kHtml = `<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${DB.facturas.length}</div><div class="kpi-l">Facturas</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(totalF)}</div><div class="kpi-l">Total facturado</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(cobF)}</div><div class="kpi-l">Cobrado</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(totalF-cobF)}</div><div class="kpi-l">Pendiente</div></div>
+    </div>`;
+    const filas = DB.facturas.map(f => {
+      const est = String(f.ESTADO||'EMITIDA').toUpperCase();
+      const col = est==='COBRADA'?'#e8f5e9':est==='ANULADA'?'#ffebee':'#fff8e1';
+      return `<tr style="background:${col}">
+        <td class="mono">${esc(f.ID||'')}</td>
+        <td>${fmtFecha(f.FECHA)}</td>
+        <td>${esc(f.NOMBRE_CLIENTE||'—')}</td>
+        <td>${esc(f.DESCRIPCION||'—')}</td>
+        <td style="text-align:right">${fmtEur(f.BASE_IMPONIBLE)}</td>
+        <td style="text-align:right">${esc(f.TIPO_IMPUESTO||'EXENTO')}</td>
+        <td style="text-align:right">${fmtEur(f.CUOTA_IMPUESTO||0)}</td>
+        <td style="text-align:right;font-weight:700">${fmtEur(f.TOTAL)}</td>
+        <td>${est}</td>
+        <td style="font-size:9px;font-family:monospace">${(f.HUELLA||'').substring(0,16)}…</td>
+      </tr>`;
+    }).join('');
+    exportarPDF(`Registro de facturas — ${NOMBRE_EMISOR}`, kHtml+`<table>
+      <thead><tr><th>Nº</th><th>Fecha</th><th>Cliente</th><th>Descripción</th><th>Base imp.</th><th>Impuesto</th><th>Cuota</th><th>Total</th><th>Estado</th><th>Huella (inicio)</th></tr></thead>
+      <tbody>${filas||'<tr><td colspan="10">Sin facturas</td></tr>'}</tbody></table>
+      <p style="font-size:9px;color:#888;margin-top:10px">NIF emisor: ${NIF_EMISOR} · VeriFactu RD 1007/2023</p>`);
+  }, 'btn-secondary');
 
   const rows = DB.facturas.map(f => {
     const estado = String(f.ESTADO||'EMITIDA').toUpperCase();
     const badgeE = estado==='COBRADA' ? 'badge-green' : estado==='ANULADA' ? 'badge-red' : 'badge-amber';
+    const fJson  = JSON.stringify(f).replace(/'/g,'&#39;');
     return `<tr>
       <td class="mono"><strong>${esc(f.ID||'')}</strong></td>
       <td>${fmtFecha(f.FECHA)}</td>
@@ -2128,7 +2161,10 @@ function facturas() {
       <td class="mono" style="text-align:right"><strong>${fmtEur(f.TOTAL)}</strong></td>
       <td><span class="badge ${badgeE}">${esc(estado)}</span></td>
       <td class="mono" style="font-size:10px;color:var(--text3)" title="${esc(f.HUELLA||'')}">${(f.HUELLA||'').substring(0,10)}…</td>
-      <td><button class="btn btn-sm btn-secondary" onclick='modalFactura(${JSON.stringify(f)})'>Editar</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" style="background:var(--g1);color:#fff;margin-right:4px" onclick='exportarFacturaPDF(${fJson})'>↓ PDF</button>
+        <button class="btn btn-sm btn-secondary" onclick='modalFactura(${fJson})'>Editar</button>
+      </td>
     </tr>`;
   }).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><p>Sin facturas registradas</p></div></td></tr>`;
 
@@ -2180,6 +2216,8 @@ function modalFactura(f) {
         <input type="number" step="0.01" id="fac-cuota" value="${esc(f.CUOTA_IMPUESTO||'0')}" readonly></div>
       <div class="field"><label>Total (€)</label>
         <input type="number" step="0.01" id="fac-total" value="${esc(f.TOTAL||'')}" readonly style="font-weight:700"></div>
+      <div class="field"><label>NIF / DNI receptor</label>
+        <input id="fac-nif-rec" class="upper" value="${esc(f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>
       <div class="field"><label>Estado</label>
         <select id="fac-estado">
           ${['EMITIDA','COBRADA','ANULADA'].map(s=>`<option value="${s}" ${(f.ESTADO||'EMITIDA')===s?'selected':''}>${s}</option>`).join('')}
@@ -2188,6 +2226,9 @@ function modalFactura(f) {
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="saveFactura(${JSON.stringify(isNew)},${JSON.stringify(f.ID||null)})">${isNew?'Crear factura':'Guardar cambios'}</button>`);
   calcTotalFac();
+  // auto-uppercase NIF receptor
+  const nifEl = document.getElementById('fac-nif-rec');
+  if (nifEl) nifEl.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
 }
 
 function calcTotalFac() {
@@ -2209,6 +2250,7 @@ async function saveFactura(isNew, id) {
   const cuota  = parseFloat(document.getElementById('fac-cuota')?.value)||0;
   const total  = parseFloat(document.getElementById('fac-total')?.value)||0;
   const estado = document.getElementById('fac-estado')?.value||'EMITIDA';
+  const nifRec = (document.getElementById('fac-nif-rec')?.value||'').trim().toUpperCase();
   if (!cliId||!fecha||!desc||!base) { showToast('Rellena todos los campos obligatorios','error'); return; }
   const cli = DB.clientes.find(c=>c.ID===cliId)||{};
   let huellaAnt = '0'.repeat(64);
@@ -2223,6 +2265,7 @@ async function saveFactura(isNew, id) {
     FECHA:           fecha,
     ID_CLIENTE:      cliId,
     NOMBRE_CLIENTE:  `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim(),
+    NIF_RECEPTOR:    nifRec,
     DESCRIPCION:     desc,
     BASE_IMPONIBLE:  base,
     TIPO_IMPUESTO:   imp,
@@ -2232,10 +2275,105 @@ async function saveFactura(isNew, id) {
     HUELLA_ANT:      isNew ? huellaAnt : undefined,
     HUELLA:          huella,
     NIF_EMISOR:      NIF_EMISOR,
+    NOMBRE_EMISOR:   NOMBRE_EMISOR,
   };
   writeToSheet('FACTURAS', row, isNew ? null : id)
     .then(()=>{ showToast(isNew?'Factura creada con huella VeriFactu':'Factura actualizada'); closeModal(); loadAllData().then(facturas); })
     .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ── Exportar factura individual como PDF ─────────────────────────────────
+function exportarFacturaPDF(f) {
+  const numFac   = String(f.ID||'—');
+  const fecha    = fmtFecha(f.FECHA);
+  const cli      = f.NOMBRE_CLIENTE||f.ID_CLIENTE||'—';
+  const nifRec   = f.NIF_RECEPTOR||'';
+  const desc     = f.DESCRIPCION||'—';
+  const base     = parseFloat(f.BASE_IMPONIBLE||0);
+  const imp      = f.TIPO_IMPUESTO||'EXENTO';
+  const cuota    = parseFloat(f.CUOTA_IMPUESTO||0);
+  const total    = parseFloat(f.TOTAL||0);
+  const estado   = String(f.ESTADO||'EMITIDA').toUpperCase();
+  const huella   = f.HUELLA||'';
+  const huellaAnt= f.HUELLA_ANT||'';
+  const nifEmisor= f.NIF_EMISOR||NIF_EMISOR;
+  const nombreEmisor = f.NOMBRE_EMISOR||NOMBRE_EMISOR;
+
+  const estadoColor = estado==='COBRADA'?'#1b5e20':estado==='ANULADA'?'#b71c1c':'#b45309';
+  const rowsImpuesto = imp==='EXENTO'
+    ? `<tr><td>Base imponible</td><td style="text-align:right">${fmtEur(base)}</td></tr>
+       <tr><td style="color:#666">Exención fiscal (educación / formación)</td><td style="text-align:right;color:#666">Exento</td></tr>`
+    : `<tr><td>Base imponible</td><td style="text-align:right">${fmtEur(base)}</td></tr>
+       <tr><td>${imp}</td><td style="text-align:right">${fmtEur(cuota)}</td></tr>`;
+
+  const body = `
+<style>
+.inv-box{border:1px solid #ddd;border-radius:6px;padding:16px 20px;margin-bottom:16px}
+.inv-parties{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:16px}
+.inv-party h3{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:6px}
+.inv-party p{font-size:12px;line-height:1.6;margin:0}
+.inv-lines{width:100%;border-collapse:collapse;margin-bottom:16px}
+.inv-lines td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px}
+.inv-lines tr:last-child td{border-bottom:none}
+.inv-total{display:flex;justify-content:flex-end}
+.inv-total table{width:260px;border-collapse:collapse}
+.inv-total td{padding:5px 10px;font-size:12px}
+.inv-total .total-row td{font-size:14px;font-weight:800;border-top:2px solid #2e7d32;padding-top:8px}
+.vf-box{background:#f8f8f8;border:1px solid #e0e0e0;border-left:3px solid #2e7d32;border-radius:4px;padding:10px 14px;margin-top:16px;font-size:9px;color:#555;line-height:1.7}
+.vf-box strong{color:#2e7d32;display:block;margin-bottom:2px;font-size:10px}
+.mono{font-family:monospace;word-break:break-all}
+.estado-badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;background:${estadoColor}}
+</style>
+
+<div class="inv-box" style="display:flex;justify-content:space-between;align-items:flex-start">
+  <div>
+    <div style="font-size:24px;font-weight:900;color:#2e7d32;letter-spacing:-.5px">${esc(nombreEmisor)}</div>
+    <div style="font-size:11px;color:#666;margin-top:4px">${esc(DOMICILIO_EMISOR)}</div>
+    <div style="font-size:11px;color:#666">NIF/CIF: ${esc(nifEmisor)}</div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em">Factura</div>
+    <div style="font-size:22px;font-weight:800;color:#111">${esc(numFac)}</div>
+    <div style="font-size:11px;color:#666;margin-top:2px">${fecha}</div>
+    <div style="margin-top:6px"><span class="estado-badge">${estado}</span></div>
+  </div>
+</div>
+
+<div class="inv-parties inv-box">
+  <div class="inv-party">
+    <h3>Emisor</h3>
+    <p><strong>${esc(nombreEmisor)}</strong><br>${esc(DOMICILIO_EMISOR)}<br>NIF: ${esc(nifEmisor)}</p>
+  </div>
+  <div class="inv-party">
+    <h3>Receptor</h3>
+    <p><strong>${esc(cli)}</strong>${nifRec?`<br>NIF: ${esc(nifRec)}`:'<br><span style="color:#aaa;font-size:10px">Sin NIF registrado</span>'}</p>
+  </div>
+</div>
+
+<div class="inv-box">
+  <h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:10px">Concepto</h3>
+  <table class="inv-lines">
+    <thead><tr style="background:#f4f4f4"><th style="padding:7px 10px;text-align:left;font-size:10px">Descripción</th><th style="padding:7px 10px;text-align:right;font-size:10px">Importe</th></tr></thead>
+    <tbody>
+      <tr><td>${esc(desc)}</td><td style="text-align:right">${fmtEur(base)}</td></tr>
+    </tbody>
+  </table>
+  <div class="inv-total">
+    <table>
+      ${rowsImpuesto}
+      <tr class="total-row"><td><strong>TOTAL</strong></td><td style="text-align:right"><strong>${fmtEur(total)}</strong></td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="vf-box">
+  <strong>VeriFactu — Registro de factura verificable (RD 1007/2023)</strong>
+  NIF Emisor: ${esc(nifEmisor)} &nbsp;|&nbsp; Serie-Número: ${esc(numFac)} &nbsp;|&nbsp; Fecha: ${fecha} &nbsp;|&nbsp; Total: ${fmtEur(total)}<br>
+  Huella (SHA-256): <span class="mono">${esc(huella)}</span><br>
+  Huella anterior: <span class="mono">${esc(huellaAnt||'0'.repeat(64))}</span>
+</div>`;
+
+  exportarPDF(`Factura ${numFac} — ${esc(nombreEmisor)}`, body);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
