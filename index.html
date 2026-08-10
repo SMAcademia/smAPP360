@@ -665,11 +665,12 @@ function applyRoleVisibility() {
   const futbolLike = ['ADMIN','COORDINADOR','ENTRENADOR'].includes(rol);
   const extraLike  = ['ADMIN','COORDINADOR','MONITOR'].includes(rol);
   const ampaLike   = ['ADMIN','COORDINADOR','AMPA'].includes(rol);
+  const ampaRole   = rol === 'AMPA';
 
   const vis = {
     'nav-general':      rol !== 'FAMILIA',
     'nav-futbol':       futbolLike,
-    'nav-extra':        extraLike,
+    'nav-extra':        extraLike || ampaRole,
     'nav-personal':     adminLike,
     'nav-contabilidad': adminLike,
     'nav-ampa':         ampaLike,
@@ -695,6 +696,12 @@ function applyRoleVisibility() {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
     });
+  }
+
+  // Para AMPA: dentro de nav-extra solo mostrar el resumen, no el pase de lista
+  if (ampaRole) {
+    const elAsistExt = document.querySelector('[data-page="asistencias-extra"]');
+    if (elAsistExt) elAsistExt.style.display = 'none';
   }
 }
 
@@ -2078,7 +2085,8 @@ function personal() {
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores y coordinadores.</p></div>'); return; }
   topbarBtn('+ Nuevo trabajador', () => modalPersonal());
 
-  const rows = DB.personal.map(p => `
+  const trabajadores = DB.personal.filter(p => String(p.ROL||'').toUpperCase() !== 'AMPA');
+  const rows = trabajadores.map(p => `
     <tr>
       <td class="mono">${esc(p.ID_MONITOR)}</td>
       <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
@@ -2096,7 +2104,7 @@ function personal() {
     <div class="card" style="padding:14px 20px">
       <div class="table-toolbar">
         <input class="search-input" id="q-per" placeholder="Buscar…" oninput="filterTable('q-per','tbl-per')">
-        <span class="text-muted">${DB.personal.length} trabajadores</span>
+        <span class="text-muted">${trabajadores.length} trabajadores</span>
       </div>
       <div class="table-wrap">
         <table id="tbl-per">
@@ -3136,7 +3144,7 @@ function extraResumen() {
       <div class="card" style="padding:14px 20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div class="card-title" style="margin:0">Asistencia por alumno — ${mesAntLabel}</div>
-          <button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">Pasar lista hoy</button>
+          ${!isAmpa()?`<button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">Pasar lista hoy</button>`:''}
         </div>
         ${kAlertaAsist>0?`<div style="background:var(--amber-l);border:1px solid var(--amber);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
           <strong>⚠ ${kAlertaAsist} alumno${kAlertaAsist>1?'s':''}</strong> con menos del 50% de asistencia en ${mesAntLabel}.
@@ -3157,6 +3165,10 @@ function extraResumen() {
 //  MÓDULO: ASISTENCIAS EXTRAESCOLARES
 // ══════════════════════════════════════════════════════════════════════════
 function asistenciasExtra() {
+  if (isAmpa()) {
+    render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>El pase de lista lo realizan los monitores y el coordinador.</p></div>');
+    return;
+  }
   const today = new Date().toISOString().slice(0,10);
 
   // Actividades de la línea extraescolares activas
