@@ -1534,16 +1534,50 @@ function rechazarPreinsc(id) {
 function inscripciones() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva inscripción', () => modalInscripcion());
+  topbarBtn('↓ Exportar PDF', () => {
+    const all = DB.inscripciones;
+    const act2 = all.filter(i=>String(i.ESTADO||'').toUpperCase()==='ACTIVA').length;
+    const fut2 = all.filter(i=>esFutbol(i.LINEA||'')).length;
+    const ext2 = all.filter(i=>esExtraescolar(i.LINEA||'')).length;
+    const kH = `<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${all.length}</div><div class="kpi-l">Total</div></div>
+      <div class="kpi"><div class="kpi-n">${act2}</div><div class="kpi-l">Activas</div></div>
+      <div class="kpi"><div class="kpi-n">${fut2}</div><div class="kpi-l">SM Fútbol</div></div>
+      <div class="kpi"><div class="kpi-n">${ext2}</div><div class="kpi-l">Extraescolares</div></div>
+    </div>`;
+    const filas = all.map(i=>{
+      const alu=DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(i.ID_ALUMNO));
+      const act=DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD));
+      const est=String(i.ESTADO||'').toUpperCase();
+      return `<tr>
+        <td><strong>${alu?esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')):esc(i.ID_ALUMNO||'—')}</strong></td>
+        <td>${act?esc(act.NOMBRE):esc(i.ID_ACTIVIDAD||'—')}</td>
+        <td>${esFutbol(i.LINEA||'')?'⚽ Fútbol':'🎨 Extra'}</td>
+        <td>${esc(i.HORARIO||i.DIA_SEMANA||'—')}</td>
+        <td>${fmtEur(i.PRECIO_ACORDADO)}</td>
+        <td>${esc(i.FORMA_PAGO||'—')}</td>
+        <td>${fmtFecha(i.FECHA_ALTA)}</td>
+        <td><span class="badge ${est==='ACTIVA'?'bg':est==='BAJA'?'br':'ba'}">${esc(i.ESTADO||'—')}</span></td>
+      </tr>`;
+    }).join('');
+    exportarPDF('Inscripciones', kH+`<table><thead><tr><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Horario</th><th>Precio</th><th>Forma pago</th><th>Alta</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="8">Sin datos</td></tr>'}</tbody></table>`);
+  }, 'btn-secondary');
 
   let filtroLinea = 'TODAS';
   let filtroEst   = 'ACTIVA';
 
   const render_ = () => {
     const lista = DB.inscripciones.filter(i => {
-      const linea = filtroLinea === 'TODAS' || String(i.LINEA||'').toUpperCase() === filtroLinea;
-      const est   = filtroEst   === 'TODAS' || String(i.ESTADO||'').toUpperCase() === filtroEst;
+      const linea = filtroLinea === 'TODAS'
+        || (filtroLinea === 'FUTBOL' && esFutbol(i.LINEA||''))
+        || (filtroLinea === 'EXTRAESCOLARES' && esExtraescolar(i.LINEA||''));
+      const est = filtroEst === 'TODAS' || String(i.ESTADO||'').toUpperCase() === filtroEst;
       return linea && est;
     });
+
+    const totFut  = DB.inscripciones.filter(i=>esFutbol(i.LINEA||'')).length;
+    const totExt  = DB.inscripciones.filter(i=>esExtraescolar(i.LINEA||'')).length;
+    const totAct  = DB.inscripciones.filter(i=>String(i.ESTADO||'').toUpperCase()==='ACTIVA').length;
 
     const rows = lista.map(i => {
       const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
@@ -1552,36 +1586,45 @@ function inscripciones() {
         <td class="mono">${esc(i.ID_INSCRIPCION)}</td>
         <td>${alu ? `<strong>${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</strong>` : `<span class="text-muted">${esc(i.ID_ALUMNO)}</span>`}</td>
         <td>${act ? esc(act.NOMBRE) : `<span class="text-muted">${esc(i.ID_ACTIVIDAD)}</span>`}</td>
-        <td>${esFutbol(i.LINEA) ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
-        <td>${esc(i.DIA_SEMANA||'—')}</td>
-        <td>${fmtEur(i.PRECIO_ACORDADO)}</td>
+        <td>${esFutbol(i.LINEA||'') ? '<span class="badge badge-green">⚽ Fútbol</span>' : '<span class="badge badge-blue">🎒 Extra</span>'}</td>
+        <td>${esc(i.HORARIO||'—')}</td>
+        <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}</td>
+        <td>${esc(i.FORMA_PAGO||'—')}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
         <td>${badgeEstado(i.ESTADO)}</td>
         <td><button class="btn btn-sm btn-secondary" onclick='modalInscripcion(${JSON.stringify(i)})'>Editar</button></td>
       </tr>`;
-    }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">✍️</div><p>Sin inscripciones</p></div></td></tr>`;
+    }).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">✍️</div><p>Sin inscripciones</p></div></td></tr>`;
 
     render(`
-      <div class="card" style="padding:14px 20px">
-        <div class="table-toolbar">
-          <input class="search-input" id="q-ins" placeholder="Buscar…" oninput="filterTable('q-ins','tbl-ins')">
-          <select id="fl-linea" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
-            <option value="TODAS">Todas las líneas</option>
-            <option value="FUTBOL">SM Fútbol</option>
-            <option value="EXTRAESCOLARES">Extraescolares</option>
-          </select>
-          <select id="fl-est" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
-            <option value="ACTIVA" selected>Activas</option>
-            <option value="BAJA">Bajas</option>
-            <option value="TODAS">Todas</option>
-          </select>
-          <span class="text-muted">${lista.length} inscripciones</span>
+      <div style="display:grid;gap:16px">
+        <div class="kpis" style="margin-bottom:0">
+          <div class="kpi"><div class="kpi-n">${DB.inscripciones.length}</div><div class="kpi-l">Total</div></div>
+          <div class="kpi"><div class="kpi-n" style="color:var(--green)">${totAct}</div><div class="kpi-l">Activas</div></div>
+          <div class="kpi"><div class="kpi-n">${totFut}</div><div class="kpi-l">⚽ SM Fútbol</div></div>
+          <div class="kpi"><div class="kpi-n">${totExt}</div><div class="kpi-l">🎒 Extraescolares</div></div>
         </div>
-        <div class="table-wrap">
-          <table id="tbl-ins">
-            <thead><tr><th>ID</th><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Día</th><th>Precio</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
+        <div class="card" style="padding:14px 20px">
+          <div class="table-toolbar">
+            <input class="search-input" id="q-ins" placeholder="Buscar alumno o actividad…" oninput="filterTable('q-ins','tbl-ins')">
+            <select id="fl-linea" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
+              <option value="TODAS">Todas las líneas</option>
+              <option value="FUTBOL">⚽ SM Fútbol</option>
+              <option value="EXTRAESCOLARES">🎒 Extraescolares</option>
+            </select>
+            <select id="fl-est" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
+              <option value="ACTIVA">Activas</option>
+              <option value="BAJA">Bajas</option>
+              <option value="TODAS">Todas</option>
+            </select>
+            <span class="text-muted">${lista.length} inscripciones</span>
+          </div>
+          <div class="table-wrap">
+            <table id="tbl-ins">
+              <thead><tr><th>ID</th><th>Alumno</th><th>Actividad</th><th>Línea</th><th>Horario</th><th>Precio</th><th>Forma pago</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
         </div>
       </div>`);
 
@@ -1619,6 +1662,13 @@ function modalInscripcion(i) {
         <input id="i-precio" type="number" step="0.01" value="${esc(i.PRECIO_ACORDADO||'')}"></div>
       <div class="field"><label>Descuento (€)</label>
         <input id="i-dto" type="number" step="0.01" value="${esc(i.DESCUENTO||'0')}"></div>
+      <div class="field"><label>Forma de pago</label>
+        <select id="i-fpago">
+          <option value="">—</option>
+          ${['MENSUAL','TRIMESTRAL','SEMESTRAL','ANUAL','ÚNICO'].map(f=>`<option value="${f}" ${(i.FORMA_PAGO||'')=== f?'selected':''}>${f}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Fecha de alta</label>
+        <input id="i-falta" type="date" value="${esc(i.FECHA_ALTA||new Date().toISOString().slice(0,10))}"></div>
       <div class="field"><label>Estado</label>
         <select id="i-est">
           <option value="ACTIVA" ${i.ESTADO==='ACTIVA'||!i.ESTADO?'selected':''}>Activa</option>
@@ -1649,11 +1699,12 @@ function guardarInscripcion(id) {
     HORARIO:         document.getElementById('i-horario').value.trim(),
     PRECIO_ACORDADO: document.getElementById('i-precio').value,
     DESCUENTO:       document.getElementById('i-dto').value || '0',
+    FORMA_PAGO:      document.getElementById('i-fpago').value,
+    FECHA_ALTA:      document.getElementById('i-falta').value,
     ESTADO:          document.getElementById('i-est').value,
     FECHA_BAJA:      document.getElementById('i-fbaja').value,
     OBSERVACIONES:   document.getElementById('i-obs').value.trim(),
   };
-  if (!id) row.FECHA_ALTA = new Date().toISOString().slice(0,10);
 
   writeToSheet('INSCRIPCIONES', row, id)
     .then(() => { showToast(id ? 'Inscripción actualizada' : 'Inscripción creada'); closeModal(); loadAllData().then(inscripciones); })
