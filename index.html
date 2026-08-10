@@ -824,6 +824,46 @@ function exportarCSV(datos, nombre) {
   showToast('CSV exportado: ' + a.download);
 }
 
+// Abrir ventana de impresión/PDF con contenido HTML
+function exportarPDF(titulo, htmlBody) {
+  const fecha = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+  const win = window.open('','_blank','width=900,height=700');
+  if (!win) { showToast('Permite ventanas emergentes para exportar PDF','error'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${titulo}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;background:#fff;padding:24px}
+.pdf-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #2e7d32}
+.pdf-header h1{font-size:20px;font-weight:800;color:#2e7d32}
+.pdf-header .meta{font-size:10px;color:#666;text-align:right;line-height:1.6}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.kpi{border:1px solid #ddd;border-top:3px solid #2e7d32;padding:10px 12px;border-radius:6px}
+.kpi-n{font-size:20px;font-weight:800;line-height:1}
+.kpi-l{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+.section-title{font-size:13px;font-weight:700;color:#2e7d32;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid #ddd}
+table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px}
+thead th{background:#2e7d32;color:#fff;padding:7px 9px;text-align:left;font-size:10px;font-weight:700}
+tbody td{padding:6px 9px;border-bottom:1px solid #eee;vertical-align:middle}
+tbody tr:nth-child(even) td{background:#f8f8f8}
+.badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700}
+.bg{background:#e8f5e9;color:#1b5e20}.br{background:#ffebee;color:#b71c1c}.ba{background:#fff8e1;color:#b45309}.bb{background:#e3f2fd;color:#0d47a1}
+.pdf-footer{margin-top:20px;font-size:10px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:10px}
+@media print{body{padding:8px}@page{margin:.8cm}}
+</style>
+</head><body>
+<div class="pdf-header">
+  <div><div style="font-size:10px;color:#666;margin-bottom:2px">SM Academia</div><h1>${titulo}</h1></div>
+  <div class="meta">Generado el ${fecha}</div>
+</div>
+${htmlBody}
+<div class="pdf-footer">SM Academia · Informe generado automáticamente</div>
+<script>setTimeout(()=>window.print(),350)<\/script>
+</body></html>`);
+  win.document.close();
+}
+
 // Formatear fecha ISO a DD/MM/AAAA
 function sinTildes(s) { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); }
 function esFutbol(l)       { const u=sinTildes(l); return u.includes('FUTBOL'); }
@@ -1064,32 +1104,81 @@ function guardarCliente(id) {
 function alumnos() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo alumno', () => modalAlumno());
+  topbarBtn('↓ Exportar PDF', () => {
+    const all = DB.alumnos;
+    const fut = all.filter(a=>esFutbol(a.LINEA||'')); const ext = all.filter(a=>esExtraescolar(a.LINEA||''));
+    const kHtml = `<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${all.length}</div><div class="kpi-l">Total alumnos</div></div>
+      <div class="kpi"><div class="kpi-n">${all.filter(a=>String(a.ACTIVO||'S').toUpperCase().startsWith('S')).length}</div><div class="kpi-l">Activos</div></div>
+      <div class="kpi"><div class="kpi-n">${fut.length}</div><div class="kpi-l">SM Fútbol</div></div>
+      <div class="kpi"><div class="kpi-n">${ext.length}</div><div class="kpi-l">Extraescolares</div></div>
+    </div>`;
+    const fila = a => { const c=DB.clientes.find(x=>String(x.ID_CLIENTE)===String(a.ID_CLIENTE)); return `<tr>
+      <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
+      <td>${esc(a.CURSO||'—')}</td><td>${fmtFecha(a.FECHA_NAC)}</td>
+      <td>${c?esc(c.NOMBRE+' '+(c.APELLIDOS||'')):'—'}</td>
+      <td>${esc(a.CENTRO||'—')}</td>
+      <td><span class="badge ${String(a.ACTIVO||'S').toUpperCase().startsWith('S')?'bg':'br'}">${String(a.ACTIVO||'S').toUpperCase().startsWith('S')?'Activo':'Inactivo'}</span></td>
+    </tr>`; };
+    const thd = '<thead><tr><th>Nombre</th><th>Curso</th><th>Fecha nac.</th><th>Cliente</th><th>Centro</th><th>Estado</th></tr></thead>';
+    let body = '';
+    if(fut.length) body += `<div class="section-title">⚽ SM Fútbol (${fut.length})</div><table>${thd}<tbody>${fut.map(fila).join('')}</tbody></table>`;
+    if(ext.length) body += `<div class="section-title">🎨 SM Extraescolares (${ext.length})</div><table>${thd}<tbody>${ext.map(fila).join('')}</tbody></table>`;
+    const sinL = all.filter(a=>!esFutbol(a.LINEA||'')&&!esExtraescolar(a.LINEA||''));
+    if(sinL.length) body += `<div class="section-title">Sin categoría (${sinL.length})</div><table>${thd}<tbody>${sinL.map(fila).join('')}</tbody></table>`;
+    exportarPDF('Registro de alumnos', kHtml + body);
+  }, 'btn-secondary');
 
-  const rows = DB.alumnos.map(a => {
+  const futbol = DB.alumnos.filter(a => esFutbol(a.LINEA||''));
+  const extra  = DB.alumnos.filter(a => esExtraescolar(a.LINEA||''));
+  const sinCat = DB.alumnos.filter(a => !esFutbol(a.LINEA||'') && !esExtraescolar(a.LINEA||''));
+
+  const filaAlumno = (a, mostrarCentro) => {
     const cli = DB.clientes.find(c => String(c.ID_CLIENTE) === String(a.ID_CLIENTE));
     return `<tr>
       <td class="mono">${esc(a.ID_ALUMNO)}</td>
-      <td><strong>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</strong></td>
+      <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
       <td>${esc(a.CURSO||'—')}</td>
       <td>${fmtFecha(a.FECHA_NAC)}</td>
-      <td>${cli ? esc(cli.NOMBRE+' '+( cli.APELLIDOS||'')) : '<span class="text-muted">—</span>'}</td>
+      <td>${cli ? esc(cli.NOMBRE+' '+(cli.APELLIDOS||'')) : '<span class="text-muted">—</span>'}</td>
+      ${mostrarCentro ? `<td>${esc(a.CENTRO||'—')}</td>` : ''}
       <td>${badgeActivo(a.ACTIVO)}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalAlumno(${JSON.stringify(a)})'>Editar</button></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🎒</div><p>Sin alumnos registrados</p></div></td></tr>`;
+  };
 
+  const seccion = (titulo, icono, lista, mostrarCentro) => {
+    if (!lista.length) return '';
+    const idTbl = 'tbl-alu-'+titulo.replace(/\s/g,'');
+    const idQ   = 'q-alu-'+titulo.replace(/\s/g,'');
+    const thead = `<tr><th>ID</th><th>Nombre</th><th>Curso</th><th>Fecha nac.</th><th>Cliente</th>${mostrarCentro?'<th>Centro</th>':''}<th>Estado</th><th></th></tr>`;
+    return `
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700">${icono} ${titulo} <span style="font-size:12px;font-weight:400;color:var(--text3)">(${lista.length})</span></div>
+          <input class="search-input" id="${idQ}" placeholder="Buscar…" oninput="filterTable('${idQ}','${idTbl}')" style="width:180px">
+        </div>
+        <div class="table-wrap">
+          <table id="${idTbl}">
+            <thead>${thead}</thead>
+            <tbody>${lista.map(a=>filaAlumno(a,mostrarCentro)).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  };
+
+  const totalActivos = DB.alumnos.filter(a=>String(a.ACTIVO||'S').toUpperCase().startsWith('S')).length;
   render(`
-    <div class="card" style="padding:14px 20px">
-      <div class="table-toolbar">
-        <input class="search-input" id="q-alu" placeholder="Buscar por nombre, curso…" oninput="filterTable('q-alu','tbl-alu')">
-        <span class="text-muted">${DB.alumnos.length} alumnos</span>
+    <div style="display:grid;gap:16px">
+      <div class="kpis" style="margin-bottom:0">
+        <div class="kpi"><div class="kpi-n">${DB.alumnos.length}</div><div class="kpi-l">Total alumnos</div></div>
+        <div class="kpi"><div class="kpi-n" style="color:var(--green)">${totalActivos}</div><div class="kpi-l">Activos</div></div>
+        <div class="kpi"><div class="kpi-n">${futbol.length}</div><div class="kpi-l">⚽ SM Fútbol</div></div>
+        <div class="kpi"><div class="kpi-n">${extra.length}</div><div class="kpi-l">🎨 Extraescolares</div></div>
       </div>
-      <div class="table-wrap">
-        <table id="tbl-alu">
-          <thead><tr><th>ID</th><th>Nombre</th><th>Curso</th><th>Fecha nac.</th><th>Cliente</th><th>Estado</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+      ${seccion('SM Fútbol','⚽',futbol,false)}
+      ${seccion('SM Extraescolares','🎨',extra,true)}
+      ${sinCat.length ? seccion('Sin categoría','📋',sinCat,false) : ''}
     </div>`);
 }
 
@@ -1100,12 +1189,22 @@ function modalAlumno(a) {
     `<option value="${c.ID_CLIENTE}" ${String(a.ID_CLIENTE)===String(c.ID_CLIENTE)?'selected':''}>${esc(c.NOMBRE+' '+(c.APELLIDOS||''))} (${c.EMAIL})</option>`
   ).join('');
 
+  const esExt = esExtraescolar(a.LINEA||'');
   openModal(isNew ? 'Nuevo alumno' : 'Editar alumno', `
     <div class="form-grid">
       <div class="field"><label>Nombre <span class="req">*</span></label>
         <input id="a-nombre" class="upper" value="${esc(a.NOMBRE||'')}"></div>
       <div class="field"><label>Apellidos</label>
         <input id="a-apellidos" class="upper" value="${esc(a.APELLIDOS||'')}"></div>
+      <div class="field"><label>Línea <span class="req">*</span></label>
+        <select id="a-linea" onchange="toggleCentroAlumno()">
+          <option value="">— Selecciona —</option>
+          <option value="SM FÚTBOL" ${esFutbol(a.LINEA||'')?'selected':''}>⚽ SM Fútbol</option>
+          <option value="EXTRAESCOLARES" ${esExt?'selected':''}>🎨 SM Extraescolares</option>
+        </select></div>
+      <div class="field" id="wrap-centro-alumno" style="${esExt?'':'display:none'}">
+        <label>Centro escolar</label>
+        <input id="a-centro" class="upper" value="${esc(a.CENTRO||'')}"></div>
       <div class="field"><label>Fecha de nacimiento</label>
         <input id="a-fnac" type="date" value="${esc(a.FECHA_NAC||'')}"></div>
       <div class="field"><label>Curso escolar</label>
@@ -1132,10 +1231,16 @@ function modalAlumno(a) {
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="guardarAlumno(${isNew?'null':`'${a.ID_ALUMNO}'`})">Guardar</button>`
   );
-  ['a-nombre','a-apellidos'].forEach(id => {
+  ['a-nombre','a-apellidos','a-centro'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
   });
+}
+
+function toggleCentroAlumno() {
+  const linea = document.getElementById('a-linea')?.value || '';
+  const wrap  = document.getElementById('wrap-centro-alumno');
+  if (wrap) wrap.style.display = esExtraescolar(linea) ? '' : 'none';
 }
 
 function guardarAlumno(id) {
@@ -1143,9 +1248,13 @@ function guardarAlumno(id) {
   const cliId  = document.getElementById('a-cli').value;
   if (!nombre || !cliId) { showToast('Nombre y cliente son obligatorios','error'); return; }
 
+  const linea = document.getElementById('a-linea').value;
+  if (!linea) { showToast('Selecciona una línea (Fútbol o Extraescolares)','error'); return; }
   const row = {
     NOMBRE:          nombre,
     APELLIDOS:       document.getElementById('a-apellidos').value.trim(),
+    LINEA:           linea,
+    CENTRO:          esExtraescolar(linea) ? (document.getElementById('a-centro')?.value.trim()||'') : '',
     FECHA_NAC:       document.getElementById('a-fnac').value,
     CURSO:           document.getElementById('a-curso').value,
     ID_CLIENTE:      cliId,
@@ -2231,7 +2340,28 @@ function fiscal() {
 function ampaSocios() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo socio', () => modalSocio());
-  topbarBtn('↓ Exportar CSV', () => exportarCSV(DB.ampaSocios, 'socios_ampa'), 'btn-secondary');
+  topbarBtn('↓ Exportar PDF', () => {
+    const socsP = DB.ampaSocios;
+    const activP = socsP.filter(s=>String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').length;
+    const bajasP = socsP.length - activP;
+    const recP = socsP.filter(s=>String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').reduce((s,x)=>s+(parseFloat(x.CUOTA_ANUAL)||0),0);
+    const kHtml = `<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${socsP.length}</div><div class="kpi-l">Total socios</div></div>
+      <div class="kpi"><div class="kpi-n">${activP}</div><div class="kpi-l">Activos</div></div>
+      <div class="kpi"><div class="kpi-n">${bajasP}</div><div class="kpi-l">De baja</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(recP)}</div><div class="kpi-l">Recaudación</div></div>
+    </div>`;
+    const filas = socsP.map(s=>`<tr>
+      <td>${esc(s.ID_SOCIO||s.ID||'')}</td>
+      <td><strong>${esc(s.NOMBRE||'')} ${esc(s.APELLIDOS||'')}</strong></td>
+      <td>${esc(s.EMAIL||'—')}</td>
+      <td>${esc(s['TELÉFONO']||s.TELEFONO||'—')}</td>
+      <td>${fmtFecha(s.FECHA_ALTA)}</td>
+      <td>${fmtEur(s.CUOTA_ANUAL)}</td>
+      <td><span class="badge ${String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO'?'bg':'br'}">${esc(s.ESTADO||'ACTIVO')}</span></td>
+    </tr>`).join('');
+    exportarPDF('Socios AMPA', kHtml+`<table><thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="7">Sin datos</td></tr>'}</tbody></table>`);
+  }, 'btn-secondary');
 
   const socios  = DB.ampaSocios;
   const activos = socios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO').length;
@@ -2385,12 +2515,27 @@ function guardarSocio(id) {
 function ampaAlumnos() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nuevo alumno AMPA', () => modalAmpaAlumno());
-  topbarBtn('↓ Exportar CSV', () => {
-    const datos = DB.ampaAlumnos.map(a => {
-      const soc = DB.ampaSocios.find(s=>String(s.ID_SOCIO||s.ID||'')===String(a.ID_SOCIO));
-      return {...a, SOCIO_NOMBRE: soc ? soc.NOMBRE+' '+(soc.APELLIDOS||'') : ''};
-    });
-    exportarCSV(datos, 'alumnos_ampa');
+  topbarBtn('↓ Exportar PDF', () => {
+    const alu2 = DB.ampaAlumnos;
+    const actP = alu2.filter(a=>String(a.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').length;
+    const byA2 = {}; alu2.forEach(a=>{const k=(a.ACTIVIDAD||'Sin asignar').trim()||'Sin asignar';byA2[k]=(byA2[k]||0)+1;});
+    const kHtml = `<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${alu2.length}</div><div class="kpi-l">Total alumnos</div></div>
+      <div class="kpi"><div class="kpi-n">${actP}</div><div class="kpi-l">Activos</div></div>
+      <div class="kpi"><div class="kpi-n">${Object.keys(byA2).length}</div><div class="kpi-l">Actividades</div></div>
+      <div class="kpi"><div class="kpi-n">${new Set(alu2.map(a=>a.CENTRO).filter(Boolean)).size}</div><div class="kpi-l">Centros</div></div>
+    </div>`;
+    const filas = alu2.map(a=>{
+      const soc=DB.ampaSocios.find(s=>String(s.ID_SOCIO||s.ID||'')===String(a.ID_SOCIO));
+      return `<tr>
+        <td><strong>${esc(a.NOMBRE_ALUMNO||'')} ${esc(a.APELLIDOS_ALUMNO||'')}</strong></td>
+        <td>${soc?esc(soc.NOMBRE+' '+(soc.APELLIDOS||'')):esc(a.ID_SOCIO||'—')}</td>
+        <td>${esc(a.ACTIVIDAD||'—')}</td>
+        <td>${esc(a.CENTRO||'—')}</td>
+        <td><span class="badge ${String(a.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO'?'bg':'br'}">${esc(a.ESTADO||'ACTIVO')}</span></td>
+      </tr>`;
+    }).join('');
+    exportarPDF('Alumnos AMPA', kHtml+`<table><thead><tr><th>Alumno</th><th>Socio/Familia</th><th>Actividad</th><th>Centro</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="5">Sin datos</td></tr>'}</tbody></table>`);
   }, 'btn-secondary');
 
   const alumnos  = DB.ampaAlumnos;
@@ -2760,7 +2905,32 @@ function ejecutarCorreccion(idOriginal) {
 // ══════════════════════════════════════════════════════════════════════════
 function extraResumen() {
   document.getElementById('topbar-actions').innerHTML = '';
-  topbarBtn('↓ Exportar asistencia', () => exportarCSV(DB.asistenciasExtra, 'asistencia_extraescolares'), 'btn-secondary');
+  topbarBtn('↓ Exportar PDF', () => {
+    const actExP = DB.actividades.filter(a=>esExtraescolar(a.LINEA||a.NOMBRE||'')&&String(a.ACTIVA||'').toUpperCase().startsWith('S'));
+    const resP = actExP.map(act=>{
+      const aId=String(act.ID);
+      const ins=DB.inscripciones.filter(i=>String(i.ID_ACTIVIDAD)===aId&&String(i.ESTADO||'').toUpperCase()==='ACTIVA').length;
+      const ses=DB.asistenciasExtra.filter(a=>String(a.ID_ACTIVIDAD)===aId);
+      const tp=ses.reduce((s,a)=>s+(parseInt(a.TOTAL_PRESENTES)||0),0);
+      const to=ses.reduce((s,a)=>s+(parseInt(a.TOTAL_ALUMNOS)||0),0);
+      return {nom:act.NOMBRE||'', centro:act.CENTRO||'—', ins, nSes:ses.length, tasa:to?Math.round(tp/to*100):null};
+    });
+    const totIns=resP.reduce((s,r)=>s+r.ins,0); const totSes=resP.reduce((s,r)=>s+r.nSes,0);
+    const tv=resP.filter(r=>r.tasa!==null).map(r=>r.tasa);
+    const tm=tv.length?Math.round(tv.reduce((s,v)=>s+v,0)/tv.length):null;
+    const kHtml=`<div class="kpis">
+      <div class="kpi"><div class="kpi-n">${actExP.length}</div><div class="kpi-l">Actividades</div></div>
+      <div class="kpi"><div class="kpi-n">${totIns}</div><div class="kpi-l">Inscritos</div></div>
+      <div class="kpi"><div class="kpi-n">${totSes}</div><div class="kpi-l">Sesiones</div></div>
+      <div class="kpi"><div class="kpi-n">${tm!==null?tm+'%':'—'}</div><div class="kpi-l">Asistencia media</div></div>
+    </div>`;
+    const filas=resP.map(r=>`<tr>
+      <td><strong>${esc(r.nom)}</strong></td><td>${esc(r.centro)}</td>
+      <td>${r.ins}</td><td>${r.nSes}</td>
+      <td><strong>${r.tasa!==null?r.tasa+'%':'—'}</strong></td>
+    </tr>`).join('');
+    exportarPDF('SM Extraescolares — Resumen de asistencia', kHtml+`<table><thead><tr><th>Actividad</th><th>Centro</th><th>Inscritos</th><th>Sesiones</th><th>% Asistencia</th></tr></thead><tbody>${filas||'<tr><td colspan="5">Sin datos</td></tr>'}</tbody></table>`);
+  }, 'btn-secondary');
 
   const actExtras = DB.actividades.filter(a =>
     esExtraescolar(a.LINEA||a.NOMBRE||'') && String(a.ACTIVA||'').toUpperCase().startsWith('S')
