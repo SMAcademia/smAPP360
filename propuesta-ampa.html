@@ -1,0 +1,510 @@
+<title>Propuesta AMPA 2026/2027 — SM Extraescolares</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --black:   #111111;
+  --green:   #2e7d32;
+  --green2:  #1b5e20;
+  --green-t: #e8f5e9;
+  --offwhite:#f8f8f8;
+  --border:  #e0e0e0;
+  --body:    #444444;
+  --muted:   #888888;
+  --white:   #ffffff;
+}
+
+html { scroll-behavior: smooth; }
+body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.65; color: var(--body); background: var(--white); }
+
+/* ── TYPOGRAPHY ─────────────────────────────────────────── */
+h1, h2, h3, h4 { color: var(--black); line-height: 1.2; text-wrap: balance; }
+h1 { font-size: clamp(28px, 5vw, 46px); font-weight: 800; letter-spacing: -1px; }
+h2 { font-size: clamp(22px, 3.5vw, 32px); font-weight: 700; letter-spacing: -.5px; }
+h3 { font-size: 18px; font-weight: 700; }
+.label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
+.num  { font-variant-numeric: tabular-nums; }
+
+/* ── LAYOUT ─────────────────────────────────────────────── */
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+.section  { padding: 72px 0; }
+.section--tint { background: var(--green-t); }
+.section--dark { background: var(--green2); color: var(--white); }
+.section--dark h2, .section--dark h3, .section--dark p { color: var(--white); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+
+/* ── HEADER ─────────────────────────────────────────────── */
+.site-header {
+  background: var(--black);
+  border-bottom: 3px solid var(--green);
+  padding: 16px 0;
+  position: sticky; top: 0; z-index: 100;
+}
+.site-header .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.logo { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.logo-badge {
+  width: 42px; height: 42px; border-radius: 8px; background: var(--green);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 16px; font-weight: 900; color: var(--white); letter-spacing: -.5px;
+}
+.logo-text { display: flex; flex-direction: column; }
+.logo-text strong { color: var(--white); font-size: 15px; font-weight: 800; line-height: 1.1; }
+.logo-text span { color: var(--green); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
+.header-tag {
+  background: transparent; border: 1px solid var(--green);
+  color: var(--green); padding: 5px 14px; border-radius: 20px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+
+/* ── HERO ────────────────────────────────────────────────── */
+.hero {
+  background: var(--black);
+  padding: 80px 0 64px;
+  color: var(--white);
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; top: -80px; right: -80px;
+  width: 440px; height: 440px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(46,125,50,.25) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero h1 { color: var(--white); margin-bottom: 20px; max-width: 780px; }
+.hero h1 em { color: var(--green); font-style: normal; }
+.hero p { color: rgba(255,255,255,.72); font-size: 18px; max-width: 660px; margin-bottom: 36px; }
+.hero-meta { display: flex; gap: 32px; flex-wrap: wrap; }
+.hero-meta-item { border-left: 2px solid var(--green); padding-left: 12px; }
+.hero-meta-item .label { color: rgba(255,255,255,.5); margin-bottom: 2px; }
+.hero-meta-item strong { color: var(--white); font-size: 14px; }
+
+/* ── KPI STRIP ───────────────────────────────────────────── */
+.kpi-strip { background: var(--green); padding: 0; }
+.kpi-strip .wrap { display: grid; grid-template-columns: repeat(4, 1fr); }
+.kpi-item {
+  padding: 28px 20px; text-align: center;
+  border-right: 1px solid rgba(255,255,255,.2);
+}
+.kpi-item:last-child { border-right: none; }
+.kpi-item .kpi-n { font-size: clamp(24px, 3vw, 36px); font-weight: 900; color: var(--white); line-height: 1; font-variant-numeric: tabular-nums; }
+.kpi-item .kpi-l { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: rgba(255,255,255,.7); margin-top: 6px; }
+
+/* ── SECTION HEADER ──────────────────────────────────────── */
+.section-head { text-align: center; margin-bottom: 40px; }
+.section-head .eyebrow { display: inline-block; color: var(--green); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 10px; }
+.section-head h2 { margin-bottom: 14px; }
+.section-head p { color: var(--muted); max-width: 600px; margin: 0 auto; }
+.section--dark .section-head .eyebrow { color: rgba(255,255,255,.6); }
+
+/* ── FEATURE CARDS ───────────────────────────────────────── */
+.feat-card {
+  background: var(--white); border: 1px solid var(--border); border-radius: 10px;
+  padding: 28px; border-top: 4px solid var(--green);
+}
+.feat-card .icon-wrap {
+  width: 44px; height: 44px; border-radius: 8px; background: var(--green-t);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+.feat-card h3 { font-size: 17px; margin-bottom: 14px; }
+.feat-card ul { list-style: none; }
+.feat-card ul li {
+  font-size: 14px; color: var(--body); padding: 6px 0 6px 22px; position: relative;
+  border-bottom: 1px solid var(--border);
+}
+.feat-card ul li:last-child { border-bottom: none; }
+.feat-card ul li::before { content: '✓'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+.feat-card ul li strong { color: var(--black); }
+
+/* ── ACTIVITY CARDS ──────────────────────────────────────── */
+.act-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 32px; }
+.act-card {
+  background: var(--white); border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px; display: flex; flex-direction: column; gap: 6px;
+}
+.act-card .act-icon { font-size: 24px; margin-bottom: 4px; }
+.act-card h4 { font-size: 15px; font-weight: 700; color: var(--black); }
+.act-card .act-detail { font-size: 12px; color: var(--muted); }
+.act-card .act-price { font-size: 20px; font-weight: 800; color: var(--green); margin-top: auto; padding-top: 10px; font-variant-numeric: tabular-nums; }
+.act-card .act-price small { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+/* ── BUDGET TABLE ────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); background: var(--white); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+thead th { background: var(--black); color: var(--white); padding: 14px 18px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+tbody td { padding: 14px 18px; border-bottom: 1px solid var(--border); color: var(--body); font-variant-numeric: tabular-nums; }
+tbody tr:nth-child(even) td { background: var(--offwhite); }
+tbody tr:last-child td { background: var(--green-t); font-weight: 700; color: var(--black); border-bottom: none; border-top: 2px solid var(--green); }
+tbody tr:last-child td:last-child { color: var(--green); font-size: 20px; font-weight: 900; }
+
+/* ── CALCULATOR ──────────────────────────────────────────── */
+.calc-box {
+  background: var(--white); border: 2px solid var(--green); border-radius: 14px;
+  padding: 40px; max-width: 680px; margin: 0 auto;
+}
+.calc-context { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+.calc-context-item { background: var(--offwhite); border-radius: 8px; padding: 16px 20px; }
+.calc-context-item .label { color: var(--muted); margin-bottom: 4px; }
+.calc-context-item .val { font-size: 22px; font-weight: 800; color: var(--black); font-variant-numeric: tabular-nums; }
+.calc-context-item .val.green { color: var(--green); }
+.slider-section { margin-bottom: 28px; }
+.slider-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.slider-header span { font-size: 14px; color: var(--body); }
+.slider-header strong { font-size: 32px; font-weight: 900; color: var(--green); font-variant-numeric: tabular-nums; }
+input[type="range"] {
+  width: 100%; height: 6px; -webkit-appearance: none; appearance: none;
+  background: var(--border); border-radius: 3px; outline: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 22px; height: 22px;
+  background: var(--green); border-radius: 50%; cursor: pointer;
+  box-shadow: 0 2px 6px rgba(46,125,50,.4);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 22px; height: 22px; background: var(--green); border-radius: 50%;
+  cursor: pointer; border: none; box-shadow: 0 2px 6px rgba(46,125,50,.4);
+}
+.calc-result-box {
+  background: var(--green); border-radius: 10px; padding: 24px 28px;
+  text-align: center; color: var(--white);
+}
+.calc-result-box .label { color: rgba(255,255,255,.75); margin-bottom: 6px; }
+.calc-result-box .big { font-size: 48px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+.calc-result-box .sub { font-size: 13px; color: rgba(255,255,255,.65); margin-top: 6px; }
+
+/* ── TECH BLOCK ──────────────────────────────────────────── */
+.tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 40px; }
+.tech-item { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 22px; }
+.tech-item .ti-icon { font-size: 28px; margin-bottom: 10px; }
+.tech-item h4 { color: var(--white); font-size: 15px; margin-bottom: 6px; }
+.tech-item p { font-size: 13px; color: rgba(255,255,255,.65); }
+
+/* ── FOOTER ──────────────────────────────────────────────── */
+footer {
+  background: var(--black); padding: 36px 0;
+  border-top: 3px solid var(--green);
+}
+footer .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+footer p { color: rgba(255,255,255,.5); font-size: 13px; }
+.footer-badge { color: var(--green); font-weight: 700; font-size: 13px; }
+
+/* ── PRINT ───────────────────────────────────────────────── */
+@media print {
+  .site-header { position: static; }
+  .kpi-strip .wrap { grid-template-columns: repeat(4,1fr); }
+  .section { padding: 40px 0; }
+  @page { margin: 1.5cm; }
+}
+
+@media (max-width: 680px) {
+  .kpi-strip .wrap { grid-template-columns: repeat(2, 1fr); }
+  .kpi-item { border-right: none; border-bottom: 1px solid rgba(255,255,255,.2); }
+  .kpi-item:last-child, .kpi-item:nth-child(even) { border-bottom: none; }
+  .calc-context { grid-template-columns: 1fr; }
+  footer .wrap { flex-direction: column; text-align: center; }
+  .hero-meta { flex-direction: column; gap: 16px; }
+}
+</style>
+
+<!-- HEADER -->
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="#">
+      <div class="logo-badge">SM</div>
+      <div class="logo-text">
+        <strong>SM Extraescolares</strong>
+        <span>Academia Deportiva &amp; Educativa</span>
+      </div>
+    </a>
+    <div class="header-tag">Propuesta AMPA — Curso 2026/2027</div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <h1>Gestión integral de extraescolares <em>con plataforma digital incluida</em></h1>
+    <p>Un modelo profesional pensado para poner a las familias y a los niños en el centro: ratio garantizado, transparencia total en cobros y comunicación fluida durante todo el curso.</p>
+    <div class="hero-meta">
+      <div class="hero-meta-item">
+        <div class="label">Empresa</div>
+        <strong>Antonio Samuel Martín Rivera — SM Academia</strong>
+      </div>
+      <div class="hero-meta-item">
+        <div class="label">Destinatario</div>
+        <strong>Junta Directiva AMPA — C.E.I.P. Escaleritas</strong>
+      </div>
+      <div class="hero-meta-item">
+        <div class="label">Curso</div>
+        <strong>2026 / 2027</strong>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- KPI STRIP -->
+<div class="kpi-strip">
+  <div class="wrap">
+    <div class="kpi-item">
+      <div class="kpi-n num">993 €</div>
+      <div class="kpi-l">Coste mensual total</div>
+    </div>
+    <div class="kpi-item">
+      <div class="kpi-n num">5.000 €</div>
+      <div class="kpi-l">Subvención obtenida</div>
+    </div>
+    <div class="kpi-item">
+      <div class="kpi-n">15</div>
+      <div class="kpi-l">Alumnos máx. por monitor</div>
+    </div>
+    <div class="kpi-item">
+      <div class="kpi-n num">~8 €</div>
+      <div class="kpi-l">Copago mensual estimado</div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 1: PLATAFORMA -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Plataforma digital</div>
+      <h2>Dashboard en tiempo real para la Junta del AMPA</h2>
+      <p>Acceso exclusivo a datos actualizados de socios, pagos, asistencia y actividades — sin necesidad de Excel ni correos.</p>
+    </div>
+    <div class="grid-2">
+      <div class="feat-card">
+        <div class="icon-wrap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </div>
+        <h3>Panel de Control del AMPA</h3>
+        <ul>
+          <li><strong>Socios:</strong> control de cuotas de asociación anuales en tiempo real.</li>
+          <li><strong>Ratios:</strong> límite de 15 alumnos/monitor garantizado y visible.</li>
+          <li><strong>Asistencia:</strong> porcentajes por actividad, alumno y mes.</li>
+          <li><strong>Pagos:</strong> cobrado vs. pendiente por actividad y mensualidad.</li>
+          <li><strong>Exportación PDF:</strong> informes listos para reuniones de junta.</li>
+        </ul>
+      </div>
+      <div class="feat-card">
+        <div class="icon-wrap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <h3>Operativa por Perfiles de Usuario</h3>
+        <ul>
+          <li><strong>Coordinador:</strong> gestión completa de inscripciones y cobros.</li>
+          <li><strong>Monitor:</strong> pase de lista diario desde móvil, en un clic.</li>
+          <li><strong>AMPA:</strong> acceso de solo lectura a dashboards y resúmenes.</li>
+          <li><strong>Datos propios:</strong> Google Sheets en la cuenta del AMPA — siempre accesible.</li>
+          <li><strong>Alojamiento:</strong> aplicación en GitHub Pages — sin costes de servidor.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 2: PRESUPUESTO -->
+<section class="section section--tint">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Presupuesto</div>
+      <h2>Desglose mensual del servicio — 993,00 €/mes</h2>
+      <p>Precio cerrado que incluye impartición, seguros, coordinación y acceso a la plataforma digital.</p>
+    </div>
+
+    <div class="act-grid">
+      <div class="act-card">
+        <div class="act-icon">🏃</div>
+        <h4>Multideporte (2 grupos)</h4>
+        <div class="act-detail">Lu-Mi y Ma-Ju · 4 h/semana · 16 h/mes</div>
+        <div class="act-price num">227,20 € <small>/mes</small></div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">♿</div>
+        <h4>Multideporte Adaptado</h4>
+        <div class="act-detail">1 grupo · 4 h/semana · 16 h/mes</div>
+        <div class="act-price num">227,20 € <small>/mes</small></div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">🗣️</div>
+        <h4>Inglés (2 grupos)</h4>
+        <div class="act-detail">Lu-Mi y Ma-Ju · 4 h/semana · 16 h/mes</div>
+        <div class="act-price num">227,20 € <small>/mes</small></div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">💃</div>
+        <h4>Baile (1 grupo)</h4>
+        <div class="act-detail">1 sesión/semana · 2 h/sem · 8 h/mes</div>
+        <div class="act-price num">113,60 € <small>/mes</small></div>
+      </div>
+      <div class="act-card" style="border-top:3px solid var(--green)">
+        <div class="act-icon">⚙️</div>
+        <h4>Gestión, Coord. y Plataforma</h4>
+        <div class="act-detail">Coordinación · soporte · software · atención</div>
+        <div class="act-price num">197,80 € <small>/mes</small></div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Concepto</th>
+            <th>Días / Horas</th>
+            <th>Descripción del coste</th>
+            <th>Importe mensual</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Multideporte</strong> (2 Grupos)</td>
+            <td>Lu-Mi y Ma-Ju — 4 h/sem</td>
+            <td>Coste salarial + SS empresa (16 h/mes)</td>
+            <td class="num">227,20 €</td>
+          </tr>
+          <tr>
+            <td><strong>Multideporte Adaptado</strong> (1 Grupo)</td>
+            <td>4 h/semana</td>
+            <td>Coste salarial + SS empresa (16 h/mes)</td>
+            <td class="num">227,20 €</td>
+          </tr>
+          <tr>
+            <td><strong>Inglés</strong> (2 Grupos)</td>
+            <td>Lu-Mi y Ma-Ju — 4 h/sem</td>
+            <td>Coste salarial + SS empresa (16 h/mes)</td>
+            <td class="num">227,20 €</td>
+          </tr>
+          <tr>
+            <td><strong>Baile</strong> (1 Grupo)</td>
+            <td>2 h/semana</td>
+            <td>Coste salarial + SS empresa (8 h/mes)</td>
+            <td class="num">113,60 €</td>
+          </tr>
+          <tr>
+            <td><strong>Gestión, Coordinación y App</strong></td>
+            <td>Mensual</td>
+            <td>Coordinación, soporte, software y atención a familias</td>
+            <td class="num">197,80 €</td>
+          </tr>
+          <tr>
+            <td colspan="3"><strong>TOTAL — PRECIO MENSUAL CERRADO</strong></td>
+            <td class="num"><strong>993,00 €</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 3: CALCULADORA COPAGO -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Simulador económico</div>
+      <h2>¿Cuánto pagarían las familias socias?</h2>
+      <p>Ajusta el número de alumnos inscritos para estimar el copago mensual real una vez aplicada la subvención.</p>
+    </div>
+
+    <div class="calc-box">
+      <div class="calc-context">
+        <div class="calc-context-item">
+          <div class="label">Coste anual del servicio (8 meses)</div>
+          <div class="val num">7.944,00 €</div>
+        </div>
+        <div class="calc-context-item">
+          <div class="label">Subvención obtenida por el AMPA</div>
+          <div class="val green num">5.000,00 €</div>
+        </div>
+        <div class="calc-context-item">
+          <div class="label">Fondo a cubrir vía copago (anual)</div>
+          <div class="val num">2.944,00 €</div>
+        </div>
+        <div class="calc-context-item">
+          <div class="label">Fondo a cubrir vía copago (mensual)</div>
+          <div class="val num">368,00 €</div>
+        </div>
+      </div>
+
+      <div class="slider-section">
+        <div class="slider-header">
+          <span>Alumnos socios inscritos:</span>
+          <strong id="countDisplay">46</strong>
+        </div>
+        <input type="range" id="studentsSlider" min="30" max="90" value="46" oninput="calculateCopay()">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px">
+          <span>30 alumnos</span>
+          <span>90 alumnos</span>
+        </div>
+      </div>
+
+      <div class="calc-result-box">
+        <div class="label">Copago mensual estimado por alumno/actividad (solo socios)</div>
+        <div class="big num" id="copayResult">8,00 €</div>
+        <div class="sub">Importe orientativo · varía según inscripciones reales</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 4: TECNOLOGÍA -->
+<section class="section section--dark">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow" style="color:rgba(255,255,255,.5)">Tecnología y adaptabilidad</div>
+      <h2>Una plataforma que evoluciona con vosotros</h2>
+      <p>Al ser desarrollo propio, la aplicación no es software rígido. Se actualiza a lo largo del curso para añadir módulos o ajustes que mejoren la coordinación AMPA–Empresa–Familias.</p>
+    </div>
+    <div class="tech-grid">
+      <div class="tech-item">
+        <div class="ti-icon">📊</div>
+        <h4>Datos en vuestras manos</h4>
+        <p>Todo guardado en Google Sheets del AMPA. Nunca dependéis de terceros.</p>
+      </div>
+      <div class="tech-item">
+        <div class="ti-icon">📲</div>
+        <h4>Reclamación de cobros por WhatsApp</h4>
+        <p>Botón directo con mensaje predefinido. Sin fricción y sin llamadas incómodas.</p>
+      </div>
+      <div class="tech-item">
+        <div class="ti-icon">📋</div>
+        <h4>Pase de lista digital</h4>
+        <p>Los monitores registran asistencia desde el móvil. El AMPA ve el resultado al instante.</p>
+      </div>
+      <div class="tech-item">
+        <div class="ti-icon">🧾</div>
+        <h4>Facturación VeriFactu</h4>
+        <p>Facturas numeradas con huella SHA-256 conforme al RD 1007/2023.</p>
+      </div>
+      <div class="tech-item">
+        <div class="ti-icon">📧</div>
+        <h4>Emails automáticos</h4>
+        <p>Confirmación de preinscripción enviada al instante a la familia.</p>
+      </div>
+      <div class="tech-item">
+        <div class="ti-icon">🔒</div>
+        <h4>Acceso por roles</h4>
+        <p>Cada perfil ve solo lo que le corresponde. Sin exposición de datos sensibles.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <p>&copy; 2026 SM Extraescolares &amp; SM Academia — Propuesta exclusiva para la Junta Directiva del AMPA C.E.I.P. Escaleritas.</p>
+    <div class="footer-badge">smacademia.es</div>
+  </div>
+</footer>
+
+<script>
+function calculateCopay() {
+  const students = parseInt(document.getElementById('studentsSlider').value);
+  document.getElementById('countDisplay').textContent = students;
+  const monthlyNeed = 368;
+  const copay = (monthlyNeed / students).toFixed(2).replace('.', ',');
+  document.getElementById('copayResult').textContent = copay + ' €';
+}
+</script>
