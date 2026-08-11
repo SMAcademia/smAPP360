@@ -3627,6 +3627,7 @@ function guardarAsistenciaExtra() {
 // ══════════════════════════════════════════════════════════════════════════
 function asistenciasFutbol() {
   const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const MAX_AFORO = 8; // máximo de participantes por sesión (denominador fijo para % asistencia)
   const sesionesOrd = [...DB.sesiones].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')));
 
   // Agrupar ASISTENCIAS_FUTBOL por sesión para la tabla resumen
@@ -3634,8 +3635,7 @@ function asistenciasFutbol() {
   DB.asistenciasFutbol.forEach(a => {
     const sid = String(a.ID_SESION||'');
     if (!sid) return;
-    if (!bySes[sid]) bySes[sid] = { sesId: sid, fecha: a.FECHA, total: 0, presentes: 0 };
-    bySes[sid].total++;
+    if (!bySes[sid]) bySes[sid] = { sesId: sid, fecha: a.FECHA, presentes: 0 };
     if (String(a.PRESENTE||'N').toUpperCase()==='S') bySes[sid].presentes++;
   });
   const resumen = Object.values(bySes)
@@ -3671,11 +3671,11 @@ function asistenciasFutbol() {
             <tbody>
               ${resumen.map(r=>{
                 const ses = DB.sesiones.find(s=>String(s.ID)===r.sesId);
-                const pct = r.total>0 ? Math.round(r.presentes/r.total*100) : 0;
+                const pct = Math.round(r.presentes / MAX_AFORO * 100);
                 return `<tr>
                   <td class="mono">${esc(r.sesId)}</td>
                   <td>${fmtFecha(ses?.FECHA||r.fecha)}</td>
-                  <td><strong>${r.presentes}/${r.total}</strong> <span style="color:var(--text3)">(${pct}%)</span></td>
+                  <td><strong>${r.presentes}/${MAX_AFORO}</strong> <span style="color:var(--text3)">(${pct}%)</span></td>
                 </tr>`;
               }).join('') || '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px">Sin registros</td></tr>'}
             </tbody>
