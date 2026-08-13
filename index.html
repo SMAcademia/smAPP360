@@ -3923,7 +3923,7 @@ function cargarListaFutbol() {
       ${alumnos.map(a=>{
         const aId    = String(a.ID_ALUMNO);
         const prev   = prevRows.find(r=>String(r.ID_ALUMNO)===aId);
-        const presente = !prev || String(prev.PRESENTE||'S').toUpperCase()==='S';
+        const presente = !!prev && String(prev.PRESENTE||'S').toUpperCase()==='S';
         const esMejor  = prev && String(prev.ES_MEJOR||'').toUpperCase()==='S';
         return `
           <div style="border:1px solid var(--border2);border-radius:6px;padding:10px 12px">
@@ -3998,7 +3998,7 @@ function guardarAsistenciaFutbol() {
   const DIMS_COL = {tec:'EVAL_TECNICA', com:'EVAL_COMPRENSION', soc:'EVAL_SOCIOEMOCIONAL'};
 
   const checks = [...document.querySelectorAll('#lista-checks-futbol input[type=checkbox]')];
-  let total = 0, presentes = 0;
+  let presentes = 0;
 
   // Guardar secuencialmente para evitar colisiones de ID en APPEND
   let chain = Promise.resolve();
@@ -4006,7 +4006,9 @@ function guardarAsistenciaFutbol() {
     const aId     = cb.dataset.id;
     const pres    = cb.checked;
     if (pres) presentes++;
-    total++;
+    const prev    = prevRows.find(r=>String(r.ID_ALUMNO)===aId);
+    // Solo escribir si vino, o si ya existía fila anterior que hay que corregir
+    if (!pres && !prev) return;
     chain = chain.then(() => {
       const prev   = prevRows.find(r=>String(r.ID_ALUMNO)===aId);
       const alumno = DB.alumnos.find(a=>String(a.ID_ALUMNO)===aId);
@@ -4031,7 +4033,7 @@ function guardarAsistenciaFutbol() {
   });
 
   chain
-    .then(()=>{ showToast(`Asistencia guardada — ${presentes}/${total}`); loadAllData().then(asistenciasFutbol); })
+    .then(()=>{ showToast(`Asistencia guardada — ${presentes} asistente${presentes!==1?'s':''}`); loadAllData().then(asistenciasFutbol); })
     .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
