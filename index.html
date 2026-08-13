@@ -1971,7 +1971,11 @@ function autorellenarPago() {
   set('p-cli',   o.dataset.cliente || '');
 }
 
-function pagos() {
+const LINEAS_EXT = ['AMPA','CLUB','ENTRENADOR','EXTERNO'];
+let _pgFiltro = 'TODOS';
+
+function pagos(filtro) {
+  _pgFiltro = filtro || _pgFiltro || 'TODOS';
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Registrar pago', () => modalPago());
 
@@ -1979,7 +1983,27 @@ function pagos() {
   const reclamacionActiva = diaHoy >= 11;
   const mesActK = new Date().toISOString().slice(0,7);
 
-  const rows = DB.pagos.map(p => {
+  const esAlumnoPago = p => !!(p.ID_ALUMNO) && !LINEAS_EXT.includes(p.LINEA);
+  const pagosFiltrados = _pgFiltro === 'TODOS' ? DB.pagos
+    : _pgFiltro === 'ALUMNOS' ? DB.pagos.filter(esAlumnoPago)
+    : DB.pagos.filter(p => p.LINEA === _pgFiltro);
+
+  const TABS = [
+    { k:'TODOS',      label:'Todos',          n: DB.pagos.length },
+    { k:'ALUMNOS',    label:'Alumnos',         n: DB.pagos.filter(esAlumnoPago).length },
+    { k:'AMPA',       label:'AMPA',            n: DB.pagos.filter(p=>p.LINEA==='AMPA').length },
+    { k:'CLUB',       label:'Clubes',          n: DB.pagos.filter(p=>p.LINEA==='CLUB').length },
+    { k:'ENTRENADOR', label:'Entrenadores',    n: DB.pagos.filter(p=>p.LINEA==='ENTRENADOR').length },
+    { k:'EXTERNO',    label:'Otros externos',  n: DB.pagos.filter(p=>p.LINEA==='EXTERNO').length },
+  ].filter(t => t.k==='TODOS' || t.k==='ALUMNOS' || t.n > 0);
+
+  const tabsHtml = `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">
+    ${TABS.map(t=>`<button onclick="pagos('${t.k}')"
+      style="padding:5px 12px;font-size:12px;font-weight:600;border:1px solid var(--border);border-radius:5px;cursor:pointer;background:${_pgFiltro===t.k?'var(--g1)':'var(--bg2)'};color:${_pgFiltro===t.k?'#fff':'var(--text1)'}">
+      ${t.label} <span style="opacity:.65;font-weight:400">${t.n}</span></button>`).join('')}
+  </div>`;
+
+  const rows = pagosFiltrados.map(p => {
     const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
     const pendiente = String(p.ESTADO||'').toUpperCase() === 'PENDIENTE';
     const btnWA = reclamacionActiva && pendiente ? _waLinkPago(p) : '';
@@ -2024,15 +2048,16 @@ function pagos() {
       <div class="kpi"><div class="kpi-n" style="color:${totalEsperado>0?'var(--amber)':'var(--text1)'}">${fmtEur(totalEsperado)}</div><div class="kpi-l">Pendiente de cobro</div></div>
       <div class="kpi"><div class="kpi-n" style="color:${nPendMes>0?'var(--red)':'var(--green)'}">${nPendMes}</div><div class="kpi-l">Pendientes mes actual</div></div>
     </div>
+    ${tabsHtml}
     <div class="card" style="padding:14px 20px">
       ${bannerReclamacion}
       <div class="table-toolbar">
         <input class="search-input" id="q-pag" placeholder="Buscar…" oninput="filterTable('q-pag','tbl-pag')">
-        <span class="text-muted">${DB.pagos.length} pagos</span>
+        <span class="text-muted">${pagosFiltrados.length} de ${DB.pagos.length} pagos</span>
       </div>
       <div class="table-wrap">
         <table id="tbl-pag">
-          <thead><tr><th>ID</th><th>Mes</th><th>Alumno</th><th>Servicio</th><th class="mono">Importe</th><th class="mono">Dto.</th><th class="mono">Esperado</th><th class="mono">Recibido</th><th>Método</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Mes</th><th>Pagador</th><th>Servicio</th><th class="mono">Importe</th><th class="mono">Dto.</th><th class="mono">Esperado</th><th class="mono">Recibido</th><th>Método</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -2040,7 +2065,7 @@ function pagos() {
 }
 
 function facturaDesdePago(p) {
-  const esExterno = p.LINEA === 'EXTERNO';
+  const esExterno = LINEAS_EXT.includes(p.LINEA);
   const cliId = p.ID_CLIENTE || '';
   let cliNombre = '';
 
@@ -2081,7 +2106,8 @@ function modalPago(p) {
   const isNew  = !p.ID_PAGO && !p.ID;
   const id     = p.ID_PAGO || p.ID || null;
   const mesActual = new Date().toISOString().slice(0,7);
-  const modoInicial = (p.LINEA === 'EXTERNO') ? 'externo' : 'alumno';
+  const modoInicial = LINEAS_EXT.includes(p.LINEA) ? 'externo' : 'alumno';
+  const tipoExtInicial = LINEAS_EXT.includes(p.LINEA) ? p.LINEA : 'AMPA';
 
   const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
     .map(a => `<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`)
@@ -2152,7 +2178,16 @@ function modalPago(p) {
     </div>
 
     <div class="form-grid" id="p-seccion-externo" style="display:${modoInicial==='externo'?'grid':'none'}">
-      <div class="field span2">
+      <div class="field">
+        <label>Tipo de pagador <span class="req">*</span></label>
+        <select id="p-tipo-ext">
+          <option value="AMPA"       ${tipoExtInicial==='AMPA'?'selected':''}>AMPA</option>
+          <option value="CLUB"       ${tipoExtInicial==='CLUB'?'selected':''}>Club deportivo</option>
+          <option value="ENTRENADOR" ${tipoExtInicial==='ENTRENADOR'?'selected':''}>Entrenador</option>
+          <option value="EXTERNO"    ${tipoExtInicial==='EXTERNO'?'selected':''}>Otro externo</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Nombre del pagador <span class="req">*</span></label>
         <input id="p-pagador" placeholder="Ej: AMPA CEIP San Matías, Club Atlético…" value="${esc(pagadorNombre)}">
       </div>
@@ -2247,7 +2282,7 @@ function guardarPago(id) {
     const notasExtra = document.getElementById('p-notas')?.value.trim() || '';
     const notas      = notasExtra ? `Pagador: ${pagador}\n${notasExtra}` : `Pagador: ${pagador}`;
     row = {
-      LINEA:          'EXTERNO',
+      LINEA:          document.getElementById('p-tipo-ext')?.value || 'EXTERNO',
       SERVICIO:       concepto,
       MES:            document.getElementById('p-mes-ext')?.value.trim() || '',
       IMPORTE:        document.getElementById('p-importe-ext')?.value || '',
