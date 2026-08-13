@@ -2009,8 +2009,11 @@ function pagos(filtro) {
     const btnWA = reclamacionActiva && pendiente ? _waLinkPago(p) : '';
     const lineaBadge = p.LINEA ? `<span class="badge badge-blue" style="font-size:10px;margin-right:4px">${esc(p.LINEA)}</span>` : '';
     const pJson = JSON.stringify(p).replace(/'/g,"&#39;");
+    const facVinc = p.ID_FACTURA ? DB.facturas.find(f => String(f.ID_FACTURA) === String(p.ID_FACTURA)) : null;
+    const facVincJson = facVinc ? JSON.stringify(facVinc).replace(/'/g,"&#39;") : '';
     const btnFac = p.ID_FACTURA
-      ? `<span class="badge badge-green" style="font-size:10px;padding:3px 8px" title="Factura emitida">${esc(p.ID_FACTURA)}</span>`
+      ? `<span class="badge badge-green" style="font-size:10px;padding:3px 8px" title="Factura emitida">${esc(p.ID_FACTURA)}</span>
+         ${facVinc ? `<button class="btn btn-sm" style="background:var(--g1);color:#fff" onclick='exportarFacturaPDF(${facVincJson})'>↓ PDF</button>` : ''}`
       : `<button class="btn btn-sm" style="background:#1565c0;color:#fff" onclick='facturaDesdePago(${pJson})'>→ Factura</button>`;
     return `<tr>
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
