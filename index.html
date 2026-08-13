@@ -2804,7 +2804,13 @@ function personal() {
       <td>${esc(p.TELÉFONO||'—')}</td>
       <td>${esc(p.DNI||'—')}</td>
       <td>${fmtFecha(p.FECHA_ALTA)}</td>
-      <td>${String(p.CERTIFICADO_DELITOS||'').trim() ? '<span class="badge badge-green">✓ OK</span>' : '<span class="badge badge-red">Pendiente</span>'}</td>
+      <td>${(() => {
+        const cert = String(p.CERTIFICADO_DELITOS||'').trim();
+        if (!cert) return '<span class="badge badge-red">Pendiente</span>';
+        const esUrl = /^https?:\/\//i.test(cert);
+        return '<span class="badge badge-green">✓ OK</span>'
+          + (esUrl ? ` <a href="${esc(cert)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);white-space:nowrap">↗ Ver doc</a>` : `<span style="font-size:11px;color:var(--text3);margin-left:4px">${esc(cert)}</span>`);
+      })()}</td>
       <td>${badgeActivo(p.ACTIVO)}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${JSON.stringify(p)})'>Editar</button></td>
     </tr>`).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👤</div><p>Sin trabajadores registrados</p></div></td></tr>`;
@@ -2851,8 +2857,10 @@ function modalPersonal(p) {
         <input id="per-ss" value="${esc(p.SEGURIDAD_SOCIAL||'')}"></div>
       <div class="field"><label>Fecha de alta</label>
         <input id="per-falta" type="date" value="${esc(p.FECHA_ALTA||'')}"></div>
-      <div class="field"><label>Cert. delitos sexuales (fecha o link)</label>
-        <input id="per-cert" value="${esc(p.CERTIFICADO_DELITOS||'')}"></div>
+      <div class="field"><label>Cert. delitos sexuales</label>
+        <input id="per-cert" placeholder="URL del doc o fecha de obtención" value="${esc(p.CERTIFICADO_DELITOS||'')}">
+        ${/^https?:\/\//i.test(p.CERTIFICADO_DELITOS||'') ? `<a href="${esc(p.CERTIFICADO_DELITOS)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--blue);margin-top:4px;display:inline-block">↗ Abrir certificado</a>` : ''}
+      </div>
       <div class="field"><label>Activo</label>
         <select id="per-activo">
           <option value="SÍ" ${String(p.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
