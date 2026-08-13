@@ -1987,7 +1987,7 @@ function pagos() {
     return `<tr>
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
       <td>${esc(p.MES||'—')}</td>
-      <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : esc(p.ID_ALUMNO||'—')}</td>
+      <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : (p.LINEA==='EXTERNO' ? '<em style="color:var(--text3);font-size:11px">'+(esc((p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,''))||'Pagador externo')+'</em>' : esc(p.ID_ALUMNO||'—'))}</td>
       <td>${lineaBadge}${esc(p.SERVICIO||'—')}</td>
       <td class="mono">${fmtEur(p.IMPORTE)}</td>
       <td class="mono">${p.DESC_EUR&&parseFloat(p.DESC_EUR)>0?'−'+fmtEur(p.DESC_EUR):'—'}</td>
@@ -2036,9 +2036,10 @@ function pagos() {
 
 function modalPago(p) {
   p = p || {};
-  const isNew = !p.ID_PAGO && !p.ID;
-  const id    = p.ID_PAGO || p.ID || null;
+  const isNew  = !p.ID_PAGO && !p.ID;
+  const id     = p.ID_PAGO || p.ID || null;
   const mesActual = new Date().toISOString().slice(0,7);
+  const modoInicial = (p.LINEA === 'EXTERNO') ? 'externo' : 'alumno';
 
   const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
     .map(a => `<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`)
@@ -2048,8 +2049,28 @@ function modalPago(p) {
     ? '<option value="">— Selecciona —</option>' + _opcionesInscPago(String(p.ID_ALUMNO), p.ID_INSCRIPCION||'')
     : '<option value="">— Selecciona primero un alumno —</option>';
 
+  // Para externo: payer name = primera línea de NOTAS (sin prefijo "Pagador: ")
+  const pagadorNombre = modoInicial==='externo'
+    ? (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'')
+    : '';
+  const notasResto = modoInicial==='externo'
+    ? (p.NOTAS||'').split('\n').slice(1).join('\n').trim()
+    : (p.NOTAS||'');
+
   openModal(isNew ? 'Registrar pago' : 'Editar pago', `
-    <div class="form-grid">
+    <input type="hidden" id="p-modo" value="${modoInicial}">
+    <div class="field span2" style="margin-bottom:4px">
+      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content">
+        <button type="button" id="btn-modo-alumno"
+          style="padding:5px 16px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:${modoInicial==='alumno'?'var(--g1)':'var(--bg2)'};color:${modoInicial==='alumno'?'#fff':'var(--text1)'}"
+          onclick="setPagoModo('alumno')">Alumno</button>
+        <button type="button" id="btn-modo-externo"
+          style="padding:5px 16px;font-size:12px;font-weight:600;border:none;border-left:1px solid var(--border);cursor:pointer;background:${modoInicial==='externo'?'var(--g1)':'var(--bg2)'};color:${modoInicial==='externo'?'#fff':'var(--text1)'}"
+          onclick="setPagoModo('externo')">Pagador externo</button>
+      </div>
+    </div>
+
+    <div class="form-grid" id="p-seccion-alumno" style="display:${modoInicial==='alumno'?'grid':'none'}">
       <div class="field span2">
         <label>Alumno <span class="req">*</span></label>
         <select id="p-alu" onchange="actualizarInscPago()" ${!isNew?'disabled':''}>
@@ -2086,6 +2107,36 @@ function modalPago(p) {
         <label>Total esperado (€)</label>
         <input id="p-neto" type="number" step="0.01" readonly value="${esc(p.TOTAL_ESPERADO||p.IMPORTE||'')}">
       </div>
+    </div>
+
+    <div class="form-grid" id="p-seccion-externo" style="display:${modoInicial==='externo'?'grid':'none'}">
+      <div class="field span2">
+        <label>Nombre del pagador <span class="req">*</span></label>
+        <input id="p-pagador" placeholder="Ej: AMPA CEIP San Matías, Club Atlético…" value="${esc(pagadorNombre)}">
+      </div>
+      <div class="field span2">
+        <label>Concepto <span class="req">*</span></label>
+        <input id="p-concepto" placeholder="Ej: Cuota mensual AMPA enero 2026" value="${esc(modoInicial==='externo'?(p.SERVICIO||''):'')}">
+      </div>
+      <div class="field">
+        <label>Mes (YYYY-MM)</label>
+        <input id="p-mes-ext" value="${esc(p.MES||mesActual)}" placeholder="${mesActual}">
+      </div>
+      <div class="field">
+        <label>Importe (€) <span class="req">*</span></label>
+        <input id="p-importe-ext" type="number" step="0.01" value="${esc(p.IMPORTE||'')}" oninput="calcNetoExterno()">
+      </div>
+      <div class="field">
+        <label>Descuento (€)</label>
+        <input id="p-desc-ext" type="number" step="0.01" min="0" value="${esc(p.DESC_EUR||'0')}" oninput="calcNetoExterno()">
+      </div>
+      <div class="field">
+        <label>Total esperado (€)</label>
+        <input id="p-neto-ext" type="number" step="0.01" readonly value="${esc(p.TOTAL_ESPERADO||p.IMPORTE||'')}" style="font-weight:700">
+      </div>
+    </div>
+
+    <div class="form-grid">
       <div class="field">
         <label>Total recibido (€)</label>
         <input id="p-recib" type="number" step="0.01" value="${esc(p.TOTAL_RECIBIDO||'')}">
@@ -2111,7 +2162,7 @@ function modalPago(p) {
       <input type="hidden" id="p-cli" value="${esc(p.ID_CLIENTE||'')}">
       <div class="field span2">
         <label>Notas</label>
-        <textarea id="p-notas">${esc(p.NOTAS||'')}</textarea>
+        <textarea id="p-notas">${esc(notasResto)}</textarea>
       </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -2119,29 +2170,76 @@ function modalPago(p) {
   );
 }
 
+function setPagoModo(modo) {
+  document.getElementById('p-modo').value = modo;
+  const esAlumno = modo === 'alumno';
+  document.getElementById('p-seccion-alumno').style.display = esAlumno ? 'grid' : 'none';
+  document.getElementById('p-seccion-externo').style.display = esAlumno ? 'none' : 'grid';
+  const bA = document.getElementById('btn-modo-alumno');
+  const bE = document.getElementById('btn-modo-externo');
+  bA.style.background = esAlumno ? 'var(--g1)' : 'var(--bg2)';
+  bA.style.color = esAlumno ? '#fff' : 'var(--text1)';
+  bE.style.background = esAlumno ? 'var(--bg2)' : 'var(--g1)';
+  bE.style.color = esAlumno ? 'var(--text1)' : '#fff';
+}
+
+function calcNetoExterno() {
+  const imp  = parseFloat(document.getElementById('p-importe-ext')?.value||0)||0;
+  const desc = parseFloat(document.getElementById('p-desc-ext')?.value||0)||0;
+  const neto = Math.max(0, parseFloat((imp - desc).toFixed(2)));
+  const el   = document.getElementById('p-neto-ext');
+  if (el) el.value = neto.toFixed(2);
+}
+
 function guardarPago(id) {
-  const aluId = document.getElementById('p-alu')?.value;
-  if (!aluId) { showToast('Selecciona un alumno', 'error'); return; }
-  const inscSel = document.getElementById('p-insc')?.value;
-  if (!inscSel) { showToast('Selecciona inscripción o concepto', 'error'); return; }
-  const btn = event?.target;
+  const modo = document.getElementById('p-modo')?.value || 'alumno';
+  const btn  = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
-  const row = {
-    ID_ALUMNO:      aluId,
-    ID_CLIENTE:     document.getElementById('p-cli')?.value || '',
-    ID_INSCRIPCION: inscSel !== 'CUOTA_SOCIO' ? inscSel : '',
-    LINEA:          document.getElementById('p-linea')?.value || '',
-    SERVICIO:       document.getElementById('p-serv')?.value || '',
-    MES:            document.getElementById('p-mes')?.value.trim() || '',
-    IMPORTE:        document.getElementById('p-fact')?.value || '',
-    DESC_EUR:       document.getElementById('p-desc')?.value || '0',
-    TOTAL_ESPERADO: document.getElementById('p-neto')?.value || '',
-    TOTAL_RECIBIDO: document.getElementById('p-recib')?.value || '',
-    MÉTODO:         document.getElementById('p-metodo')?.value || '',
-    ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
-    FECHA:          document.getElementById('p-fecha')?.value || '',
-    NOTAS:          document.getElementById('p-notas')?.value.trim() || '',
-  };
+
+  let row;
+  if (modo === 'externo') {
+    const pagador   = document.getElementById('p-pagador')?.value.trim() || '';
+    const concepto  = document.getElementById('p-concepto')?.value.trim() || '';
+    if (!pagador)  { showToast('Introduce el nombre del pagador', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+    if (!concepto) { showToast('Introduce el concepto', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+    const notasExtra = document.getElementById('p-notas')?.value.trim() || '';
+    const notas      = notasExtra ? `Pagador: ${pagador}\n${notasExtra}` : `Pagador: ${pagador}`;
+    row = {
+      LINEA:          'EXTERNO',
+      SERVICIO:       concepto,
+      MES:            document.getElementById('p-mes-ext')?.value.trim() || '',
+      IMPORTE:        document.getElementById('p-importe-ext')?.value || '',
+      DESC_EUR:       document.getElementById('p-desc-ext')?.value || '0',
+      TOTAL_ESPERADO: document.getElementById('p-neto-ext')?.value || '',
+      TOTAL_RECIBIDO: document.getElementById('p-recib')?.value || '',
+      MÉTODO:         document.getElementById('p-metodo')?.value || '',
+      ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
+      FECHA:          document.getElementById('p-fecha')?.value || '',
+      NOTAS:          notas,
+    };
+  } else {
+    const aluId   = document.getElementById('p-alu')?.value;
+    if (!aluId) { showToast('Selecciona un alumno', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+    const inscSel = document.getElementById('p-insc')?.value;
+    if (!inscSel) { showToast('Selecciona inscripción o concepto', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+    row = {
+      ID_ALUMNO:      aluId,
+      ID_CLIENTE:     document.getElementById('p-cli')?.value || '',
+      ID_INSCRIPCION: inscSel !== 'CUOTA_SOCIO' ? inscSel : '',
+      LINEA:          document.getElementById('p-linea')?.value || '',
+      SERVICIO:       document.getElementById('p-serv')?.value || '',
+      MES:            document.getElementById('p-mes')?.value.trim() || '',
+      IMPORTE:        document.getElementById('p-fact')?.value || '',
+      DESC_EUR:       document.getElementById('p-desc')?.value || '0',
+      TOTAL_ESPERADO: document.getElementById('p-neto')?.value || '',
+      TOTAL_RECIBIDO: document.getElementById('p-recib')?.value || '',
+      MÉTODO:         document.getElementById('p-metodo')?.value || '',
+      ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
+      FECHA:          document.getElementById('p-fecha')?.value || '',
+      NOTAS:          document.getElementById('p-notas')?.value.trim() || '',
+    };
+  }
+
   if (!id) row.FECHA_REGISTRO = new Date().toISOString().slice(0,10);
   writeToSheet('PAGOS', row, id)
     .then(() => { showToast(id ? 'Pago actualizado' : 'Pago registrado'); closeModal(); loadAllData().then(pagos); })
@@ -2259,7 +2357,7 @@ function modalFactura(f) {
         <input type="number" step="0.01" id="fac-base" value="${esc(f.BASE_IMPONIBLE||f.TOTAL||'')}" oninput="calcTotalFac()"></div>
       <div class="field"><label>Régimen fiscal</label>
         <select id="fac-imp" onchange="calcTotalFac()">
-          <option value="EXENTO" ${(f.TIPO_IMPUESTO||'EXENTO')==='EXENTO'?'selected':''}>Exento (educación / deporte)</option>
+          <option value="EXENTO" ${(f.TIPO_IMPUESTO||'EXENTO')==='EXENTO'?'selected':''}>Franquicia fiscal (IGIC exento)</option>
           <option value="IGIC 7%" ${f.TIPO_IMPUESTO==='IGIC 7%'?'selected':''}>IGIC 7%</option>
           <option value="IGIC 3%" ${f.TIPO_IMPUESTO==='IGIC 3%'?'selected':''}>IGIC 3%</option>
         </select></div>
@@ -2399,10 +2497,10 @@ function exportarFacturaPDF(f) {
 
   // Filas fiscales
   const exentoNota = `<tr><td colspan="3" style="font-size:9px;color:#888;padding:3px 10px 6px">
-    Operación exenta de IGIC — Art. 20.Uno.9º LIGIC (actividades educativas/deportivas)</td></tr>`;
+    Régimen especial de franquicia fiscal — Art. 9.1.b) LIGIC. Sin derecho a deducción de cuotas soportadas.</td></tr>`;
   const taxRows = exento
     ? `<tr><td>Base imponible</td><td style="text-align:center">—</td><td style="text-align:right">${fmtEur(base)}</td></tr>
-       <tr><td>IGIC</td><td style="text-align:center">Exento</td><td style="text-align:right">0,00 €</td></tr>
+       <tr><td>IGIC</td><td style="text-align:center">Franquicia fiscal</td><td style="text-align:right">0,00 €</td></tr>
        ${exentoNota}`
     : `<tr><td>Base imponible</td><td style="text-align:center">—</td><td style="text-align:right">${fmtEur(base)}</td></tr>
        <tr><td>${esc(imp)}</td><td style="text-align:center">${imp==='IGIC 7%'?'7%':imp==='IGIC 3%'?'3%':''}</td><td style="text-align:right">${fmtEur(cuota)}</td></tr>`;
