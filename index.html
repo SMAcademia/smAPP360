@@ -3665,8 +3665,8 @@ function extraResumen() {
   // KPI: altas este mes
   const kAltasMes = insExtras.filter(i => String(i.FECHA_ALTA||'').startsWith(mesActK)).length;
 
-  // KPI: pagos mes actual
-  const pagosMes = DB.pagos.filter(p => String(p.MES||'').startsWith(mesActK));
+  // KPI: pagos mes actual — solo cobros del AMPA como entidad (LINEA='AMPA')
+  const pagosMes = DB.pagos.filter(p => String(p.MES||'').startsWith(mesActK) && p.LINEA === 'AMPA');
   const cobradoMes  = pagosMes.filter(p => String(p.ESTADO||'').toUpperCase()==='PAGADO')
     .reduce((s,p) => s+(parseFloat(p.TOTAL_RECIBIDO)||0), 0);
   const pendienteMes = pagosMes.filter(p => String(p.ESTADO||'').toUpperCase()==='PENDIENTE')
