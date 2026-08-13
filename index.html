@@ -50,6 +50,13 @@ if ('serviceWorker' in navigator) {
   --sidebar: 230px;
   --r: 6px; --r2: 8px;
   --shadow: 0 1px 3px rgba(0,0,0,.10);
+  /* Aliases usados en plantillas JS */
+  --g1: var(--green);
+  --g2: var(--green-d);
+  --bg1: var(--white);
+  --bg2: var(--gray-l);
+  --bg3: #e8e8e8;
+  --text1: var(--black);
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────── */
@@ -2592,7 +2599,10 @@ function exportarFacturaPDF(f) {
   const estadoColor = estado==='COBRADA'?'#1b5e20':estado==='ANULADA'?'#b71c1c':'#b45309';
 
   // QR: cadena VeriFactu condensada
-  const qrCadena  = `NIF:${nifEmisor}|FAC:${numFac}|FEC:${fechaISO}|IMP:${total.toFixed(2)}|H:${hashActual.slice(0,16)}`;
+  // URL de consulta AEAT VeriFactu (sede electrónica) — parámetros según esquema publicado
+  const aeatBase  = 'https://www2.agenciatributaria.gob.es/wlpl/BUGR-BUGR/consulta';
+  const aeatQuery = `nif=${encodeURIComponent(nifEmisor)}&numfac=${encodeURIComponent(numFac)}&fecha=${encodeURIComponent(fechaISO)}&importe=${total.toFixed(2)}&huella=${encodeURIComponent(hashActual.slice(0,16))}`;
+  const qrCadena  = `${aeatBase}?${aeatQuery}`;
   const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&margin=4&data=${encodeURIComponent(qrCadena)}`;
 
   // Logo inline SVG
