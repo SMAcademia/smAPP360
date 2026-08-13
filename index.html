@@ -1409,6 +1409,7 @@ function guardarActividad(id) {
 //  MÓDULO: PREINSCRIPCIONES
 // ══════════════════════════════════════════════════════════════════════════
 function preinscripciones() {
+  topbarBtn('+ Nueva manual', () => modalNuevaPreinscripcion(), 'btn-secondary');
   let filtro = 'RECIBIDA';
   const render_ = () => {
     const lista = DB.preinscripciones.filter(p =>
@@ -1460,6 +1461,50 @@ function preinscripciones() {
     if (sel) sel.onchange = () => { filtro = sel.value; render_(); };
   };
   render_();
+}
+
+function modalNuevaPreinscripcion() {
+  const actOpts = DB.actividades.map(a=>`<option value="${esc(a.NOMBRE||a.ID)}">${esc(a.NOMBRE||a.ID)}</option>`).join('');
+  openModal('Nueva preinscripción manual', `
+    <p style="font-size:12px;color:var(--text3);margin-bottom:16px">Registra una preinscripción recibida por correo, teléfono u otro canal.</p>
+    <div class="form-grid">
+      <div class="field"><label>Nombre alumno <span class="req">*</span></label><input id="pre-nom" placeholder="Nombre"></div>
+      <div class="field"><label>Apellidos alumno</label><input id="pre-ape" placeholder="Apellidos"></div>
+      <div class="field"><label>Fecha nac. alumno</label><input type="date" id="pre-fnac"></div>
+      <div class="field"><label>Nombre tutor <span class="req">*</span></label><input id="pre-tnom" placeholder="Nombre tutor"></div>
+      <div class="field"><label>Apellidos tutor</label><input id="pre-tape" placeholder="Apellidos tutor"></div>
+      <div class="field"><label>Email tutor</label><input type="email" id="pre-email" placeholder="email@ejemplo.com"></div>
+      <div class="field"><label>Teléfono tutor</label><input id="pre-tel" placeholder="600 000 000"></div>
+      <div class="field"><label>Actividad de interés</label>
+        <select id="pre-act"><option value="">— Seleccionar —</option>${actOpts}</select></div>
+      <div class="field" style="grid-column:span 2"><label>Observaciones / notas del correo</label>
+        <textarea id="pre-notas" style="height:70px" placeholder="Pega aquí el contenido del correo o añade notas…"></textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarPreinscManual()">Guardar preinscripción</button>`);
+}
+
+function guardarPreinscManual() {
+  const nom  = document.getElementById('pre-nom')?.value.trim()||'';
+  const tnom = document.getElementById('pre-tnom')?.value.trim()||'';
+  if (!nom || !tnom) { showToast('Nombre del alumno y del tutor son obligatorios','error'); return; }
+  const row = {
+    FECHA_SOLICITUD:   new Date().toISOString().slice(0,10),
+    NOMBRE_ALUMNO:     nom,
+    APELLIDOS_ALUMNO:  document.getElementById('pre-ape')?.value.trim()||'',
+    FECHA_NAC:         document.getElementById('pre-fnac')?.value||'',
+    NOMBRE_TUTOR:      tnom,
+    APELLIDOS_TUTOR:   document.getElementById('pre-tape')?.value.trim()||'',
+    EMAIL_TUTOR:       document.getElementById('pre-email')?.value.trim()||'',
+    'TELÉFONO_TUTOR':  document.getElementById('pre-tel')?.value.trim()||'',
+    ACTIVIDAD_INTERES: document.getElementById('pre-act')?.value||'',
+    NOTAS:             document.getElementById('pre-notas')?.value.trim()||'',
+    ESTADO:            'RECIBIDA',
+    CANAL:             'MANUAL',
+  };
+  writeToSheet('PREINSCRIPCIONES', row, null)
+    .then(()=>{ showToast('Preinscripción registrada'); closeModal(); loadAllData().then(preinscripciones); })
+    .catch(err=>showToast('Error: '+err.message,'error'));
 }
 
 function verPreinsc(id) {
@@ -2222,6 +2267,12 @@ function modalFactura(f) {
         <input type="number" step="0.01" id="fac-cuota" value="${esc(f.CUOTA_IMPUESTO||'0')}" readonly></div>
       <div class="field"><label>Total (€)</label>
         <input type="number" step="0.01" id="fac-total" value="${esc(f.TOTAL||'')}" readonly style="font-weight:700"></div>
+      <div class="field"><label>Descuento (€)</label>
+        <input type="number" step="0.01" min="0" id="fac-descuento" value="${esc(f.DESCUENTO||'0')}" placeholder="0,00" oninput="calcTotalFac()"></div>
+      <div class="field"><label>Forma de pago</label>
+        <select id="fac-forma-pago">
+          ${['','Transferencia bancaria','Domiciliación bancaria','Efectivo','Tarjeta bancaria'].map(s=>`<option value="${s}" ${(f.FORMA_PAGO||'')===s?'selected':''}>${s||'— No especificada —'}</option>`).join('')}
+        </select></div>
       <div class="field"><label>Estado AEAT</label>
         <select id="fac-estado">
           ${['EMITIDA','COBRADA','ANULADA'].map(s=>`<option value="${s}" ${(f.ESTADO_AEAT||'EMITIDA')===s?'selected':''}>${s}</option>`).join('')}
@@ -2237,11 +2288,13 @@ function modalFactura(f) {
 }
 
 function calcTotalFac() {
-  const base  = parseFloat(document.getElementById('fac-base')?.value||0)||0;
-  const imp   = document.getElementById('fac-imp')?.value||'EXENTO';
-  const pct   = imp==='IGIC 7%' ? 0.07 : imp==='IGIC 3%' ? 0.03 : 0;
-  const cuota = parseFloat((base * pct).toFixed(2));
-  const total = parseFloat((base + cuota).toFixed(2));
+  const base     = parseFloat(document.getElementById('fac-base')?.value||0)||0;
+  const desc     = parseFloat(document.getElementById('fac-descuento')?.value||0)||0;
+  const imp      = document.getElementById('fac-imp')?.value||'EXENTO';
+  const pct      = imp==='IGIC 7%' ? 0.07 : imp==='IGIC 3%' ? 0.03 : 0;
+  const baseNeta = Math.max(0, parseFloat((base - desc).toFixed(2)));
+  const cuota    = parseFloat((baseNeta * pct).toFixed(2));
+  const total    = parseFloat((baseNeta + cuota).toFixed(2));
   const cEl = document.getElementById('fac-cuota'); if(cEl) cEl.value = cuota.toFixed(2);
   const tEl = document.getElementById('fac-total'); if(tEl) tEl.value = total.toFixed(2);
 }
@@ -2255,8 +2308,10 @@ async function saveFactura(isNew, id) {
   const imp    = document.getElementById('fac-imp')?.value||'EXENTO';
   const cuota  = parseFloat(document.getElementById('fac-cuota')?.value)||0;
   const total  = parseFloat(document.getElementById('fac-total')?.value)||0;
-  const estado = document.getElementById('fac-estado')?.value||'EMITIDA';
-  const nifRec = (document.getElementById('fac-nif-rec')?.value||'').trim().toUpperCase();
+  const estado    = document.getElementById('fac-estado')?.value||'EMITIDA';
+  const nifRec    = (document.getElementById('fac-nif-rec')?.value||'').trim().toUpperCase();
+  const descuento = parseFloat(document.getElementById('fac-descuento')?.value||0)||0;
+  const formaPago = document.getElementById('fac-forma-pago')?.value||'';
   if (!cliId||!fecha||!desc||!base) { showToast('Rellena todos los campos obligatorios','error'); return; }
   const cli = DB.clientes.find(c=>(c.ID_CLIENTE||c.ID)===cliId)||{};
   // Numeración: máximo existente + 1 (resistente a borrados)
@@ -2288,10 +2343,12 @@ async function saveFactura(isNew, id) {
     HASH_ANTERIOR:    isNew ? hashAnt : undefined,
     HASH_ACTUAL:      hashActual,
     ESTADO_AEAT:      estado,
-    // Campos fiscales adicionales (añadir columnas al sheet para persistirlos)
+    // Campos fiscales y de pago (añadir columnas al sheet para persistirlos)
     BASE_IMPONIBLE:   base,
     TIPO_IMPUESTO:    imp,
     CUOTA_IMPUESTO:   cuota,
+    DESCUENTO:        descuento||undefined,
+    FORMA_PAGO:       formaPago||undefined,
     NIF_EMISOR:       NIF_EMISOR,
     ID_CLIENTE:       cliId,
   };
@@ -2303,95 +2360,211 @@ async function saveFactura(isNew, id) {
 // ── Exportar factura individual como PDF ─────────────────────────────────
 function exportarFacturaPDF(f) {
   const numFac    = String(f.ID_FACTURA||`${f.SERIE||'SM'}-${String(f.NUMERO||'').padStart(3,'0')}`||'—');
-  const fecha     = fmtFecha(f.FECHA_EXP);
+  const fechaISO  = f.FECHA_EXP||'';
+  const fecha     = fmtFecha(fechaISO);
   const cli       = f.CLIENTE_NOMBRE||'—';
   const nifRec    = f.CLIENTE_NIF||f.NIF_RECEPTOR||'';
+  const domRec    = f.DOMICILIO_RECEPTOR||'';
   const desc      = f.CONCEPTO||'—';
   const total     = parseFloat(f.TOTAL||0);
-  // Si hay desglose fiscal guardado, mostrarlo; si no, tratar como exento
   const base      = parseFloat(f.BASE_IMPONIBLE||0) || total;
   const imp       = f.TIPO_IMPUESTO||'EXENTO';
   const cuota     = parseFloat(f.CUOTA_IMPUESTO||0);
+  const descuento = parseFloat(f.DESCUENTO||0);
+  const formaPago = f.FORMA_PAGO||'';
   const estado    = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
   const hashActual= f.HASH_ACTUAL||'';
-  const hashAnt   = f.HASH_ANTERIOR||'';
+  const hashAnt   = f.HASH_ANTERIOR||'0'.repeat(64);
   const nifEmisor = f.NIF_EMISOR||NIF_EMISOR;
   const nomEmisor = f.NOMBRE_EMISOR||NOMBRE_EMISOR;
   const domEmisor = f.DOMICILIO_EMISOR||DOMICILIO_EMISOR;
+  const exento    = imp==='EXENTO'||!imp;
 
   const estadoColor = estado==='COBRADA'?'#1b5e20':estado==='ANULADA'?'#b71c1c':'#b45309';
-  const rowsImpuesto = imp==='EXENTO'
-    ? `<tr><td>Importe</td><td style="text-align:right">${fmtEur(total)}</td></tr>
-       <tr><td style="color:#666;font-size:11px">Operación exenta — Art. 20.Uno.9º LIGIC (actividades educativas/deportivas)</td><td style="text-align:right;color:#666">Exento</td></tr>`
-    : `<tr><td>Base imponible</td><td style="text-align:right">${fmtEur(base)}</td></tr>
-       <tr><td>${esc(imp)}</td><td style="text-align:right">${fmtEur(cuota)}</td></tr>`;
+
+  // QR: cadena VeriFactu condensada
+  const qrCadena  = `NIF:${nifEmisor}|FAC:${numFac}|FEC:${fechaISO}|IMP:${total.toFixed(2)}|H:${hashActual.slice(0,16)}`;
+  const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&margin=4&data=${encodeURIComponent(qrCadena)}`;
+
+  // Logo inline SVG
+  const logo = `<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+    <rect width="48" height="48" rx="9" fill="#2e7d32"/>
+    <text x="24" y="32" text-anchor="middle" font-family="Arial,sans-serif" font-weight="900" font-size="20" fill="#fff" letter-spacing="-1">SM</text>
+  </svg>`;
+
+  // Fila descuento (solo si hay)
+  const descRow = descuento>0
+    ? `<tr><td style="color:#c62828">Descuento</td><td style="text-align:center;color:#888">—</td><td style="text-align:right;color:#c62828">−${fmtEur(descuento)}</td></tr>`
+    : '';
+
+  // Filas fiscales
+  const exentoNota = `<tr><td colspan="3" style="font-size:9px;color:#888;padding:3px 10px 6px">
+    Operación exenta de IGIC — Art. 20.Uno.9º LIGIC (actividades educativas/deportivas)</td></tr>`;
+  const taxRows = exento
+    ? `<tr><td>Base imponible</td><td style="text-align:center">—</td><td style="text-align:right">${fmtEur(base)}</td></tr>
+       <tr><td>IGIC</td><td style="text-align:center">Exento</td><td style="text-align:right">0,00 €</td></tr>
+       ${exentoNota}`
+    : `<tr><td>Base imponible</td><td style="text-align:center">—</td><td style="text-align:right">${fmtEur(base)}</td></tr>
+       <tr><td>${esc(imp)}</td><td style="text-align:center">${imp==='IGIC 7%'?'7%':imp==='IGIC 3%'?'3%':''}</td><td style="text-align:right">${fmtEur(cuota)}</td></tr>`;
 
   const body = `
 <style>
-.inv-box{border:1px solid #ddd;border-radius:6px;padding:16px 20px;margin-bottom:14px}
-.inv-parties{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.inv-party h3{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;margin-bottom:5px}
-.inv-party p{font-size:12px;line-height:1.7;margin:0}
-.inv-lines{width:100%;border-collapse:collapse;margin-bottom:14px}
-.inv-lines th{background:#f4f4f4;padding:7px 10px;text-align:left;font-size:10px;font-weight:700}
-.inv-lines td{padding:8px 10px;border-bottom:1px solid #eee;font-size:12px}
-.inv-lines tr:last-child td{border-bottom:none}
-.inv-total{display:flex;justify-content:flex-end;margin-top:8px}
-.inv-total table{width:280px;border-collapse:collapse}
-.inv-total td{padding:5px 10px;font-size:12px;border-bottom:1px solid #f0f0f0}
-.inv-total .total-row td{font-size:15px;font-weight:800;border-top:2px solid #2e7d32;border-bottom:none;padding-top:9px;color:#2e7d32}
-.vf-box{background:#f8f8f8;border:1px solid #e0e0e0;border-left:4px solid #2e7d32;border-radius:4px;padding:10px 14px;margin-top:14px;font-size:9px;color:#555;line-height:1.8}
-.vf-box strong{color:#2e7d32;display:block;margin-bottom:3px;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
-.mono{font-family:monospace;word-break:break-all;font-size:9px}
-.estado-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:10px;font-weight:800;letter-spacing:.05em;color:#fff;background:${estadoColor}}
+*{box-sizing:border-box}
+.inv{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;max-width:780px;margin:0 auto}
+.inv-header{display:flex;justify-content:space-between;align-items:flex-start;padding:20px 24px;background:#111;color:#fff;border-radius:8px 8px 0 0}
+.inv-header-left{display:flex;align-items:flex-start;gap:14px}
+.inv-logo-text{display:flex;flex-direction:column;gap:2px}
+.inv-logo-text .brand{font-size:15px;font-weight:900;color:#fff;line-height:1.1}
+.inv-logo-text .sub{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.1em}
+.inv-logo-text .addr{font-size:10px;color:rgba(255,255,255,.55);margin-top:6px;line-height:1.6}
+.inv-header-right{text-align:right;flex-shrink:0}
+.inv-header-right .doc-label{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.45);margin-bottom:2px}
+.inv-header-right .doc-num{font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px;line-height:1}
+.inv-header-right .doc-fecha{font-size:11px;color:rgba(255,255,255,.6);margin-top:3px}
+.estado-pill{display:inline-block;padding:3px 11px;border-radius:20px;font-size:9px;font-weight:800;letter-spacing:.06em;color:#fff;background:${estadoColor};margin-top:8px}
+.inv-green-bar{height:4px;background:#2e7d32;margin-bottom:16px}
+.inv-parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.inv-party{border:1px solid #e8e8e8;border-radius:6px;padding:12px 16px}
+.inv-party .party-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#2e7d32;margin-bottom:6px}
+.inv-party .party-name{font-size:13px;font-weight:700;color:#111;margin-bottom:3px}
+.inv-party .party-detail{font-size:11px;color:#666;line-height:1.6}
+.inv-lines{width:100%;border-collapse:collapse;margin-bottom:16px;border-radius:6px;overflow:hidden;border:1px solid #e8e8e8}
+.inv-lines thead th{background:#2e7d32;color:#fff;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.inv-lines thead th:not(:first-child){text-align:center}
+.inv-lines thead th:last-child{text-align:right}
+.inv-lines tbody td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;vertical-align:top}
+.inv-lines tbody td:not(:first-child){text-align:center}
+.inv-lines tbody td:last-child{text-align:right;font-weight:600}
+.inv-lines tbody tr:last-child td{border-bottom:none}
+.inv-bottom{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;margin-bottom:16px}
+.inv-pago{border:1px solid #e8e8e8;border-radius:6px;padding:12px 16px}
+.inv-pago .pago-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:5px}
+.inv-pago .pago-val{font-size:12px;color:#333}
+.inv-totals{border:1px solid #e8e8e8;border-radius:6px;overflow:hidden;min-width:260px}
+.inv-totals table{width:100%;border-collapse:collapse}
+.inv-totals td{padding:7px 14px;font-size:12px;border-bottom:1px solid #f0f0f0}
+.inv-totals td:last-child{text-align:right}
+.inv-totals tr:last-child td{border-bottom:none}
+.inv-total-row td{font-size:14px;font-weight:800;color:#2e7d32;background:#f0f7f0;padding:10px 14px}
+.vf-block{border:1px solid #ddd;border-radius:6px;overflow:hidden;margin-top:0}
+.vf-header{background:#2e7d32;color:#fff;padding:8px 14px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;display:flex;justify-content:space-between;align-items:center}
+.vf-body{display:grid;grid-template-columns:1fr auto;gap:14px;padding:12px 14px;background:#fafafa}
+.vf-data{font-size:9px;color:#555;line-height:2}
+.vf-data .vf-key{font-weight:700;color:#333;display:inline-block;width:100px}
+.vf-mono{font-family:'Courier New',monospace;word-break:break-all;font-size:8px;color:#444}
+.vf-qr img{border:1px solid #e0e0e0;border-radius:4px;display:block}
+.vf-qr .qr-label{font-size:8px;color:#aaa;text-align:center;margin-top:4px}
+@media print{.inv{max-width:100%}@page{margin:.8cm;size:A4}}
 </style>
 
-<div class="inv-box" style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">
-  <div>
-    <div style="font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px">Emisor</div>
-    <div style="font-size:20px;font-weight:900;color:#2e7d32;line-height:1.2">${esc(nomEmisor)}</div>
-    <div style="font-size:11px;color:#666;margin-top:5px;line-height:1.6">${esc(domEmisor)}<br>NIF: <strong>${esc(nifEmisor)}</strong></div>
+<div class="inv">
+  <!-- CABECERA -->
+  <div class="inv-header">
+    <div class="inv-header-left">
+      ${logo}
+      <div class="inv-logo-text">
+        <span class="brand">SM Extraescolares</span>
+        <span class="sub">Academia Deportiva &amp; Educativa</span>
+        <span class="addr">${esc(domEmisor)}<br>NIF: <strong style="color:rgba(255,255,255,.8)">${esc(nifEmisor)}</strong></span>
+      </div>
+    </div>
+    <div class="inv-header-right">
+      <div class="doc-label">Factura</div>
+      <div class="doc-num">${esc(numFac)}</div>
+      <div class="doc-fecha">${fecha}</div>
+      <div><span class="estado-pill">${estado}</span></div>
+    </div>
   </div>
-  <div style="text-align:right;flex-shrink:0">
-    <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.1em">Factura</div>
-    <div style="font-size:26px;font-weight:900;color:#111;letter-spacing:-1px">${esc(numFac)}</div>
-    <div style="font-size:12px;color:#555;margin-top:2px">${fecha}</div>
-    <div style="margin-top:8px"><span class="estado-pill">${estado}</span></div>
-  </div>
-</div>
+  <div class="inv-green-bar"></div>
 
-<div class="inv-box inv-parties">
-  <div class="inv-party">
-    <h3>Receptor</h3>
-    <p><strong>${esc(cli)}</strong>${nifRec?`<br>NIF: ${esc(nifRec)}`:'<br><span style="color:#ccc;font-size:10px">Sin NIF</span>'}</p>
+  <!-- EMISOR / RECEPTOR -->
+  <div class="inv-parties">
+    <div class="inv-party">
+      <div class="party-label">Emisor</div>
+      <div class="party-name">${esc(nomEmisor)}</div>
+      <div class="party-detail">NIF: ${esc(nifEmisor)}<br>${esc(domEmisor)}</div>
+    </div>
+    <div class="inv-party">
+      <div class="party-label">Receptor / Cliente</div>
+      <div class="party-name">${esc(cli)}</div>
+      <div class="party-detail">${nifRec?`NIF: ${esc(nifRec)}`:'<span style="color:#bbb">Sin NIF registrado</span>'}${domRec?`<br>${esc(domRec)}`:''}</div>
+    </div>
   </div>
-  <div class="inv-party" style="text-align:right">
-    <h3>Datos de emisión</h3>
-    <p>Fecha: <strong>${fecha}</strong><br>Serie: <strong>${esc(f.SERIE||'SM')}</strong> &nbsp;Nº: <strong>${esc(String(f.NUMERO||''))}</strong></p>
-  </div>
-</div>
 
-<div class="inv-box">
+  <!-- LÍNEAS -->
   <table class="inv-lines">
-    <thead><tr><th>Concepto</th><th style="text-align:right">Importe</th></tr></thead>
-    <tbody><tr><td>${esc(desc)}</td><td style="text-align:right">${fmtEur(imp==='EXENTO'?total:base)}</td></tr></tbody>
+    <thead>
+      <tr>
+        <th style="width:55%">Concepto / Servicio</th>
+        <th style="width:10%">Unid.</th>
+        <th style="width:15%">Precio unit.</th>
+        <th style="width:20%">Importe</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>${esc(desc)}</td>
+        <td style="text-align:center">1</td>
+        <td style="text-align:right">${fmtEur(base+(descuento||0))}</td>
+        <td>${fmtEur(base)}</td>
+      </tr>
+      ${descRow}
+    </tbody>
   </table>
-  <div class="inv-total">
-    <table>
-      ${rowsImpuesto}
-      <tr class="total-row"><td><strong>TOTAL A PAGAR</strong></td><td style="text-align:right"><strong>${fmtEur(total)}</strong></td></tr>
-    </table>
-  </div>
-</div>
 
-<div class="vf-box">
-  <strong>VeriFactu · Registro verificable (RD 1007/2023)</strong>
-  <span>NIF emisor: ${esc(nifEmisor)} &nbsp;·&nbsp; Serie-Nº: ${esc(numFac)} &nbsp;·&nbsp; Fecha: ${fecha} &nbsp;·&nbsp; Total: ${fmtEur(total)}</span><br>
-  Hash actual&nbsp;&nbsp;: <span class="mono">${esc(hashActual||'—')}</span><br>
-  Hash anterior: <span class="mono">${esc(hashAnt||'0'.repeat(64))}</span>
+  <!-- TOTALES + PAGO -->
+  <div class="inv-bottom">
+    <div class="inv-pago">
+      <div class="pago-label">Forma de pago</div>
+      <div class="pago-val">${formaPago||'—'}</div>
+      ${formaPago==='Transferencia bancaria'||formaPago==='Domiciliación bancaria'
+        ? `<div class="pago-label" style="margin-top:10px">IBAN</div><div class="pago-val" style="font-family:monospace;font-size:11px">—</div>` : ''}
+      <div class="pago-label" style="margin-top:10px">Serie · Número</div>
+      <div class="pago-val">${esc(f.SERIE||'SM')} · ${esc(String(f.NUMERO||''))}</div>
+    </div>
+    <div class="inv-totals">
+      <table>
+        ${taxRows}
+        <tr class="inv-total-row"><td><strong>TOTAL A PAGAR</strong></td><td><strong>${fmtEur(total)}</strong></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- VERIFACTU + QR -->
+  <div class="vf-block">
+    <div class="vf-header">
+      <span>⛓ VeriFactu — Registro verificable (RD 1007/2023)</span>
+      <span style="font-size:8px;opacity:.7">SHA-256</span>
+    </div>
+    <div class="vf-body">
+      <div class="vf-data">
+        <div><span class="vf-key">NIF Emisor</span>${esc(nifEmisor)}</div>
+        <div><span class="vf-key">Factura</span>${esc(numFac)} · ${fecha} · ${fmtEur(total)}</div>
+        <div><span class="vf-key">Hash actual</span><span class="vf-mono">${esc(hashActual||'—')}</span></div>
+        <div><span class="vf-key">Hash anterior</span><span class="vf-mono">${esc(hashAnt)}</span></div>
+      </div>
+      <div class="vf-qr">
+        <img src="${qrUrl}" width="110" height="110" alt="QR VeriFactu"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <div style="display:none;width:110px;height:110px;border:1px solid #ddd;border-radius:4px;display:none;align-items:center;justify-content:center;font-size:9px;color:#aaa;text-align:center;padding:10px">
+          QR no disponible sin conexión
+        </div>
+        <div class="qr-label">Verificación VeriFactu</div>
+      </div>
+    </div>
+  </div>
 </div>`;
 
-  exportarPDF(`Factura ${numFac} — ${esc(nomEmisor)}`, body);
+  const win = window.open('','_blank','width=860,height=820');
+  if (!win) { showToast('Permite ventanas emergentes para exportar PDF','error'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><title>Factura ${esc(numFac)}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#e8e8e8;padding:24px;font-family:Arial,Helvetica,sans-serif}
+.page{background:#fff;max-width:800px;margin:0 auto;padding:28px;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+@media print{body{background:#fff;padding:0}.page{box-shadow:none;border-radius:0;padding:20px}@page{margin:.8cm;size:A4}}</style>
+</head><body><div class="page">${body}</div>
+<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
+  win.document.close();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
