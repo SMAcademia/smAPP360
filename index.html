@@ -1984,6 +1984,10 @@ function pagos() {
     const pendiente = String(p.ESTADO||'').toUpperCase() === 'PENDIENTE';
     const btnWA = reclamacionActiva && pendiente ? _waLinkPago(p) : '';
     const lineaBadge = p.LINEA ? `<span class="badge badge-blue" style="font-size:10px;margin-right:4px">${esc(p.LINEA)}</span>` : '';
+    const pJson = JSON.stringify(p).replace(/'/g,"&#39;");
+    const btnFac = p.ID_FACTURA
+      ? `<span class="badge badge-green" style="font-size:10px;padding:3px 8px" title="Factura emitida">${esc(p.ID_FACTURA)}</span>`
+      : `<button class="btn btn-sm" style="background:#1565c0;color:#fff" onclick='facturaDesdePago(${pJson})'>→ Factura</button>`;
     return `<tr>
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
       <td>${esc(p.MES||'—')}</td>
@@ -1995,8 +1999,9 @@ function pagos() {
       <td class="mono">${fmtEur(p.TOTAL_RECIBIDO)}</td>
       <td>${esc(p.MÉTODO||'—')}</td>
       <td>${badgeEstado(p.ESTADO)}</td>
-      <td style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-sm btn-secondary" onclick='modalPago(${JSON.stringify(p)})'>Editar</button>
+      <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-sm btn-secondary" onclick='modalPago(${pJson})'>Editar</button>
+        ${btnFac}
         ${btnWA}
       </td>
     </tr>`;
@@ -2032,6 +2037,43 @@ function pagos() {
         </table>
       </div>
     </div>`);
+}
+
+function facturaDesdePago(p) {
+  const esExterno = p.LINEA === 'EXTERNO';
+  const cliId = p.ID_CLIENTE || '';
+  let cliNombre = '';
+
+  if (esExterno) {
+    cliNombre = (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'').trim();
+  } else {
+    const cli = DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(p.ID_CLIENTE));
+    const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+    cliNombre = cli ? `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim()
+               : alu ? `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim() : '';
+  }
+
+  const mes      = p.MES ? ` — ${p.MES}` : '';
+  const concepto = `${p.SERVICIO||'Servicio'}${mes}`;
+  const metodosMap = {
+    BIZUM: 'Transferencia bancaria', TRANSFERENCIA: 'Transferencia bancaria',
+    EFECTIVO: 'Efectivo', 'DOMICILIACIÓN': 'Domiciliación bancaria',
+  };
+
+  modalFactura({
+    FECHA_EXP:      new Date().toISOString().slice(0,10),
+    SERIE:          'SM',
+    ID_CLIENTE:     cliId,
+    CLIENTE_NOMBRE: cliNombre,
+    CONCEPTO:       concepto,
+    BASE_IMPONIBLE: parseFloat(p.IMPORTE || p.TOTAL_ESPERADO || 0),
+    DESCUENTO:      parseFloat(p.DESC_EUR || 0) || 0,
+    TIPO_IMPUESTO:  'EXENTO',
+    FORMA_PAGO:     metodosMap[p.MÉTODO||''] || '',
+    ESTADO_AEAT:    'EMITIDA',
+    _fromPagoId:    p.ID_PAGO || p.ID || '',
+    _cliLibre:      esExterno ? cliNombre : '',
+  });
 }
 
 function modalPago(p) {
@@ -2333,25 +2375,40 @@ function facturas() {
 
 function modalFactura(f) {
   f = f || {};
-  const isNew = !f.ID_FACTURA;
-  // Pre-seleccionar cliente: por ID si existe, sino por nombre
+  const isNew      = !f.ID_FACTURA;
+  const fromPagoId = f._fromPagoId || '';
+  const cliLibre   = f._cliLibre   || '';
+
   const clientes = DB.clientes.map(c => {
     const sel = f.ID_CLIENTE
-      ? f.ID_CLIENTE === c.ID_CLIENTE
+      ? String(f.ID_CLIENTE) === String(c.ID_CLIENTE||c.ID)
       : (f.CLIENTE_NOMBRE && (`${c.NOMBRE||''} ${c.APELLIDOS||''}`.trim() === f.CLIENTE_NOMBRE));
     return `<option value="${esc(c.ID_CLIENTE||c.ID)}" ${sel?'selected':''}>${esc(c.NOMBRE||'')} ${esc(c.APELLIDOS||'')}</option>`;
   }).join('');
+
+  const bannerPago = fromPagoId
+    ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:4px;font-size:12px;display:flex;align-items:center;gap:8px">
+        <span style="color:var(--g1);font-weight:700">↑ Pago</span>
+        <span style="color:var(--text2)">Datos importados desde el pago <strong>${esc(fromPagoId)}</strong>. Al guardar, la factura quedará vinculada.</span>
+      </div>` : '';
+
   openModal(isNew ? 'Nueva factura VeriFactu' : 'Editar factura', `
+    ${bannerPago}
+    <input type="hidden" id="fac-pago-origen" value="${esc(fromPagoId)}">
     <div class="form-grid">
       <div class="field"><label>Fecha expedición <span class="req">*</span></label>
         <input type="date" id="fac-fecha" value="${esc(f.FECHA_EXP||new Date().toISOString().slice(0,10))}"></div>
       <div class="field"><label>Serie</label>
         <input id="fac-serie" class="upper" value="${esc(f.SERIE||'SM')}" style="width:80px"></div>
-      <div class="field"><label>Cliente <span class="req">*</span></label>
-        <select id="fac-cli">${clientes}</select></div>
-      <div class="field"><label>NIF / DNI receptor</label>
-        <input id="fac-nif-rec" class="upper" value="${esc(f.CLIENTE_NIF||f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>
-      <div class="field" style="grid-column:span 2"><label>Concepto <span class="req">*</span></label>
+      ${cliLibre
+        ? `<div class="field span2"><label>Nombre del pagador <span class="req">*</span></label>
+            <input id="fac-cli-libre" value="${esc(cliLibre)}" placeholder="Nombre completo del pagador">
+            <input type="hidden" id="fac-cli" value=""></div>`
+        : `<div class="field"><label>Cliente <span class="req">*</span></label>
+            <select id="fac-cli">${clientes}</select></div>
+           <div class="field"><label>NIF / DNI receptor</label>
+            <input id="fac-nif-rec" class="upper" value="${esc(f.CLIENTE_NIF||f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>`}
+      <div class="field span2"><label>Concepto <span class="req">*</span></label>
         <input id="fac-desc" value="${esc(f.CONCEPTO||'')}"></div>
       <div class="field"><label>Base imponible (€) <span class="req">*</span></label>
         <input type="number" step="0.01" id="fac-base" value="${esc(f.BASE_IMPONIBLE||f.TOTAL||'')}" oninput="calcTotalFac()"></div>
@@ -2398,41 +2455,48 @@ function calcTotalFac() {
 }
 
 async function saveFactura(isNew, id) {
-  const cliId  = document.getElementById('fac-cli')?.value||'';
-  const fecha  = document.getElementById('fac-fecha')?.value||'';
-  const serie  = (document.getElementById('fac-serie')?.value||'SM').trim().toUpperCase();
-  const desc   = document.getElementById('fac-desc')?.value.trim()||'';
-  const base   = parseFloat(document.getElementById('fac-base')?.value)||0;
-  const imp    = document.getElementById('fac-imp')?.value||'EXENTO';
-  const cuota  = parseFloat(document.getElementById('fac-cuota')?.value)||0;
-  const total  = parseFloat(document.getElementById('fac-total')?.value)||0;
+  const cliId     = document.getElementById('fac-cli')?.value||'';
+  const cliLibre  = document.getElementById('fac-cli-libre')?.value?.trim()||'';
+  const fecha     = document.getElementById('fac-fecha')?.value||'';
+  const serie     = (document.getElementById('fac-serie')?.value||'SM').trim().toUpperCase();
+  const desc      = document.getElementById('fac-desc')?.value.trim()||'';
+  const base      = parseFloat(document.getElementById('fac-base')?.value)||0;
+  const imp       = document.getElementById('fac-imp')?.value||'EXENTO';
+  const cuota     = parseFloat(document.getElementById('fac-cuota')?.value)||0;
+  const total     = parseFloat(document.getElementById('fac-total')?.value)||0;
   const estado    = document.getElementById('fac-estado')?.value||'EMITIDA';
   const nifRec    = (document.getElementById('fac-nif-rec')?.value||'').trim().toUpperCase();
   const descuento = parseFloat(document.getElementById('fac-descuento')?.value||0)||0;
   const formaPago = document.getElementById('fac-forma-pago')?.value||'';
-  if (!cliId||!fecha||!desc||!base) { showToast('Rellena todos los campos obligatorios','error'); return; }
-  const cli = DB.clientes.find(c=>(c.ID_CLIENTE||c.ID)===cliId)||{};
-  // Numeración: máximo existente + 1 (resistente a borrados)
+  const pagoOrigen = document.getElementById('fac-pago-origen')?.value||'';
+
+  if (!fecha||!desc||!base||(!cliId&&!cliLibre)) {
+    showToast('Rellena todos los campos obligatorios','error'); return;
+  }
+
+  const cli = DB.clientes.find(c=>String(c.ID_CLIENTE||c.ID)===cliId)||{};
+  const clienteNombre = cliLibre || `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim();
+
   const nextNum = isNew
     ? Math.max(0, ...DB.facturas.map(f=>parseInt(f.NUMERO)||0)) + 1
     : (DB.facturas.find(f=>f.ID_FACTURA===id)?.NUMERO || 0);
   const numFac  = id || (`${serie}-${String(nextNum).padStart(3,'0')}`);
-  // Hash anterior: última factura por fecha
+
   let hashAnt = '0'.repeat(64);
   if (isNew && DB.facturas.length > 0) {
     const sorted = [...DB.facturas].sort((a,b)=>String(a.FECHA_EXP)<String(b.FECHA_EXP)?-1:1);
     hashAnt = sorted[sorted.length-1].HASH_ACTUAL || '0'.repeat(64);
   }
-  // Cadena VeriFactu: NIF_EMISOR|Serie-Número|FechaExp|ImporteTotal|HashAnterior
-  const cadena = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${hashAnt}`;
+  const cadena   = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${hashAnt}`;
   const hashActual = await sha256hex(cadena);
+
   const row = {
     ...(isNew ? { ID_FACTURA: numFac } : {}),
     FECHA_EXP:        fecha,
     SERIE:            serie,
     NUMERO:           nextNum,
     TOTAL:            total,
-    CLIENTE_NOMBRE:   `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim(),
+    CLIENTE_NOMBRE:   clienteNombre,
     CLIENTE_NIF:      nifRec,
     NIF_RECEPTOR:     nifRec,
     NOMBRE_EMISOR:    NOMBRE_EMISOR,
@@ -2441,18 +2505,27 @@ async function saveFactura(isNew, id) {
     HASH_ANTERIOR:    isNew ? hashAnt : undefined,
     HASH_ACTUAL:      hashActual,
     ESTADO_AEAT:      estado,
-    // Campos fiscales y de pago (añadir columnas al sheet para persistirlos)
     BASE_IMPONIBLE:   base,
     TIPO_IMPUESTO:    imp,
     CUOTA_IMPUESTO:   cuota,
     DESCUENTO:        descuento||undefined,
     FORMA_PAGO:       formaPago||undefined,
     NIF_EMISOR:       NIF_EMISOR,
-    ID_CLIENTE:       cliId,
+    ID_CLIENTE:       cliId||undefined,
   };
+
   writeToSheet('FACTURAS', row, isNew ? null : id)
-    .then(()=>{ showToast(isNew?`Factura ${numFac} creada con huella VeriFactu`:'Factura actualizada'); closeModal(); loadAllData().then(facturas); })
-    .catch(err=>showToast('Error: '+err.message,'error'));
+    .then(() => {
+      if (pagoOrigen) {
+        return writeToSheet('PAGOS', { ID_FACTURA: numFac }, pagoOrigen);
+      }
+    })
+    .then(() => {
+      showToast(isNew ? `Factura ${numFac} creada con huella VeriFactu` : 'Factura actualizada');
+      closeModal();
+      loadAllData().then(facturas);
+    })
+    .catch(err => showToast('Error: '+err.message,'error'));
 }
 
 // ── Exportar factura individual como PDF ─────────────────────────────────
