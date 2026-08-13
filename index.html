@@ -2795,8 +2795,19 @@ function personal() {
   topbarBtn('+ Nuevo trabajador', () => modalPersonal());
 
   const trabajadores = DB.personal.filter(p => String(p.ROL||'').toUpperCase() !== 'AMPA');
-  const rows = trabajadores.map(p => `
-    <tr>
+
+  function _certCell(raw) {
+    const cert = String(raw||'').trim();
+    if (!cert) return '<span class="badge badge-red">Pendiente</span>';
+    const esUrl = /^https?:\/\//i.test(cert);
+    const badge = '<span class="badge badge-green">✓ OK</span>';
+    if (esUrl) return badge + ' <a href="' + esc(cert) + '" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);white-space:nowrap">↗ Ver doc</a>';
+    return badge + '<span style="font-size:11px;color:var(--text3);margin-left:6px" title="' + esc(cert) + '">' + esc(cert.length > 24 ? cert.slice(0,22)+'…' : cert) + '</span>';
+  }
+
+  const rows = trabajadores.map(p => {
+    const pJson = JSON.stringify(p).replace(/'/g,"&#39;");
+    return `<tr>
       <td class="mono">${esc(p.ID_MONITOR)}</td>
       <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
       <td><span class="badge badge-blue">${esc(p.ROL||'—')}</span></td>
@@ -2804,16 +2815,11 @@ function personal() {
       <td>${esc(p.TELÉFONO||'—')}</td>
       <td>${esc(p.DNI||'—')}</td>
       <td>${fmtFecha(p.FECHA_ALTA)}</td>
-      <td>${(() => {
-        const cert = String(p.CERTIFICADO_DELITOS||'').trim();
-        if (!cert) return '<span class="badge badge-red">Pendiente</span>';
-        const esUrl = /^https?:\/\//i.test(cert);
-        return '<span class="badge badge-green">✓ OK</span>'
-          + (esUrl ? ` <a href="${esc(cert)}" target="_blank" rel="noopener" style="font-size:11px;color:var(--blue);white-space:nowrap">↗ Ver doc</a>` : `<span style="font-size:11px;color:var(--text3);margin-left:4px">${esc(cert)}</span>`);
-      })()}</td>
+      <td>${_certCell(p.CERTIFICADO_DELITOS)}</td>
       <td>${badgeActivo(p.ACTIVO)}</td>
-      <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${JSON.stringify(p)})'>Editar</button></td>
-    </tr>`).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👤</div><p>Sin trabajadores registrados</p></div></td></tr>`;
+      <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${pJson})'>Editar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👤</div><p>Sin trabajadores registrados</p></div></td></tr>`;
 
   render(`
     <div class="card" style="padding:14px 20px">
