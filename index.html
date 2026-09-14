@@ -4286,6 +4286,12 @@ async function saveFactura(isNew, id) {
     : (DB.facturas.find(f=>f.ID_FACTURA===id)?.NUMERO || 0);
   const numFac  = id || (`${serie}-${String(nextNum).padStart(3,'0')}`);
 
+  // Reservar el número en memoria inmediatamente para evitar duplicados
+  // si el usuario pulsa dos veces antes de que GAS responda
+  if (isNew) {
+    DB.facturas.push({ ID_FACTURA: numFac, NUMERO: nextNum, SERIE: serie, _reservado: true });
+  }
+
   let hashAnt = '0'.repeat(64);
   if (isNew && DB.facturas.length > 0) {
     const sorted = [...DB.facturas].sort((a,b)=>String(a.FECHA_EXP)<String(b.FECHA_EXP)?-1:1);
