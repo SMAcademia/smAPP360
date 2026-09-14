@@ -7060,7 +7060,17 @@ function portalFamilia() {
 
   const alumnoIds  = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
   const allInscs   = DB.inscripciones.filter(i=>alumnoIds.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA');
-  const cliPagos   = DB.pagos.filter(p=>String(p.ID_CLIENTE||'')===cliId);
+  // Excluir pagos vinculados a facturas ANULADAS (no mostrar errores de facturación al cliente)
+  const _facAnuladasIds = new Set(
+    DB.facturas
+      .filter(f => String(f.ESTADO_AEAT||'').toUpperCase() === 'ANULADA')
+      .map(f => String(f.ID_FACTURA||''))
+  );
+  const cliPagos   = DB.pagos.filter(p => {
+    if (String(p.ID_CLIENTE||'') !== cliId) return false;
+    if (p.ID_FACTURA && _facAnuladasIds.has(String(p.ID_FACTURA))) return false;
+    return true;
+  });
   const pendiente  = cliPagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE)||0),0);
 
   render(`
