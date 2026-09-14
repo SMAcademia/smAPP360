@@ -4131,20 +4131,24 @@ function facturas() {
 
   const rows = DB.facturas.map(f => {
     const estado = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
+    const tipo   = String(f.TIPO_FACTURA||'ORIGINAL').toUpperCase();
+    const esAnu  = tipo === 'ANULACION';
     const badgeE = estado==='COBRADA' ? 'badge-green' : estado==='ANULADA' ? 'badge-red' : 'badge-amber';
     const fJson  = JSON.stringify(f).replace(/'/g,'&#39;');
-    return `<tr>
-      <td class="mono"><strong>${esc(f.ID_FACTURA||'')}</strong></td>
+    const puedeAnular = !esAnu && estado !== 'ANULADA';
+    return `<tr${esAnu ? ' style="opacity:.6"' : ''}>
+      <td class="mono"><strong>${esc(f.ID_FACTURA||'')}</strong>${esAnu ? ' <span class="badge badge-red" style="font-size:9px">ANU</span>' : ''}</td>
       <td>${fmtFecha(f.FECHA_EXP)}</td>
-      <td class="mono">${esc(f.SERIE||'SM')}-${String(f.NUMERO||'').padStart(3,'0')}</td>
+      <td class="mono">${esAnu ? '—' : esc(f.SERIE||'SM')+'-'+String(f.NUMERO||'').padStart(3,'0')}</td>
       <td>${esc(f.CLIENTE_NOMBRE||'—')}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.CONCEPTO||'—')}</td>
       <td class="mono" style="text-align:right"><strong>${fmtEur(f.TOTAL)}</strong></td>
       <td><span class="badge ${badgeE}">${esc(estado)}</span></td>
       <td class="mono" style="font-size:10px;color:var(--text3)" title="${esc(f.HASH_ACTUAL||'')}">${(f.HASH_ACTUAL||'').substring(0,10)}…</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-sm" style="background:var(--g1);color:#fff;margin-right:4px" onclick='exportarFacturaPDF(${fJson})'>↓ PDF</button>
-        <button class="btn btn-sm btn-secondary" onclick='modalFactura(${fJson})'>Editar</button>
+        ${!esAnu ? `<button class="btn btn-sm" style="background:var(--g1);color:#fff;margin-right:4px" onclick='exportarFacturaPDF(${fJson})'>↓ PDF</button>` : ''}
+        ${!esAnu ? `<button class="btn btn-sm btn-secondary" style="margin-right:4px" onclick='modalFactura(${fJson})'>Editar</button>` : ''}
+        ${puedeAnular ? `<button class="btn btn-sm" style="background:var(--red,#ef4444);color:#fff" onclick='modalAnularFactura(${fJson})'>Anular</button>` : ''}
       </td>
     </tr>`;
   }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">🧾</div><p>Sin facturas registradas</p></div></td></tr>`;
@@ -4312,6 +4316,7 @@ async function saveFactura(isNew, id) {
     FORMA_PAGO:       formaPago||undefined,
     NIF_EMISOR:       NIF_EMISOR,
     ID_CLIENTE:       cliId||undefined,
+    TIPO_FACTURA:     'ORIGINAL',
   };
 
   writeToSheet('FACTURAS', row, isNew ? null : id)
@@ -4326,6 +4331,85 @@ async function saveFactura(isNew, id) {
       loadAllData().then(facturas);
     })
     .catch(err => showToast('Error: '+err.message,'error'));
+}
+
+// ── Anulación VeriFactu (RD 1007/2023 art. 11) ──────────────────────────
+function modalAnularFactura(f) {
+  const id = f.ID_FACTURA || '';
+  openModal('Anular factura ' + id, `
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="padding:10px 14px;background:var(--red-l,#fee2e2);border-radius:8px;border-left:4px solid var(--red,#ef4444)">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">Factura ${esc(id)} — ${fmtEur(f.TOTAL)}</div>
+        <div style="font-size:12px;color:var(--text2)">${esc(f.CLIENTE_NOMBRE||'—')} · ${esc(f.CONCEPTO||'—')}</div>
+      </div>
+      <p style="font-size:13px;margin:0;color:var(--text2)">
+        Se generará un <strong>registro de anulación</strong> en la cadena de hashes VeriFactu
+        y la factura original quedará marcada como <strong>ANULADA</strong>.<br>
+        <span style="color:var(--text3);font-size:12px">No se elimina ningún registro — cumple RD 1007/2023 art. 11.</span>
+      </p>
+      <div class="field">
+        <label style="font-size:12px;font-weight:600;color:var(--text3)">Motivo de anulación <span class="req">*</span></label>
+        <input id="anu-motivo" placeholder="Ej: Factura duplicada, error de importe…"
+          style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;box-sizing:border-box">
+      </div>
+    </div>`,
+    `<button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+     <button class="btn" style="background:var(--red,#ef4444);color:#fff"
+       onclick="confirmarAnulacion('${id}')">Confirmar anulación</button>`
+  );
+}
+
+async function confirmarAnulacion(originalId) {
+  const motivo = (document.getElementById('anu-motivo')?.value || '').trim();
+  if (!motivo) { showToast('Indica el motivo de anulación', 'error'); return; }
+
+  const original = DB.facturas.find(f => f.ID_FACTURA === originalId);
+  if (!original) { showToast('Factura no encontrada', 'error'); return; }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Hash: el registro de anulación continúa la cadena apuntando a la última factura
+  const sorted  = [...DB.facturas].sort((a, b) => String(a.FECHA_EXP) < String(b.FECHA_EXP) ? -1 : 1);
+  const hashAnt = sorted[sorted.length - 1]?.HASH_ACTUAL || '0'.repeat(64);
+  const anuId   = 'ANU-' + originalId;
+  const cadena  = `${NIF_EMISOR}|${anuId}|${today}|0.00|${hashAnt}`;
+  const hashActual = await sha256hex(cadena);
+
+  const anuRow = {
+    ID_FACTURA:       anuId,
+    FECHA_EXP:        today,
+    SERIE:            'ANU',
+    NUMERO:           0,
+    TOTAL:            0,
+    CLIENTE_NOMBRE:   original.CLIENTE_NOMBRE || '',
+    CLIENTE_NIF:      original.CLIENTE_NIF    || '',
+    NIF_RECEPTOR:     original.NIF_RECEPTOR   || '',
+    NOMBRE_EMISOR:    NOMBRE_EMISOR,
+    DOMICILIO_EMISOR: DOMICILIO_EMISOR,
+    CONCEPTO:         `Anulación de ${originalId} · ${motivo}`,
+    HASH_ANTERIOR:    hashAnt,
+    HASH_ACTUAL:      hashActual,
+    ESTADO_AEAT:      'ANULADA',
+    BASE_IMPONIBLE:   0,
+    TIPO_IMPUESTO:    original.TIPO_IMPUESTO || 'EXENTO',
+    CUOTA_IMPUESTO:   0,
+    NIF_EMISOR:       NIF_EMISOR,
+    ID_CLIENTE:       original.ID_CLIENTE || '',
+    TIPO_FACTURA:     'ANULACION',
+    FACTURA_REF:      originalId,
+  };
+
+  try {
+    // 1. Marcar la original como ANULADA
+    await writeToSheet('FACTURAS', { ESTADO_AEAT: 'ANULADA' }, originalId);
+    // 2. Insertar el registro de anulación en la cadena
+    await writeToSheet('FACTURAS', anuRow, null);
+    showToast(`Factura ${originalId} anulada. Registro de anulación ${anuId} generado.`);
+    closeModal();
+    loadAllData().then(facturas);
+  } catch (err) {
+    showToast('Error al anular: ' + err.message, 'error');
+  }
 }
 
 // ── Exportar factura individual como PDF ─────────────────────────────────
