@@ -811,12 +811,37 @@ function openModal(title, bodyHTML, footerHTML, size) {
   const bodyEl = document.getElementById('modal-body');
   bodyEl.innerHTML = bodyHTML;
   bodyEl.scrollTop = 0;
-  document.getElementById('modal-footer').innerHTML   = footerHTML || '';
+  const footerEl = document.getElementById('modal-footer');
+  footerEl.innerHTML = footerHTML || '';
   const box = document.getElementById('modal-box');
   box.className = size === 'xl' ? 'modal xl' : (size === 'wide' || size === true) ? 'modal wide' : 'modal';
   document.getElementById('modal-overlay').classList.add('open');
+
+  // Evitar doble tap en botones de guardar: bloquear al primer clic,
+  // reactivar automáticamente a los 8 s si el modal no se cerró (error en guardado)
+  footerEl.querySelectorAll('button:not(.btn-outline)').forEach(btn => {
+    const orig = btn.onclick;
+    btn.onclick = function(e) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.style.opacity = '0.65';
+      btn._unblockTimer = setTimeout(() => {
+        btn.disabled = false;
+        btn.style.opacity = '';
+      }, 8000);
+      if (orig) orig.call(this, e);
+    };
+  });
 }
-function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function closeModal() {
+  // Limpiar bloqueos de botones al cerrar
+  document.querySelectorAll('#modal-footer button').forEach(btn => {
+    clearTimeout(btn._unblockTimer);
+    btn.disabled = false;
+    btn.style.opacity = '';
+  });
+  document.getElementById('modal-overlay').classList.remove('open');
+}
 
 function showToast(msg, type) {
   const t  = document.createElement('div');
