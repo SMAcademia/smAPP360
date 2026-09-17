@@ -332,7 +332,7 @@ function nuevaPreinscripcion(data) {
     'TELÉFONO_TUTOR': d.TELEFONO_TUTOR || d['TELÉFONO_TUTOR'] || d.telefono_tutor1 || '',
     ACTIVIDAD_INTERES:actividadInteres,
     DIAS_DISPONIBLES: d.DIAS_DISPONIBLES || d.dias_disponibles || '',
-    LINEA:            d.LINEA || (actividadInteres.toUpperCase().includes('FUTBOL') ? 'FUTBOL' : 'EXTRAESCOLARES'),
+    LINEA:            d.LINEA || (stripAccents_(actividadInteres).includes('FUTBOL') ? 'FUTBOL' : 'EXTRAESCOLARES'),
     AUTORIZA_IMAGEN:  d.AUTORIZA_IMAGEN  || d.autoriza_imagen  || 'NO',
     SALUD:            d.SALUD || d.salud || '',
     ESTADO:           'RECIBIDA',
