@@ -1013,6 +1013,15 @@ function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
 function esBonoUsos(nombre){ const n=sinTildes(nombre||''); return n.includes('BONO') && n.includes('USO') && !n.includes('RECOGIDA'); }
 function bonoCapacidad(nombre){ const m=sinTildes(nombre||'').match(/(\d+)/); return m?parseInt(m[1]):10; }
 function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:(\d+)/i); return m?parseInt(m[1]):0; }
+function bonoFechas(insc){ const m=String(insc.OBSERVACIONES||'').match(/FECHAS:([^;]+)/i); return m?m[1].trim().split(',').map(d=>d.trim()).filter(Boolean):[]; }
+function bonoObsActualizada(insc, usoNuevo, fecha){
+  let obs = String(insc.OBSERVACIONES||'');
+  const fechas = bonoFechas(insc);
+  if (fecha && !fechas.includes(fecha)) fechas.push(fecha);
+  const fechaStr = fechas.length ? '; FECHAS:'+fechas.join(',') : '';
+  const restoObs = obs.replace(/USOS:\d+;?\s*/i,'').replace(/FECHAS:[^;]+;?\s*/i,'').trim();
+  return 'USOS:'+usoNuevo+fechaStr+(restoObs?'; '+restoObs:'');
+}
 function diasInscripcion(i) {
   const raw = i.DIAS_SEMANA || i.DIA_SEMANA || '';
   return String(raw).split(',').map(d => sinTildes(d.trim())).filter(Boolean);
@@ -1421,15 +1430,54 @@ function modalAlumno(a) {
       String(i.ID_ALUMNO) === String(a.ID_ALUMNO) &&
       String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
     );
+    const canEditBono = ['ADMIN','COORDINADOR'].includes(currentUser?.rol);
     const filasInsc = inscsAlu.map(i => {
       const act = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
-      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:6px;margin-bottom:6px">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600">${esc(act?.NOMBRE||i.ID_ACTIVIDAD||'Actividad')}</div>
-          <div style="font-size:11px;color:var(--text3)">${fmtEur(i.PRECIO_ACORDADO)}${i.DESCUENTO&&i.DESCUENTO!=='0'?' · −'+i.DESCUENTO+'%':''}${i.GRUPO?' · Gr.'+i.GRUPO:''}${i.FORMA_PAGO?' · '+i.FORMA_PAGO:''}</div>
+      const esBono = act && esBonoUsos(act.NOMBRE||'');
+      const cap    = esBono ? bonoCapacidad(act.NOMBRE) : 0;
+      const usos   = esBono ? bonoUsosCont(i) : 0;
+      const fechas = esBono ? bonoFechas(i) : [];
+      const inscId = String(i.ID_INSCRIPCION || i.ID || '');
+
+      let bonoHtml = '';
+      if (esBono) {
+        const pct = cap > 0 ? Math.round(usos/cap*100) : 0;
+        const restantes = cap - usos;
+        const barColor = restantes <= 2 ? '#ef4444' : restantes <= 4 ? '#f59e0b' : '#22c55e';
+        const fechaItems = fechas.length
+          ? fechas.slice().reverse().map(d => `<span style="font-size:10px;background:var(--bg3,#e5e7eb);padding:1px 6px;border-radius:8px">${d}</span>`).join(' ')
+          : '<span style="font-size:11px;color:var(--text3)">Sin fechas registradas</span>';
+        const btnCorr = canEditBono
+          ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
+               <span style="font-size:11px;color:var(--text3)">Corregir usos:</span>
+               <input type="number" min="0" max="${cap}" value="${usos}" id="bono-corr-${inscId}"
+                 style="width:56px;font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:4px">
+               <button class="btn btn-sm btn-secondary" style="font-size:11px;padding:2px 8px"
+                 onclick="_fichaBonoCorregir('${inscId}',${cap})">Guardar</button>
+             </div>` : '';
+        bonoHtml = `<div style="margin-top:6px;padding:8px 10px;background:var(--bg3,#f3f4f6);border-radius:6px;border-left:3px solid ${barColor}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:12px;font-weight:700;color:${barColor}">${usos}/${cap} usos</span>
+            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${barColor};transition:width .3s"></div>
+            </div>
+            <span style="font-size:11px;color:var(--text3)">${restantes} restante${restantes===1?'':'s'}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${fechaItems}</div>
+          ${btnCorr}
+        </div>`;
+      }
+
+      return `<div style="padding:8px 10px;background:var(--bg2);border-radius:6px;margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600">${esc(act?.NOMBRE||i.ID_ACTIVIDAD||'Actividad')}</div>
+            <div style="font-size:11px;color:var(--text3)">${fmtEur(i.PRECIO_ACORDADO)}${i.DESCUENTO&&i.DESCUENTO!=='0'?' · −'+i.DESCUENTO+'%':''}${i.GRUPO?' · Gr.'+i.GRUPO:''}${i.FORMA_PAGO?' · '+i.FORMA_PAGO:''}</div>
+          </div>
+          <button class="btn btn-sm" style="background:var(--amber,#f59e0b);color:#fff;white-space:nowrap;flex-shrink:0"
+            onclick="closeModal();modalCambioActividad('${esc(String(a.ID_ALUMNO))}','${esc(String(i.ID_INSCRIPCION))}')">🔄 Cambio</button>
         </div>
-        <button class="btn btn-sm" style="background:var(--amber,#f59e0b);color:#fff;white-space:nowrap;flex-shrink:0"
-          onclick="closeModal();modalCambioActividad('${esc(String(a.ID_ALUMNO))}','${esc(String(i.ID_INSCRIPCION))}')">🔄 Cambio</button>
+        ${bonoHtml}
       </div>`;
     }).join('');
     inscSeccion = `<div style="margin-top:20px;border-top:1px solid var(--border);padding-top:14px">
@@ -2232,6 +2280,29 @@ function toggleDescuentoIns() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  CORRECCIÓN MANUAL DE BONO EN FICHA
+// ══════════════════════════════════════════════════════════════════════════
+async function _fichaBonoCorregir(inscId, capacidad) {
+  const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID) === String(inscId));
+  if (!insc) return;
+  const input = document.getElementById('bono-corr-'+inscId);
+  if (!input) return;
+  const nuevo = parseInt(input.value, 10);
+  if (isNaN(nuevo) || nuevo < 0 || nuevo > capacidad) {
+    showToast('Valor fuera de rango (0–'+capacidad+')','error'); return;
+  }
+  const nuevaObs = bonoObsActualizada(insc, nuevo, null);
+  try {
+    await writeToSheet('INSCRIPCIONES', { OBSERVACIONES: nuevaObs }, inscId);
+    insc.OBSERVACIONES = nuevaObs;
+    showToast('Usos corregidos: '+nuevo+'/'+capacidad);
+    // Refrescar la ficha del alumno con los datos actualizados
+    const aluId = String(insc.ID_ALUMNO||'');
+    const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === aluId);
+    if (alu) { closeModal(); modalAlumno(alu); }
+  } catch(e) { showToast('Error: '+e.message,'error'); }
+}
+
 //  CAMBIO DE ACTIVIDAD
 // ══════════════════════════════════════════════════════════════════════════
 function modalCambioActividad(aluId, inscId) {
@@ -3306,15 +3377,18 @@ function _renderBonosPanel() {
 }
 
 async function _comRegistrarUsoBono(inscId, usoActual, capacidad) {
-  if (usoActual >= capacidad) { showToast('Bono agotado — crea una nueva inscripción','error'); return; }
   const insc = DB.inscripciones.find(i=>String(i.ID_INSCRIPCION||i.ID)===String(inscId));
   if (!insc) return;
-  const obsActual = String(insc.OBSERVACIONES||'').replace(/USOS:\d+;?\s*/i,'').trim();
-  const nuevaObs  = 'USOS:'+(usoActual+1)+(obsActual?'; '+obsActual:'');
+  // Releer siempre el valor real de la inscripción en memoria (evita usar valor obsoleto del render)
+  const usosReales = bonoUsosCont(insc);
+  if (usosReales >= capacidad) { showToast('Bono agotado — crea una nueva inscripción','error'); return; }
+  const hoy = new Date().toISOString().slice(0,10);
+  const nuevaObs = bonoObsActualizada(insc, usosReales + 1, hoy);
   try {
     await writeToSheet('INSCRIPCIONES', { OBSERVACIONES: nuevaObs }, inscId);
     insc.OBSERVACIONES = nuevaObs;
-    showToast('Uso registrado ('+(usoActual+1)+'/'+capacidad+')'+(usoActual+1>=capacidad-2?' — ⚠ quedan '+(capacidad-usoActual-1)+' usos':''));
+    const restantes = capacidad - (usosReales + 1);
+    showToast('Uso registrado ('+(usosReales+1)+'/'+capacidad+')'+(restantes<=2?' — ⚠ quedan '+restantes+' usos':''));
     _renderCom();
   } catch(e) { showToast('Error: '+e.message,'error'); }
 }
@@ -6227,8 +6301,10 @@ function guardarAsistenciaExtra() {
         avisos.push(`Bono agotado — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`);
         continue;
       }
-      const obsBase  = String(insc.OBSERVACIONES||'').replace(/USOS:\d+;?\s*/i,'').trim();
-      const nuevaObs = 'USOS:'+(usos+1)+(obsBase?'; '+obsBase:'');
+      // Protección anti-doble descuento: si la fecha ya está en el historial, saltar
+      const fechasExist = bonoFechas(insc);
+      if (fechasExist.includes(fecha)) continue;
+      const nuevaObs = bonoObsActualizada(insc, usos + 1, fecha);
       try {
         await writeToSheet('INSCRIPCIONES', {OBSERVACIONES:nuevaObs}, insc.ID_INSCRIPCION||insc.ID);
         insc.OBSERVACIONES = nuevaObs;
