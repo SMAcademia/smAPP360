@@ -1575,26 +1575,64 @@ function guardarAlumno(id) {
 }
 
 function modalExportarAlumnosPDF() {
-  const cursos = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE'];
-  const opsAct = '<option value="">Todas las actividades</option>'
-    + DB.actividades.map(a => `<option value="${a.ID}">${esc(a.NOMBRE)}</option>`).join('');
-  const opsCurso = '<option value="">Todos los cursos</option>'
-    + cursos.map(c => `<option value="${c}">${c}</option>`).join('');
+  const CURSOS = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE'];
+
+  const chk = (id, val, label) =>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:3px 0">
+       <input type="checkbox" id="${id}" value="${esc(val)}" style="width:14px;height:14px;accent-color:var(--green);flex-shrink:0">
+       ${label}
+     </label>`;
+
+  const actsFut   = DB.actividades.filter(a => esFutbol(a.LINEA||'') && String(a.ACTIVO||'S').toUpperCase().startsWith('S'));
+  const actsExtra = DB.actividades.filter(a => esExtraescolar(a.LINEA||'') && String(a.ACTIVO||'S').toUpperCase().startsWith('S'));
+  const actsOtras = DB.actividades.filter(a => !esFutbol(a.LINEA||'') && !esExtraescolar(a.LINEA||'') && String(a.ACTIVO||'S').toUpperCase().startsWith('S'));
+
+  const bloqueActs = (titulo, lista) => !lista.length ? '' :
+    `<div style="margin-bottom:6px">
+       <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${titulo}</div>
+       ${lista.map((a,i) => chk('exp-act-'+a.ID, String(a.ID), esc(a.NOMBRE))).join('')}
+     </div>`;
+
   openModal('Filtrar listado de alumnos', `
-    <div class="form-grid">
-      <div class="field"><label>Línea</label>
-        <select id="exp-linea">
-          <option value="">Todas las líneas</option>
-          <option value="FUTBOL">⚽ SM Fútbol</option>
-          <option value="EXTRAESCOLARES">🎒 Extraescolares</option>
-        </select></div>
-      <div class="field"><label>Estado</label>
-        <select id="exp-est">
-          <option value="activos">Solo activos</option>
-          <option value="todos">Todos</option>
-        </select></div>
-      <div class="field"><label>Curso</label><select id="exp-curso">${opsCurso}</select></div>
-      <div class="field"><label>Actividad inscrita</label><select id="exp-act">${opsAct}</select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 24px">
+
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Línea</div>
+        ${chk('exp-linea-fut','FUTBOL','⚽ SM Fútbol')}
+        ${chk('exp-linea-ext','EXTRAESCOLARES','🎒 Extraescolares')}
+      </div>
+
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Estado</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:3px 0">
+          <input type="radio" name="exp-est" value="activos" checked style="accent-color:var(--green)"> Solo activos
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:3px 0">
+          <input type="radio" name="exp-est" value="todos" style="accent-color:var(--green)"> Todos
+        </label>
+      </div>
+
+      <div style="grid-column:1/-1">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+          Cursos <span style="font-weight:400;font-size:10px">(ninguno = todos)</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:0 24px">
+          ${CURSOS.map(c => chk('exp-cur-'+c.replace(/\s/g,'_'), c, c)).join('')}
+        </div>
+      </div>
+
+      <div style="grid-column:1/-1">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+          Actividad inscrita <span style="font-weight:400;font-size:10px">(ninguna = todas)</span>
+        </div>
+        <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:10px 12px">
+          ${bloqueActs('⚽ SM Fútbol', actsFut)}
+          ${bloqueActs('🎒 Extraescolares', actsExtra)}
+          ${bloqueActs('Otras', actsOtras)}
+          ${!actsFut.length && !actsExtra.length && !actsOtras.length ? '<span style="font-size:12px;color:var(--text3)">Sin actividades</span>' : ''}
+        </div>
+      </div>
+
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="ejecutarExportarAlumnosPDF()">↓ Exportar PDF</button>`
@@ -1602,28 +1640,52 @@ function modalExportarAlumnosPDF() {
 }
 
 function ejecutarExportarAlumnosPDF() {
-  const linea  = document.getElementById('exp-linea').value;
-  const curso  = document.getElementById('exp-curso').value;
-  const actId  = document.getElementById('exp-act').value;
-  const soloAct = document.getElementById('exp-est').value === 'activos';
+  // Leer checkboxes de línea
+  const lineas = [];
+  if (document.getElementById('exp-linea-fut')?.checked) lineas.push('FUTBOL');
+  if (document.getElementById('exp-linea-ext')?.checked) lineas.push('EXTRAESCOLARES');
+
+  // Leer radio de estado
+  const soloAct = document.querySelector('input[name="exp-est"]:checked')?.value !== 'todos';
+
+  // Leer cursos marcados
+  const cursosSel = [...document.querySelectorAll('[id^="exp-cur-"]:checked')].map(el => el.value);
+
+  // Leer actividades marcadas
+  const actsSel = [...document.querySelectorAll('[id^="exp-act-"]:checked')].map(el => el.value);
 
   let lista = DB.alumnos;
   if (soloAct) lista = lista.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'));
-  if (linea === 'FUTBOL') lista = lista.filter(a => esFutbol(a.LINEA||''));
-  else if (linea === 'EXTRAESCOLARES') lista = lista.filter(a => esExtraescolar(a.LINEA||''));
-  if (curso) lista = lista.filter(a => a.CURSO === curso);
-  if (actId) {
-    const ids = new Set(
-      DB.inscripciones
-        .filter(i => String(i.ID_ACTIVIDAD) === actId && String(i.ESTADO||'').toUpperCase() === 'ACTIVA')
-        .map(i => String(i.ID_ALUMNO))
-    );
-    lista = lista.filter(a => ids.has(String(a.ID_ALUMNO)));
+
+  if (lineas.length) {
+    lista = lista.filter(a => {
+      const esFut = esFutbol(a.LINEA||'');
+      const esExt = esExtraescolar(a.LINEA||'');
+      return (lineas.includes('FUTBOL') && esFut) || (lineas.includes('EXTRAESCOLARES') && esExt);
+    });
   }
 
-  const actNombre = actId ? (DB.actividades.find(a => String(a.ID) === actId)?.NOMBRE || '') : '';
-  const titulo    = 'Alumnos' + (linea ? (linea === 'FUTBOL' ? ' — SM Fútbol' : ' — Extraescolares') : '')
-                  + (actNombre ? ' — ' + actNombre : '') + (curso ? ' — ' + curso : '');
+  if (cursosSel.length) lista = lista.filter(a => cursosSel.includes(a.CURSO));
+
+  if (actsSel.length) {
+    const aluIds = new Set(
+      DB.inscripciones
+        .filter(i => actsSel.includes(String(i.ID_ACTIVIDAD)) && String(i.ESTADO||'').toUpperCase() === 'ACTIVA')
+        .map(i => String(i.ID_ALUMNO))
+    );
+    lista = lista.filter(a => aluIds.has(String(a.ID_ALUMNO)));
+  }
+
+  // Construir título
+  const partes = ['Alumnos'];
+  if (lineas.length === 1) partes.push(lineas[0] === 'FUTBOL' ? 'SM Fútbol' : 'Extraescolares');
+  if (cursosSel.length) partes.push(cursosSel.join(', '));
+  if (actsSel.length) {
+    const nombres = actsSel.map(id => DB.actividades.find(a => String(a.ID) === id)?.NOMBRE || id);
+    partes.push(nombres.join(' / '));
+  }
+  const titulo = partes.join(' — ');
+
   const kHtml = `<div class="kpis"><div class="kpi"><div class="kpi-n">${lista.length}</div><div class="kpi-l">Alumnos</div></div></div>`;
   const thd   = '<thead><tr><th>Nombre</th><th>Curso</th><th>Fecha nac.</th><th>Tutor</th><th>Centro</th><th>Estado</th></tr></thead>';
   const fila  = a => {
