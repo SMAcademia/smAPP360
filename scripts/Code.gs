@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-//  SM ACADEMIA — Google Apps Script v2.4
+//  SM ACADEMIA — Google Apps Script v2.5
 //  Sheets ID: 1oHJIUoyR3V5N0iweWnMagZic_8YkWtVV6CsshXloX4k
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -56,11 +56,33 @@ function doGet(e) {
   }
 }
 
-// ── Peticiones POST (formulario público inscripcion.html) ─────────────────
+// ── Peticiones POST (app interna + formulario público inscripcion.html) ──────
+// Enruta por body.action. Sin action (o action='NUEVA_PREINSCRIPCION') →
+// alta pública de preinscripción (compatibilidad con inscripcion.html).
 function doPost(e) {
   try {
-    var data   = JSON.parse(e.postData.contents);
-    var result = nuevaPreinscripcion(data);
+    var body   = JSON.parse(e.postData.contents);
+    var action = body.action || '';
+    var result;
+
+    switch (action) {
+      case 'APPEND':
+        result = appendRow(body.sheet, body.row || {});
+        break;
+      case 'UPDATE':
+        result = updateRow(body.sheet, body.id, body.row || {});
+        break;
+      case 'DELETE':
+        result = deleteRow(body.sheet, body.id);
+        break;
+      case 'NUEVA_PREINSCRIPCION':
+      case '':
+        result = nuevaPreinscripcion(body);
+        break;
+      default:
+        result = { ok: false, error: 'Accion desconocida: ' + action };
+    }
+
     return ContentService
       .createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -148,66 +170,103 @@ function sheetToJSON(book, sheetName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  AÑADIR FILA (APPEND)
+//  AÑADIR FILA (APPEND)  — protegido con LockService para evitar IDs duplicados
 // ═══════════════════════════════════════════════════════════════════════════
 function appendRow(sheetName, rowObj) {
-  var book  = ss_();
-  var sheet = book.getSheetByName(sheetName);
-  if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
-
-  var lastCol = sheet.getLastColumn();
-  if (lastCol < 1) return { ok: false, error: 'La hoja ' + sheetName + ' no tiene cabeceras' };
-
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
-    .map(function(h) { return String(h).trim(); });
-
-  // Generar ID automático si la columna ID está vacía
-  var idCol = headers[0];
-  if (idCol && !rowObj[idCol]) {
-    rowObj[idCol] = nextId_(sheet, sheetName, headers);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(12000);
+  } catch (e) {
+    return { ok: false, error: 'Escritura simultanéa detectada. Vuelve a intentarlo.' };
   }
 
-  var newRow = headers.map(function(h) {
-    var v = (rowObj[h] !== undefined && rowObj[h] !== null) ? rowObj[h] : '';
-    // Forzar texto en columnas HORA para que Sheets no las convierta a timestamp
-    if (h.indexOf('HORA') !== -1 && v !== '') return String(v);
-    return v;
-  });
+  try {
+    var book  = ss_();
+    var sheet = book.getSheetByName(sheetName);
+    if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
 
-  sheet.appendRow(newRow);
-  return { ok: true, id: rowObj[idCol] || '' };
+    var lastCol = sheet.getLastColumn();
+    if (lastCol < 1) return { ok: false, error: 'La hoja ' + sheetName + ' no tiene cabeceras' };
+
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(function(h) { return String(h).trim(); });
+
+    var idCol = headers[0];
+
+    // Generar ID si falta
+    if (idCol && !rowObj[idCol]) {
+      rowObj[idCol] = nextId_(sheet, sheetName, headers);
+    }
+
+    // Comprobar que el ID no existe ya (doble protección)
+    if (idCol && rowObj[idCol]) {
+      var existingId = String(rowObj[idCol]);
+      var lastRow    = sheet.getLastRow();
+      if (lastRow > 1) {
+        var existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var k = 0; k < existingIds.length; k++) {
+          if (String(existingIds[k][0]) === existingId) {
+            return { ok: false, error: 'ID duplicado: ' + existingId, duplicate: true };
+          }
+        }
+      }
+    }
+
+    var newRow = headers.map(function(h) {
+      var v = (rowObj[h] !== undefined && rowObj[h] !== null) ? rowObj[h] : '';
+      if (h.indexOf('HORA') !== -1 && v !== '') return String(v);
+      return v;
+    });
+
+    sheet.appendRow(newRow);
+    return { ok: true, id: rowObj[idCol] || '' };
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  ACTUALIZAR FILA (UPDATE)
+//  ACTUALIZAR FILA (UPDATE)  — protegido con LockService
 // ═══════════════════════════════════════════════════════════════════════════
 function updateRow(sheetName, id, rowObj) {
-  var book  = ss_();
-  var sheet = book.getSheetByName(sheetName);
-  if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
-
-  var lastRow = sheet.getLastRow();
-  var lastCol = sheet.getLastColumn();
-  if (lastRow < 2) return { ok: false, error: 'Hoja vacía' };
-
-  var data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-  var headers = data[0].map(function(h) { return String(h).trim(); });
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
-      var updatedRow = headers.map(function(h, j) {
-        if (rowObj[h] !== undefined) {
-          // Forzar texto en columnas HORA también al editar
-          if (h.indexOf('HORA') !== -1 && rowObj[h] !== '') return String(rowObj[h]);
-          return rowObj[h];
-        }
-        return data[i][j];
-      });
-      sheet.getRange(i + 1, 1, 1, headers.length).setValues([updatedRow]);
-      return { ok: true, id: id };
-    }
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(12000);
+  } catch (e) {
+    return { ok: false, error: 'Escritura simultanéa detectada. Vuelve a intentarlo.' };
   }
-  return { ok: false, error: 'Fila no encontrada con ID: ' + id };
+
+  try {
+    var book  = ss_();
+    var sheet = book.getSheetByName(sheetName);
+    if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
+
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2) return { ok: false, error: 'Hoja vacía' };
+
+    var data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    var headers = data[0].map(function(h) { return String(h).trim(); });
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(id)) {
+        var updatedRow = headers.map(function(h, j) {
+          if (rowObj[h] !== undefined) {
+            if (h.indexOf('HORA') !== -1 && rowObj[h] !== '') return String(rowObj[h]);
+            return rowObj[h];
+          }
+          return data[i][j];
+        });
+        sheet.getRange(i + 1, 1, 1, headers.length).setValues([updatedRow]);
+        return { ok: true, id: id };
+      }
+    }
+    return { ok: false, error: 'Fila no encontrada con ID: ' + id };
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
