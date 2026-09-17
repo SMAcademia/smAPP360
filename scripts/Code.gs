@@ -333,7 +333,7 @@ function nextId_(sheet, sheetName, headers) {
 function stripAccents_(str) {
   return String(str || '')
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase();
 }
 
