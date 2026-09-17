@@ -310,6 +310,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('comunicacion')" data-page="comunicacion">
           <span class="nav-icon">📨</span><span>Comunicación</span>
         </div>
+        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
+          <span class="nav-icon">📅</span><span>Cuadrante</span>
+        </div>
       </div>
 
       <div class="nav-section" id="nav-futbol">
@@ -329,9 +332,6 @@ tr:hover td{background:#f8f8f8}
         </div>
         <div class="nav-item" onclick="navigate('asistencias-extra')" data-page="asistencias-extra">
           <span class="nav-icon">✅</span><span>Asistencia</span>
-        </div>
-        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
-          <span class="nav-icon">📅</span><span>Cuadrante</span>
         </div>
       </div>
 
@@ -794,6 +794,8 @@ function applyRoleVisibility() {
       });
     const elAsistExt = document.querySelector('[data-page="asistencias-extra"]');
     if (elAsistExt) elAsistExt.style.display = 'none';
+    const elCq = document.querySelector('[data-page="cuadrante"]');
+    if (elCq) elCq.style.display = 'none';
   }
 }
 
@@ -6381,7 +6383,6 @@ function setEval(btn) {
 function cuadrante() {
   'use strict';
 
-  // Solo editable para admin y coordinación
   const canEdit = ['ADMIN','COORDINADOR'].includes(currentUser?.rol);
 
   const DIAS   = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
@@ -6393,21 +6394,18 @@ function cuadrante() {
     { id: 'f4', label: 'Tarde 2',     time: '16:15 – 16:45' },
   ];
 
-  // Actividades a excluir del cuadrante (no tienen sentido en horario semanal)
   const EXCLUIR = ['DIA SUELTO','BONO RECOGIDA','CUOTA SOCIO','BONO 10 USOS'];
 
-  // Solo extraescolares, sin productos de bono/suelto
   const acts = (DB.actividades || []).filter(a => {
     if (String(a.ACTIVO || '').toUpperCase() === 'NO') return false;
     const nb = sinTildes(a.NOMBRE || '');
     if (EXCLUIR.some(ex => nb.includes(sinTildes(ex)))) return false;
-    // Filtrar solo extraescolares si tiene campo LINEA
     const linea = String(a.LINEA || '');
     if (linea && esFutbol(linea)) return false;
     return true;
   });
 
-  // Colores por grupo de actividad (inglés G1 e inglés G2 → mismo color)
+  // Colores por grupo base (Ingles G1 e Ingles G2 mismo color)
   const PALETTE = [
     '#1565c0','#6a1b9a','#ad1457','#2e7d32','#e65100',
     '#00695c','#4527a0','#0277bd','#bf360c','#558b2f',
@@ -6415,7 +6413,6 @@ function cuadrante() {
   ];
 
   function grupoKey(nombre) {
-    // Quita sufijos de grupo: G1, G2, Grupo 1, Benjamín, Alevín, 1, 2...
     return sinTildes(nombre)
       .replace(/\s+(G\d+|GRUPO\s*\d+|BENJAMIN|ALEVIN|INFANTIL|JUNIOR|SENIOR|AVANZADO|INICIACION|BASICO|\d+)$/, '')
       .trim();
@@ -6428,119 +6425,55 @@ function cuadrante() {
     if (!(gk in grupoColorMap)) grupoColorMap[gk] = PALETTE[_ci++ % PALETTE.length];
   });
 
-  function actColor(nombre) {
-    return grupoColorMap[grupoKey(nombre)] || '#444';
-  }
-
-  // El ID real del campo es 'ID', no 'ID_ACTIVIDAD'
-  function actById(id) {
-    return acts.find(a => String(a.ID) === String(id));
-  }
-
-  function chipStyleByNombre(nombre) {
+  function actColor(nombre) { return grupoColorMap[grupoKey(nombre)] || '#444'; }
+  function chipSty(nombre) {
     const c = actColor(nombre);
-    return `background:${c}1a;border:1.5px solid ${c}55;color:${c}`;
+    return 'background:' + c + '1a;border:1.5px solid ' + c + '55;color:' + c;
   }
+  function actById(id) { return acts.find(a => String(a.ID) === String(id)); }
 
+  // Estado — limpiar entradas vacías del LocalStorage corrupto
   let estado = {};
-  try { estado = JSON.parse(localStorage.getItem('cq_estado_v1') || '{}'); } catch(e) {}
+  try {
+    const raw = JSON.parse(localStorage.getItem('cq_estado_v1') || '{}');
+    Object.keys(raw).forEach(k => {
+      const clean = raw[k].filter(id => id !== '' && id != null);
+      if (clean.length) estado[k] = clean;
+    });
+  } catch(e) {}
 
-  function save() {
-    try { localStorage.setItem('cq_estado_v1', JSON.stringify(estado)); } catch(e) {}
-  }
+  function save() { try { localStorage.setItem('cq_estado_v1', JSON.stringify(estado)); } catch(e) {} }
+  function cellKey(d, f) { return d + '_' + f; }
 
-  function cellKey(diaId, franjaId) { return diaId + '_' + franjaId; }
-
-  function renderPage() {
-    const roLabel = canEdit ? '' :
-      `<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:8px">Solo lectura</span>`;
-
-    const bankChips = acts.map(a => {
-      const id  = String(a.ID || '');
-      const sty = chipStyleByNombre(a.NOMBRE || '');
-      return canEdit
-        ? `<div class="cq-chip" draggable="true"
-            style="${sty}"
-            ondragstart="window._cqDragStart(event,'bank',${JSON.stringify(id)})"
-            title="${esc(a.NOMBRE)}">${esc(a.NOMBRE)}</div>`
-        : `<div class="cq-chip" style="${sty};cursor:default;opacity:.75">${esc(a.NOMBRE)}</div>`;
-    }).join('');
-
-    const thDias = DIAS.map(d => `<th>${d}</th>`).join('');
-
-    const filas = FRANJAS.map(f => {
-      const celdas = DIA_ID.map((d, di) => {
-        const key   = cellKey(d, f.id);
-        const items = estado[key] || [];
-        const placed = items.map((actId, idx) => {
-          const act    = actById(actId);
-          const nombre = act ? (act.NOMBRE || actId) : actId;
-          const sty    = chipStyleByNombre(nombre);
-          return canEdit
-            ? `<div class="cq-cell-chip" draggable="true" style="${sty}"
-                ondragstart="window._cqDragStart(event,'cell',${JSON.stringify(actId)},${JSON.stringify(key)},${idx})"
-                >${esc(nombre)}<span class="cq-chip-rm"
-                  onclick="window._cqRemove(${JSON.stringify(key)},${idx});event.stopPropagation()">×</span></div>`
-            : `<div class="cq-cell-chip" style="${sty};cursor:default">${esc(nombre)}</div>`;
-        }).join('');
-
-        const dropAttrs = canEdit
-          ? `ondragover="event.preventDefault();this.classList.add('drag-over')"
-             ondragleave="this.classList.remove('drag-over')"
-             ondrop="window._cqDrop(event,${JSON.stringify(d)},${JSON.stringify(f.id)});this.classList.remove('drag-over')"`
-          : '';
-        return `<td><div class="cq-cell" ${dropAttrs}>${placed}</div></td>`;
-      }).join('');
-
-      return `<tr>
-        <td><strong>${esc(f.label)}</strong><div class="cq-franja-time">${esc(f.time)}</div></td>
-        ${celdas}
-      </tr>`;
-    }).join('');
-
-    render(`<div class="cq-wrap">
-      <div class="cq-bank">
-        <div class="cq-bank-title" style="display:flex;align-items:center">
-          <span>SM Extraescolares — ${canEdit ? 'arrastra al cuadrante' : 'cuadrante semanal'}</span>${roLabel}
-        </div>
-        <div class="cq-bank-chips">${bankChips || '<span style="color:var(--text3);font-size:12px">Sin actividades extraescolares</span>'}</div>
-      </div>
-      <div class="cq-table-wrap">
-        <table class="cq-table">
-          <thead><tr><th></th>${thDias}</tr></thead>
-          <tbody>${filas}</tbody>
-        </table>
-      </div>
-      ${canEdit ? `<div class="cq-actions">
-        <button class="btn btn-secondary" onclick="window._cqReset()">Limpiar cuadrante</button>
-        <button class="btn btn-secondary" onclick="window._cqExport()">Exportar texto</button>
-      </div>` : ''}
-    </div>`);
-  }
-
-  let _dragSrc = null;
-
-  window._cqDragStart = function(e, origin, actId, fromKey, fromIdx) {
-    _dragSrc = { origin, actId, fromKey, fromIdx };
+  // _dragSrc se lee via dataTransfer para sobrevivir entre re-renders
+  window._cqDragStart = function(e) {
+    const el = e.currentTarget;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(actId));
+    e.dataTransfer.setData('cq/id',  el.dataset.cqId  || '');
+    e.dataTransfer.setData('cq/key', el.dataset.cqKey || '');
+    e.dataTransfer.setData('cq/idx', el.dataset.cqIdx != null ? el.dataset.cqIdx : '');
+    e.dataTransfer.setData('cq/src', el.dataset.cqSrc || 'bank');
   };
 
-  window._cqDrop = function(e, diaId, franjaId) {
+  window._cqDrop = function(e, dia, franja) {
     e.preventDefault();
-    if (!_dragSrc) return;
-    const key = cellKey(diaId, franjaId);
+    const id  = e.dataTransfer.getData('cq/id');
+    const src = e.dataTransfer.getData('cq/src');
+    if (!id) return;
+    const key = cellKey(dia, franja);
     if (!estado[key]) estado[key] = [];
-    if (_dragSrc.origin === 'cell' && _dragSrc.fromKey) {
-      const src = estado[_dragSrc.fromKey] || [];
-      src.splice(_dragSrc.fromIdx, 1);
-      if (!src.length) delete estado[_dragSrc.fromKey];
-      else estado[_dragSrc.fromKey] = src;
+    if (src === 'cell') {
+      const fromKey = e.dataTransfer.getData('cq/key');
+      const fromIdx = parseInt(e.dataTransfer.getData('cq/idx'), 10);
+      if (fromKey && !isNaN(fromIdx)) {
+        const src2 = estado[fromKey] || [];
+        src2.splice(fromIdx, 1);
+        if (!src2.length) delete estado[fromKey]; else estado[fromKey] = src2;
+      }
     }
-    estado[key].push(String(_dragSrc.actId));
+    estado[key].push(id);
     save();
-    _dragSrc = null;
-    renderPage();
+    cuadrante._render();
   };
 
   window._cqRemove = function(key, idx) {
@@ -6548,14 +6481,46 @@ function cuadrante() {
     estado[key].splice(idx, 1);
     if (!estado[key].length) delete estado[key];
     save();
-    renderPage();
+    cuadrante._render();
   };
 
   window._cqReset = function() {
     if (!confirm('¿Limpiar todo el cuadrante?')) return;
     estado = {};
     save();
-    renderPage();
+    cuadrante._render();
+  };
+
+  window._cqExportPng = function() {
+    const wrap = document.querySelector('.cq-table-wrap');
+    if (!wrap) return;
+    const btn = document.querySelector('[data-cq-png]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+    function doCapture(h2c) {
+      h2c(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = 'cuadrante_sm.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }).catch(err => {
+        console.error('html2canvas error', err);
+        alert('No se pudo generar la imagen.');
+      }).finally(() => {
+        if (btn) { btn.disabled = false; btn.textContent = '⬇ Descargar PNG'; }
+      });
+    }
+    if (window.html2canvas) {
+      doCapture(window.html2canvas);
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload = () => doCapture(window.html2canvas);
+      s.onerror = () => {
+        alert('No se pudo cargar html2canvas.');
+        if (btn) { btn.disabled = false; btn.textContent = '⬇ Descargar PNG'; }
+      };
+      document.head.appendChild(s);
+    }
   };
 
   window._cqExport = function() {
@@ -6565,8 +6530,8 @@ function cuadrante() {
       DIA_ID.forEach((d, i) => {
         const items = estado[cellKey(d, f.id)] || [];
         if (items.length) {
-          const nombres = items.map(id => { const a = actById(id); return a ? a.NOMBRE : id; });
-          lines.push('  ' + DIAS[i] + ': ' + nombres.join(', '));
+          const noms = items.map(id => { const a = actById(id); return a ? a.NOMBRE : id; });
+          lines.push('  ' + DIAS[i] + ': ' + noms.join(', '));
         }
       });
       lines.push('');
@@ -6578,7 +6543,77 @@ function cuadrante() {
     URL.revokeObjectURL(url);
   };
 
-  renderPage();
+  cuadrante._render = function() {
+    const roLabel = canEdit ? '' :
+      '<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:8px">Solo lectura</span>';
+
+    const bankChips = acts.map(a => {
+      const id  = String(a.ID || '');
+      const sty = chipSty(a.NOMBRE || '');
+      const drag = canEdit
+        ? 'draggable="true" data-cq-id="' + esc(id) + '" data-cq-src="bank" ondragstart="window._cqDragStart(event)"'
+        : 'style="' + sty + ';cursor:default;opacity:.75"';
+      return '<div class="cq-chip" ' + drag + ' style="' + sty + '" title="' + esc(a.NOMBRE) + '">' + esc(a.NOMBRE) + '</div>';
+    }).join('');
+
+    const thDias = DIAS.map(d => '<th>' + d + '</th>').join('');
+
+    const filas = FRANJAS.map(f => {
+      const celdas = DIA_ID.map(d => {
+        const key   = cellKey(d, f.id);
+        const items = estado[key] || [];
+        const chips = items.map((actId, idx) => {
+          const act    = actById(actId);
+          const nombre = act ? (act.NOMBRE || actId) : actId;
+          const sty    = chipSty(nombre);
+          if (!canEdit) {
+            return '<div class="cq-cell-chip" style="' + sty + ';cursor:default">' + esc(nombre) + '</div>';
+          }
+          return '<div class="cq-cell-chip" draggable="true"'
+            + ' data-cq-id="' + esc(actId) + '" data-cq-key="' + esc(key) + '" data-cq-idx="' + idx + '" data-cq-src="cell"'
+            + ' style="' + sty + '"'
+            + ' ondragstart="window._cqDragStart(event)">'
+            + esc(nombre)
+            + '<span class="cq-chip-rm" onclick="window._cqRemove(\'' + esc(key) + '\',' + idx + ');event.stopPropagation()">×</span>'
+            + '</div>';
+        }).join('');
+
+        const dropZ = canEdit
+          ? ' ondragover="event.preventDefault();this.classList.add(\'drag-over\')"'
+            + ' ondragleave="this.classList.remove(\'drag-over\')"'
+            + ' ondrop="window._cqDrop(event,\'' + d + '\',\'' + f.id + '\');this.classList.remove(\'drag-over\')"'
+          : '';
+        return '<td><div class="cq-cell"' + dropZ + '>' + chips + '</div></td>';
+      }).join('');
+
+      return '<tr>'
+        + '<td><strong>' + esc(f.label) + '</strong><div class="cq-franja-time">' + esc(f.time) + '</div></td>'
+        + celdas
+        + '</tr>';
+    }).join('');
+
+    render('<div class="cq-wrap">'
+      + '<div class="cq-bank">'
+      + '<div class="cq-bank-title" style="display:flex;align-items:center">'
+      + '<span>SM Extraescolares — ' + (canEdit ? 'arrastra al cuadrante' : 'cuadrante semanal') + '</span>' + roLabel
+      + '</div>'
+      + '<div class="cq-bank-chips">' + (bankChips || '<span style="color:var(--text3);font-size:12px">Sin actividades extraescolares</span>') + '</div>'
+      + '</div>'
+      + '<div class="cq-table-wrap"><table class="cq-table">'
+      + '<thead><tr><th></th>' + thDias + '</tr></thead>'
+      + '<tbody>' + filas + '</tbody>'
+      + '</table></div>'
+      + '<div class="cq-actions">'
+      + (canEdit
+        ? '<button class="btn btn-secondary" onclick="window._cqReset()">Limpiar cuadrante</button>'
+          + '<button class="btn btn-secondary" onclick="window._cqExport()">Exportar texto</button>'
+        : '')
+      + '<button class="btn btn-secondary" data-cq-png onclick="window._cqExportPng()">&#11015; Descargar PNG</button>'
+      + '</div>'
+      + '</div>');
+  };
+
+  cuadrante._render();
 }
 
 function configuracion() {
