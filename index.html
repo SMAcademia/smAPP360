@@ -333,6 +333,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('asistencias-extra')" data-page="asistencias-extra">
           <span class="nav-icon">✅</span><span>Asistencia</span>
         </div>
+        <div class="nav-item" onclick="navigate('listados')" data-page="listados">
+          <span class="nav-icon">📋</span><span>Listados</span>
+        </div>
       </div>
 
       <div class="nav-section" id="nav-personal">
@@ -817,6 +820,7 @@ const PAGE_META = {
   'extra-resumen':      { title: 'SM Extraescolares',    sub: 'Panel de actividades y asistencia' },
   'asistencias-extra':  { title: 'Asistencia',           sub: 'SM Extraescolares' },
   'cuadrante':          { title: 'Cuadrante semanal',    sub: 'Organización de actividades por franja horaria' },
+  'listados':           { title: 'Listados de alumnos',  sub: 'Por actividad, ordenados por curso' },
   'personal':           { title: 'Trabajadores',         sub: 'Ficha de personal' },
   'ausencias':          { title: 'Ausencias',            sub: 'Bajas, vacaciones y permisos' },
   'registro-horario':   { title: 'Registro horario',     sub: 'Control de entradas y salidas' },
@@ -845,6 +849,7 @@ const MODULES = {
   'extra-resumen':      extraResumen,
   'asistencias-extra':  asistenciasExtra,
   'cuadrante':          cuadrante,
+  'listados':           listados,
   'personal':           personal,
   'ausencias':          ausencias,
   'registro-horario':   registroHorario,
@@ -997,6 +1002,9 @@ ${htmlBody}
 
 // Formatear fecha ISO a DD/MM/AAAA
 function sinTildes(s) { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); }
+const ORDEN_CURSOS = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE'];
+function cursoOrder(c){ const i=ORDEN_CURSOS.indexOf(c||''); return i===-1?ORDEN_CURSOS.length:i; }
+function sortAlumnos(lista){ return lista.slice().sort((a,b)=>{ const ci=cursoOrder(a.CURSO)-cursoOrder(b.CURSO); if(ci)return ci; return ((a.NOMBRE||'')+' '+(a.APELLIDOS||'')).localeCompare((b.NOMBRE||'')+' '+(b.APELLIDOS||''),'es'); }); }
 function _mesNorm(m) {
   const s = sinTildes((m||'').trim());
   const iso = s.match(/^(\d{4})-(\d{2})/);
@@ -1686,22 +1694,42 @@ function ejecutarExportarAlumnosPDF() {
   }
   const titulo = partes.join(' — ');
 
-  const kHtml = `<div class="kpis"><div class="kpi"><div class="kpi-n">${lista.length}</div><div class="kpi-l">Alumnos</div></div></div>`;
-  const thd   = '<thead><tr><th>Nombre</th><th>Curso</th><th>Fecha nac.</th><th>Tutor</th><th>Centro</th><th>Estado</th></tr></thead>';
-  const fila  = a => {
+  if (!lista.length) { showToast('Sin alumnos con ese filtro','error'); return; }
+
+  const filaAlumno = a => {
     const c = DB.clientes.find(x => String(x.ID_CLIENTE) === String(a.ID_CLIENTE));
     return `<tr>
       <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
-      <td>${esc(a.CURSO||'—')}</td><td>${fmtFecha(a.FECHA_NAC)}</td>
+      <td>${esc(a.CURSO||'—')}</td>
       <td>${c ? esc(c.NOMBRE+' '+(c.APELLIDOS||'')) : '—'}</td>
       <td>${esc(a.CENTRO||'—')}</td>
-      <td><span class="badge ${String(a.ACTIVO||'S').toUpperCase().startsWith('S')?'bg':'br'}">${String(a.ACTIVO||'S').toUpperCase().startsWith('S')?'Activo':'Inactivo'}</span></td>
     </tr>`;
   };
+  const thd = '<thead><tr><th>Nombre</th><th>Curso</th><th>Tutor</th><th>Centro</th></tr></thead>';
 
-  if (!lista.length) { showToast('Sin alumnos con ese filtro','error'); return; }
+  let bodyHtml = '';
+  if (actsSel.length >= 1) {
+    // Agrupar por actividad — un alumno puede aparecer en varias si está inscrito en varias
+    actsSel.forEach(actId => {
+      const act = DB.actividades.find(a => String(a.ID) === actId);
+      const aluIdsAct = new Set(
+        DB.inscripciones
+          .filter(i => String(i.ID_ACTIVIDAD) === actId && String(i.ESTADO||'').toUpperCase() === 'ACTIVA')
+          .map(i => String(i.ID_ALUMNO))
+      );
+      const grupo = sortAlumnos(lista.filter(a => aluIdsAct.has(String(a.ID_ALUMNO))));
+      if (!grupo.length) return;
+      bodyHtml += `<h3 style="margin:18px 0 6px;font-size:13px;color:#444">${esc(act?.NOMBRE||actId)} <span style="font-weight:400;color:#888">(${grupo.length})</span></h3>
+        <table>${thd}<tbody>${grupo.map(filaAlumno).join('')}</tbody></table>`;
+    });
+  } else {
+    const sorted = sortAlumnos(lista);
+    bodyHtml = `<table>${thd}<tbody>${sorted.map(filaAlumno).join('')}</tbody></table>`;
+  }
+
+  const kHtml = `<div class="kpis"><div class="kpi"><div class="kpi-n">${lista.length}</div><div class="kpi-l">Alumnos</div></div></div>`;
   closeModal();
-  exportarPDF(titulo, kHtml + `<table>${thd}<tbody>${lista.map(fila).join('')}</tbody></table>`);
+  exportarPDF(titulo, kHtml + bodyHtml);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -6518,6 +6546,140 @@ function setEval(btn) {
   btn.style.borderColor = 'var(--green)';
   btn.style.background  = 'var(--green)';
   btn.style.color       = 'white';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  LISTADOS DE ALUMNOS POR ACTIVIDAD
+// ══════════════════════════════════════════════════════════════════════════
+function listados() {
+  'use strict';
+  const canEdit = false; // módulo siempre de solo lectura
+
+  // Actividades extraescolares activas, ordenadas alfabéticamente
+  const actsDisp = (DB.actividades || [])
+    .filter(a => esExtraescolar(a.LINEA||'') && String(a.ACTIVO||'S').toUpperCase().startsWith('S'))
+    .sort((a,b) => (a.NOMBRE||'').localeCompare(b.NOMBRE||'','es'));
+
+  // Estado: qué actividades están seleccionadas (por defecto todas)
+  let selIds = new Set(actsDisp.map(a => String(a.ID)));
+
+  function aluDeAct(actId) {
+    const ids = new Set(
+      (DB.inscripciones||[])
+        .filter(i => String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA')
+        .map(i => String(i.ID_ALUMNO))
+    );
+    return sortAlumnos((DB.alumnos||[]).filter(a => ids.has(String(a.ID_ALUMNO)) && String(a.ACTIVO||'S').toUpperCase().startsWith('S')));
+  }
+
+  function filaAlu(a) {
+    const c = DB.clientes.find(x => String(x.ID_CLIENTE)===String(a.ID_CLIENTE));
+    const tel = c?.['TELÉFONO'] || '';
+    return `<tr>
+      <td><strong>${esc((a.NOMBRE||'')+' '+(a.APELLIDOS||''))}</strong></td>
+      <td style="white-space:nowrap">${esc(a.CURSO||'—')}</td>
+      <td>${c ? esc(c.NOMBRE+' '+(c.APELLIDOS||'')) : '—'}</td>
+      <td style="white-space:nowrap">${esc(tel||'—')}</td>
+      <td>${esc(a.CENTRO||'—')}</td>
+    </tr>`;
+  }
+
+  function tablaAct(actId) {
+    const act   = actsDisp.find(a => String(a.ID)===actId);
+    const alus  = aluDeAct(actId);
+    if (!alus.length) return '';
+    const thead = '<thead><tr><th>Nombre</th><th>Curso</th><th>Tutor</th><th>Teléfono</th><th>Centro</th></tr></thead>';
+    return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--black);color:#fff">
+        <span style="font-size:13px;font-weight:700">${esc(act?.NOMBRE||actId)}</span>
+        <span style="font-size:12px;opacity:.7">${alus.length} alumno${alus.length===1?'':'s'}</span>
+      </div>
+      <div class="table-wrap">
+        <table>${thead}<tbody>${alus.map(filaAlu).join('')}</tbody></table>
+      </div>
+    </div>`;
+  }
+
+  function renderContent() {
+    const activas = [...selIds];
+    if (!activas.length) {
+      document.getElementById('lst-content').innerHTML =
+        '<p style="color:var(--text3);font-size:13px;padding:8px 0">Selecciona al menos una actividad.</p>';
+      return;
+    }
+    const total = new Set(
+      activas.flatMap(id => {
+        const ids2 = new Set((DB.inscripciones||[]).filter(i=>String(i.ID_ACTIVIDAD)===id&&String(i.ESTADO||'').toUpperCase()==='ACTIVA').map(i=>String(i.ID_ALUMNO)));
+        return [...ids2];
+      })
+    ).size;
+    const kpi = `<div class="kpis" style="margin-bottom:0">
+      <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Alumnos únicos</div></div>
+      <div class="kpi"><div class="kpi-n">${activas.length}</div><div class="kpi-l">Actividades</div></div>
+    </div>`;
+    const tablas = activas
+      .sort((a,b)=>{const na=actsDisp.find(x=>String(x.ID)===a)?.NOMBRE||''; const nb=actsDisp.find(x=>String(x.ID)===b)?.NOMBRE||''; return na.localeCompare(nb,'es');})
+      .map(tablaAct).join('');
+    document.getElementById('lst-content').innerHTML = kpi + '<div style="display:grid;gap:14px;margin-top:14px">' + tablas + '</div>';
+  }
+
+  function toggleAll(on) {
+    selIds = on ? new Set(actsDisp.map(a=>String(a.ID))) : new Set();
+    document.querySelectorAll('.lst-chk').forEach(el => { el.checked = on; });
+    renderContent();
+  }
+
+  window._lstToggle = function(id, checked) {
+    if (checked) selIds.add(id); else selIds.delete(id);
+    renderContent();
+  };
+
+  window._lstDescargarPDF = function() {
+    const activas = [...selIds];
+    if (!activas.length) { showToast('Selecciona al menos una actividad','error'); return; }
+    let bodyHtml = '';
+    const thead = '<thead><tr><th>Nombre</th><th>Curso</th><th>Tutor</th><th>Teléfono</th><th>Centro</th></tr></thead>';
+    activas
+      .sort((a,b)=>{const na=actsDisp.find(x=>String(x.ID)===a)?.NOMBRE||''; const nb=actsDisp.find(x=>String(x.ID)===b)?.NOMBRE||''; return na.localeCompare(nb,'es');})
+      .forEach(actId => {
+        const act  = actsDisp.find(a=>String(a.ID)===actId);
+        const alus = aluDeAct(actId);
+        if (!alus.length) return;
+        bodyHtml += `<h3 style="margin:18px 0 6px;font-size:13px;color:#444">${esc(act?.NOMBRE||actId)} <span style="font-weight:400;color:#888">(${alus.length})</span></h3>
+          <table>${thead}<tbody>${alus.map(filaAlu).join('')}</tbody></table>`;
+      });
+    const tit = activas.length === actsDisp.length ? 'Listado completo de alumnos — SM Extraescolares'
+      : 'Listado de alumnos — '+ activas.map(id=>actsDisp.find(a=>String(a.ID)===id)?.NOMBRE||id).join(', ');
+    exportarPDF(tit, bodyHtml);
+  };
+
+  // Chips de filtro por actividad
+  const chkItems = actsDisp.map(a =>
+    `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:20px;user-select:none">
+      <input type="checkbox" class="lst-chk" data-id="${esc(String(a.ID))}" checked
+        onchange="window._lstToggle('${esc(String(a.ID))}',this.checked)"
+        style="width:12px;height:12px;accent-color:var(--green);flex-shrink:0">
+      ${esc(a.NOMBRE)}
+    </label>`
+  ).join('');
+
+  document.getElementById('topbar-actions').innerHTML = '';
+  topbarBtn('↓ Descargar PDF', () => window._lstDescargarPDF(), 'btn-secondary');
+
+  render(`<div style="display:grid;gap:14px">
+    <div class="card" style="padding:12px 16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Filtrar actividades</span>
+        <button class="btn btn-sm btn-secondary" onclick="window._listadosTodos(true)" style="font-size:11px;padding:2px 8px">Todas</button>
+        <button class="btn btn-sm btn-secondary" onclick="window._listadosTodos(false)" style="font-size:11px;padding:2px 8px">Ninguna</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${chkItems}</div>
+    </div>
+    <div id="lst-content"></div>
+  </div>`);
+
+  window._listadosTodos = toggleAll;
+  renderContent();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
