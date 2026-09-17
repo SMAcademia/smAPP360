@@ -1,7 +1,7 @@
-// ═══════════════════════════════════════════════════════════════════════════
-//  SM ACADEMIA — Google Apps Script v2.5
+// ===========================================================================
+//  SM ACADEMIA - Google Apps Script v2.5
 //  Sheets ID: 1oHJIUoyR3V5N0iweWnMagZic_8YkWtVV6CsshXloX4k
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 
 var SPREADSHEET_ID = '1oHJIUoyR3V5N0iweWnMagZic_8YkWtVV6CsshXloX4k';
 
@@ -9,7 +9,9 @@ function ss_() {
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
-// ── Peticiones GET (JSONP desde la app) ───────────────────────────────────
+// ---------------------------------------------------------------------------
+// GET - JSONP desde la app (solo lectura y PING)
+// ---------------------------------------------------------------------------
 function doGet(e) {
   var callback = (e && e.parameter && e.parameter.callback) ? e.parameter.callback : 'callback';
   var action   = (e && e.parameter && e.parameter.action)   ? e.parameter.action   : '';
@@ -46,7 +48,7 @@ function doGet(e) {
         break;
 
       default:
-        result = { ok: false, error: 'Acción desconocida: ' + action };
+        result = { ok: false, error: 'Accion desconocida: ' + action };
     }
 
     return jsonp(callback, result);
@@ -56,7 +58,9 @@ function doGet(e) {
   }
 }
 
-// ── Peticiones POST (app interna + formulario publico inscripcion.html) ──────
+// ---------------------------------------------------------------------------
+// POST - app interna (APPEND/UPDATE/DELETE) + formulario publico
+// ---------------------------------------------------------------------------
 function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
@@ -85,16 +89,18 @@ function doPost(e) {
   }
 }
 
-// ── Helper JSONP ──────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Helper JSONP
+// ---------------------------------------------------------------------------
 function jsonp(callback, data) {
   return ContentService
     .createTextOutput(callback + '(' + JSON.stringify(data) + ')')
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 //  LEER TODAS LAS HOJAS
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 function getAllData() {
   var book = ss_();
   return {
@@ -121,11 +127,11 @@ function getAllData() {
   };
 }
 
-// Convierte una hoja en array de objetos — si la hoja no existe devuelve []
+// Convierte una hoja en array de objetos ([] si no existe)
 function sheetToJSON(book, sheetName) {
   var sheet = book.getSheetByName(sheetName);
   if (!sheet) {
-    Logger.log('AVISO: hoja no encontrada → ' + sheetName);
+    Logger.log('AVISO: hoja no encontrada -> ' + sheetName);
     return [];
   }
 
@@ -146,7 +152,6 @@ function sheetToJSON(book, sheetName) {
     headers.forEach(function(h, j) {
       var v = row[j];
       if (v instanceof Date) {
-        // Columnas de hora → serializar como HH:mm (no perder la hora)
         if (h.indexOf('HORA') !== -1) {
           obj[h] = Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
         } else {
@@ -161,9 +166,9 @@ function sheetToJSON(book, sheetName) {
   return rows;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  AÑADIR FILA (APPEND) — protegido con LockService para evitar IDs duplicados
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  APPEND - protegido con LockService para evitar IDs duplicados
+// ===========================================================================
 function appendRow(sheetName, rowObj) {
   var lock   = LockService.getScriptLock();
   var locked = false;
@@ -176,7 +181,7 @@ function appendRow(sheetName, rowObj) {
     if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
 
     var lastCol = sheet.getLastColumn();
-    if (lastCol < 1) return { ok: false, error: 'La hoja ' + sheetName + ' no tiene cabeceras' };
+    if (lastCol < 1) return { ok: false, error: 'Sin cabeceras: ' + sheetName };
 
     var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
       .map(function(h) { return String(h).trim(); });
@@ -187,7 +192,6 @@ function appendRow(sheetName, rowObj) {
       rowObj[idCol] = nextId_(sheet, sheetName, headers);
     }
 
-    // Proteccion extra: rechazar si el ID ya existe
     if (idCol && rowObj[idCol]) {
       var existingId = String(rowObj[idCol]);
       var lastRow2   = sheet.getLastRow();
@@ -211,16 +215,16 @@ function appendRow(sheetName, rowObj) {
     return { ok: true, id: rowObj[idCol] || '' };
 
   } catch (err) {
-    if (!locked) return { ok: false, error: 'Escritura simultanea. Vuelve a intentarlo.' };
+    if (!locked) return { ok: false, error: 'Escritura simultanea. Reintenta.' };
     return { ok: false, error: err.toString() };
   } finally {
-    if (locked) { try { lock.releaseLock(); } catch(_) {} }
+    if (locked) { try { lock.releaseLock(); } catch(e2) {} }
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  ACTUALIZAR FILA (UPDATE) — protegido con LockService
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  UPDATE - protegido con LockService
+// ===========================================================================
 function updateRow(sheetName, id, rowObj) {
   var lock   = LockService.getScriptLock();
   var locked = false;
@@ -252,26 +256,26 @@ function updateRow(sheetName, id, rowObj) {
         return { ok: true, id: id };
       }
     }
-    return { ok: false, error: 'Fila no encontrada con ID: ' + id };
+    return { ok: false, error: 'Fila no encontrada: ' + id };
 
   } catch (err) {
-    if (!locked) return { ok: false, error: 'Escritura simultanea. Vuelve a intentarlo.' };
+    if (!locked) return { ok: false, error: 'Escritura simultanea. Reintenta.' };
     return { ok: false, error: err.toString() };
   } finally {
-    if (locked) { try { lock.releaseLock(); } catch(_) {} }
+    if (locked) { try { lock.releaseLock(); } catch(e2) {} }
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  ELIMINAR FILA (DELETE)
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  DELETE
+// ===========================================================================
 function deleteRow(sheetName, id) {
   var book  = ss_();
   var sheet = book.getSheetByName(sheetName);
   if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { ok: false, error: 'Hoja vacía' };
+  if (lastRow < 2) return { ok: false, error: 'Hoja vacia' };
 
   var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
@@ -280,12 +284,12 @@ function deleteRow(sheetName, id) {
       return { ok: true };
     }
   }
-  return { ok: false, error: 'Fila no encontrada con ID: ' + id };
+  return { ok: false, error: 'Fila no encontrada: ' + id };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GENERACIÓN DE IDs AUTOMÁTICOS
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  GENERACION DE IDs AUTOMATICOS
+// ===========================================================================
 function nextId_(sheet, sheetName, headers) {
   var PREFIX_MAP = {
     'PREINSCRIPCIONES':       'PREINSC-',
@@ -323,20 +327,19 @@ function nextId_(sheet, sheetName, headers) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  NORMALIZACIÓN DE TEXTO
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  NORMALIZACION DE TEXTO (elimina tildes para comparar)
+// ===========================================================================
 function stripAccents_(str) {
   return String(str || '')
-    .toUpperCase()
-    .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I')
-    .replace(/Ó/g, 'O').replace(/Ú/g, 'U').replace(/Ü/g, 'U')
-    .replace(/Ñ/g, 'N').replace(/Ç/g, 'C');
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  PREINSCRIPCIÓN PÚBLICA (desde inscripcion.html)
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  PREINSCRIPCION PUBLICA (desde inscripcion.html)
+// ===========================================================================
 function nuevaPreinscripcion(data) {
   var book  = ss_();
   var sheet = book.getSheetByName('PREINSCRIPCIONES');
@@ -346,7 +349,7 @@ function nuevaPreinscripcion(data) {
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
     .map(function(h) { return String(h).trim(); });
 
-  // Acepta tanto claves en mayúsculas (manual/API) como minúsculas (formulario público)
+  // Acepta claves en mayusculas (manual/API) y minusculas (formulario web)
   var d = data;
   var nombreNormRaw = d.NOMBRE_ALUMNO   || d.nombre_alumno   || '';
   var emailRaw      = d.EMAIL_TUTOR     || d.email_tutor1    || d.email_tutor    || '';
@@ -361,7 +364,7 @@ function nuevaPreinscripcion(data) {
     return mismoNombre && mismoEmail;
   });
 
-  if (dup) return { ok: false, error: 'Ya existe una preinscripción para este alumno.' };
+  if (dup) return { ok: false, error: 'Ya existe una preinscripcion para este alumno.' };
 
   var id = nextId_(sheet, 'PREINSCRIPCIONES', headers);
 
@@ -373,9 +376,9 @@ function nuevaPreinscripcion(data) {
     FECHA_SOLICITUD:  Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
     NOMBRE_ALUMNO:    String(nombreNormRaw).toUpperCase().trim(),
     APELLIDOS_ALUMNO: String(d.APELLIDOS_ALUMNO || d.apellidos_alumno || '').toUpperCase().trim(),
-    FECHA_NAC:        d.FECHA_NAC  || d.fecha_nac  || '',
+    FECHA_NAC:        d.FECHA_NAC   || d.fecha_nac   || '',
     CURSO_ALUMNO:     d.CURSO_ALUMNO|| d.curso_alumno|| '',
-    CENTRO:           d.CENTRO     || d.centro     || 'ESCALERITAS',
+    CENTRO:           d.CENTRO      || d.centro      || 'ESCALERITAS',
     NOMBRE_TUTOR:     String(d.NOMBRE_TUTOR    || d.nombre_tutor1    || d.nombre_tutor    || '').toUpperCase().trim(),
     APELLIDOS_TUTOR:  String(d.APELLIDOS_TUTOR || d.apellidos_tutor1 || d.apellidos_tutor || '').toUpperCase().trim(),
     RELACION_TUTOR:   d.RELACION_TUTOR || d.relacion_tutor1 || '',
@@ -384,8 +387,8 @@ function nuevaPreinscripcion(data) {
     'TELÉFONO_TUTOR': d.TELEFONO_TUTOR || d['TELÉFONO_TUTOR'] || d.telefono_tutor1 || '',
     ACTIVIDAD_INTERES:actividadInteres,
     DIAS_DISPONIBLES: d.DIAS_DISPONIBLES || d.dias_disponibles || '',
-    LINEA:            d.LINEA || (stripAccents_(actividadInteres).includes('FUTBOL') ? 'FUTBOL' : 'EXTRAESCOLARES'),
-    AUTORIZA_IMAGEN:  d.AUTORIZA_IMAGEN  || d.autoriza_imagen  || 'NO',
+    LINEA:            d.LINEA || (stripAccents_(actividadInteres).indexOf('FUTBOL') !== -1 ? 'FUTBOL' : 'EXTRAESCOLARES'),
+    AUTORIZA_IMAGEN:  d.AUTORIZA_IMAGEN || d.autoriza_imagen || 'NO',
     SALUD:            d.SALUD || d.salud || '',
     ESTADO:           'RECIBIDA',
     NOTAS:            d.NOTAS || d.observaciones || d.notas || '',
@@ -400,9 +403,9 @@ function nuevaPreinscripcion(data) {
   return { ok: true, id: id };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 //  ALERTAS DE IMPAGOS (ejecutar manualmente o con trigger semanal)
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 function sendAlertsImpagos() {
   var book     = ss_();
   var pagos    = sheetToJSON(book, 'PAGOS');
@@ -418,12 +421,12 @@ function sendAlertsImpagos() {
       if (cliente && cliente.EMAIL) {
         MailApp.sendEmail({
           to:      cliente.EMAIL,
-          subject: 'SM Academia — Recordatorio de pago pendiente',
+          subject: 'SM Academia - Recordatorio de pago pendiente',
           body:    'Estimado/a ' + cliente.NOMBRE + ',\n\n' +
                    'Tiene un pago pendiente:\n' +
-                   '  Concepto: ' + (p.CONCEPTO || '—') + '\n' +
-                   '  Mes:      ' + (p.MES || '—') + '\n' +
-                   '  Importe:  ' + (p.TOTAL_FACTURADO || '—') + ' €\n\n' +
+                   '  Concepto: ' + (p.CONCEPTO || '-') + '\n' +
+                   '  Mes:      ' + (p.MES || '-') + '\n' +
+                   '  Importe:  ' + (p.TOTAL_FACTURADO || '-') + ' EUR\n\n' +
                    'Contacte con nosotros para regularizarlo.\n\nSM Academia',
         });
         enviados++;
@@ -433,9 +436,9 @@ function sendAlertsImpagos() {
   return { ok: true, alertas: enviados };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FUNCIÓN DE DIAGNÓSTICO — ejecutar desde el editor para ver errores
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
+//  DIAGNOSTICO - ejecutar desde el editor para ver errores
+// ===========================================================================
 function diagnostico() {
   try {
     var book   = ss_();
@@ -452,9 +455,9 @@ function diagnostico() {
 
     var faltantes = esperadas.filter(function(n) { return sheets.indexOf(n) === -1; });
     if (faltantes.length) {
-      Logger.log('⚠ HOJAS FALTANTES: ' + JSON.stringify(faltantes));
+      Logger.log('HOJAS FALTANTES: ' + JSON.stringify(faltantes));
     } else {
-      Logger.log('✓ Todas las hojas encontradas');
+      Logger.log('OK: Todas las hojas encontradas');
     }
 
     var result = getAllData();
