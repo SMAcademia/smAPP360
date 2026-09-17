@@ -56,31 +56,23 @@ function doGet(e) {
   }
 }
 
-// ── Peticiones POST (app interna + formulario público inscripcion.html) ──────
-// Enruta por body.action. Sin action (o action='NUEVA_PREINSCRIPCION') →
-// alta pública de preinscripción (compatibilidad con inscripcion.html).
+// ── Peticiones POST (app interna + formulario publico inscripcion.html) ──────
 function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
-    var action = body.action || '';
+    var action = body.action || 'NUEVA_PREINSCRIPCION';
     var result;
 
-    switch (action) {
-      case 'APPEND':
-        result = appendRow(body.sheet, body.row || {});
-        break;
-      case 'UPDATE':
-        result = updateRow(body.sheet, body.id, body.row || {});
-        break;
-      case 'DELETE':
-        result = deleteRow(body.sheet, body.id);
-        break;
-      case 'NUEVA_PREINSCRIPCION':
-      case '':
-        result = nuevaPreinscripcion(body);
-        break;
-      default:
-        result = { ok: false, error: 'Accion desconocida: ' + action };
+    if (action === 'APPEND') {
+      result = appendRow(body.sheet, body.row || {});
+    } else if (action === 'UPDATE') {
+      result = updateRow(body.sheet, body.id, body.row || {});
+    } else if (action === 'DELETE') {
+      result = deleteRow(body.sheet, body.id);
+    } else if (action === 'NUEVA_PREINSCRIPCION') {
+      result = nuevaPreinscripcion(body);
+    } else {
+      result = { ok: false, error: 'Accion desconocida: ' + action };
     }
 
     return ContentService
@@ -170,17 +162,15 @@ function sheetToJSON(book, sheetName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  AÑADIR FILA (APPEND)  — protegido con LockService para evitar IDs duplicados
+//  AÑADIR FILA (APPEND) — protegido con LockService para evitar IDs duplicados
 // ═══════════════════════════════════════════════════════════════════════════
 function appendRow(sheetName, rowObj) {
-  var lock = LockService.getScriptLock();
+  var lock   = LockService.getScriptLock();
+  var locked = false;
   try {
     lock.waitLock(12000);
-  } catch (e) {
-    return { ok: false, error: 'Escritura simultanéa detectada. Vuelve a intentarlo.' };
-  }
+    locked = true;
 
-  try {
     var book  = ss_();
     var sheet = book.getSheetByName(sheetName);
     if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
@@ -193,17 +183,16 @@ function appendRow(sheetName, rowObj) {
 
     var idCol = headers[0];
 
-    // Generar ID si falta
     if (idCol && !rowObj[idCol]) {
       rowObj[idCol] = nextId_(sheet, sheetName, headers);
     }
 
-    // Comprobar que el ID no existe ya (doble protección)
+    // Proteccion extra: rechazar si el ID ya existe
     if (idCol && rowObj[idCol]) {
       var existingId = String(rowObj[idCol]);
-      var lastRow    = sheet.getLastRow();
-      if (lastRow > 1) {
-        var existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      var lastRow2   = sheet.getLastRow();
+      if (lastRow2 > 1) {
+        var existingIds = sheet.getRange(2, 1, lastRow2 - 1, 1).getValues();
         for (var k = 0; k < existingIds.length; k++) {
           if (String(existingIds[k][0]) === existingId) {
             return { ok: false, error: 'ID duplicado: ' + existingId, duplicate: true };
@@ -221,30 +210,31 @@ function appendRow(sheetName, rowObj) {
     sheet.appendRow(newRow);
     return { ok: true, id: rowObj[idCol] || '' };
 
+  } catch (err) {
+    if (!locked) return { ok: false, error: 'Escritura simultanea. Vuelve a intentarlo.' };
+    return { ok: false, error: err.toString() };
   } finally {
-    lock.releaseLock();
+    if (locked) { try { lock.releaseLock(); } catch(_) {} }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  ACTUALIZAR FILA (UPDATE)  — protegido con LockService
+//  ACTUALIZAR FILA (UPDATE) — protegido con LockService
 // ═══════════════════════════════════════════════════════════════════════════
 function updateRow(sheetName, id, rowObj) {
-  var lock = LockService.getScriptLock();
+  var lock   = LockService.getScriptLock();
+  var locked = false;
   try {
     lock.waitLock(12000);
-  } catch (e) {
-    return { ok: false, error: 'Escritura simultanéa detectada. Vuelve a intentarlo.' };
-  }
+    locked = true;
 
-  try {
     var book  = ss_();
     var sheet = book.getSheetByName(sheetName);
     if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
 
     var lastRow = sheet.getLastRow();
     var lastCol = sheet.getLastColumn();
-    if (lastRow < 2) return { ok: false, error: 'Hoja vacía' };
+    if (lastRow < 2) return { ok: false, error: 'Hoja vacia' };
 
     var data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     var headers = data[0].map(function(h) { return String(h).trim(); });
@@ -264,8 +254,11 @@ function updateRow(sheetName, id, rowObj) {
     }
     return { ok: false, error: 'Fila no encontrada con ID: ' + id };
 
+  } catch (err) {
+    if (!locked) return { ok: false, error: 'Escritura simultanea. Vuelve a intentarlo.' };
+    return { ok: false, error: err.toString() };
   } finally {
-    lock.releaseLock();
+    if (locked) { try { lock.releaseLock(); } catch(_) {} }
   }
 }
 
