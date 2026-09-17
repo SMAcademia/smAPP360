@@ -1013,12 +1013,17 @@ function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
 function esBonoUsos(nombre){ const n=sinTildes(nombre||''); return n.includes('BONO') && n.includes('USO') && !n.includes('RECOGIDA'); }
 function bonoCapacidad(nombre){ const m=sinTildes(nombre||'').match(/(\d+)/); return m?parseInt(m[1]):10; }
 function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:(\d+)/i); return m?parseInt(m[1]):0; }
-function bonoFechas(insc){ const m=String(insc.OBSERVACIONES||'').match(/FECHAS:([^;]+)/i); return m?m[1].trim().split(',').map(d=>d.trim()).filter(Boolean):[]; }
-function bonoObsActualizada(insc, usoNuevo, fecha){
+// Entradas en FECHAS: "YYYY-MM-DD" (manual) o "YYYY-MM-DD:actId" (auto, para idempotencia por sesión)
+function bonoFechasRaw(insc){ const m=String(insc.OBSERVACIONES||'').match(/FECHAS:([^;]+)/i); return m?m[1].trim().split(',').map(d=>d.trim()).filter(Boolean):[]; }
+function bonoFechas(insc){ return bonoFechasRaw(insc).map(e=>e.split(':')[0]); } // solo la parte de fecha para mostrar
+function bonoObsActualizada(insc, usoNuevo, fecha, actId){
   let obs = String(insc.OBSERVACIONES||'');
-  const fechas = bonoFechas(insc);
-  if (fecha && !fechas.includes(fecha)) fechas.push(fecha);
-  const fechaStr = fechas.length ? '; FECHAS:'+fechas.join(',') : '';
+  const raw = bonoFechasRaw(insc);
+  if (fecha) {
+    const entry = actId ? fecha+':'+actId : fecha;
+    raw.push(entry); // permitir duplicados de fecha (usos distintos el mismo día)
+  }
+  const fechaStr = raw.length ? '; FECHAS:'+raw.join(',') : '';
   const restoObs = obs.replace(/USOS:\d+;?\s*/i,'').replace(/FECHAS:[^;]+;?\s*/i,'').trim();
   return 'USOS:'+usoNuevo+fechaStr+(restoObs?'; '+restoObs:'');
 }
@@ -6301,10 +6306,10 @@ function guardarAsistenciaExtra() {
         avisos.push(`Bono agotado — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`);
         continue;
       }
-      // Protección anti-doble descuento: si la fecha ya está en el historial, saltar
-      const fechasExist = bonoFechas(insc);
-      if (fechasExist.includes(fecha)) continue;
-      const nuevaObs = bonoObsActualizada(insc, usos + 1, fecha);
+      // Idempotencia por sesión: misma actividad + misma fecha no descuenta dos veces
+      // (permite múltiples usos distintos el mismo día, ej. recogida temprana + tardía)
+      if (bonoFechasRaw(insc).includes(fecha+':'+actId)) continue;
+      const nuevaObs = bonoObsActualizada(insc, usos + 1, fecha, actId);
       try {
         await writeToSheet('INSCRIPCIONES', {OBSERVACIONES:nuevaObs}, insc.ID_INSCRIPCION||insc.ID);
         insc.OBSERVACIONES = nuevaObs;
