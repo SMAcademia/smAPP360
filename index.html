@@ -310,9 +310,6 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('comunicacion')" data-page="comunicacion">
           <span class="nav-icon">📨</span><span>Comunicación</span>
         </div>
-        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
-          <span class="nav-icon">📅</span><span>Cuadrante</span>
-        </div>
       </div>
 
       <div class="nav-section" id="nav-futbol">
@@ -332,6 +329,9 @@ tr:hover td{background:#f8f8f8}
         </div>
         <div class="nav-item" onclick="navigate('asistencias-extra')" data-page="asistencias-extra">
           <span class="nav-icon">✅</span><span>Asistencia</span>
+        </div>
+        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
+          <span class="nav-icon">📅</span><span>Cuadrante</span>
         </div>
       </div>
 
@@ -794,8 +794,6 @@ function applyRoleVisibility() {
       });
     const elAsistExt = document.querySelector('[data-page="asistencias-extra"]');
     if (elAsistExt) elAsistExt.style.display = 'none';
-    const elCq = document.querySelector('[data-page="cuadrante"]');
-    if (elCq) elCq.style.display = 'none';
   }
 }
 
@@ -6383,29 +6381,69 @@ function setEval(btn) {
 function cuadrante() {
   'use strict';
 
+  // Solo editable para admin y coordinación
+  const canEdit = ['ADMIN','COORDINADOR'].includes(currentUser?.rol);
+
   const DIAS   = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
   const DIA_ID = ['L','M','X','J','V'];
   const FRANJAS = [
-    { id: 'f1', label: 'Madrugadora',  time: '7:00 – 8:30'   },
-    { id: 'f2', label: 'Mediodía',     time: '13:30 – 14:30' },
-    { id: 'f3', label: 'Tarde 1',      time: '15:15 – 16:15' },
-    { id: 'f4', label: 'Tarde 2',      time: '16:15 – 16:45' },
+    { id: 'f1', label: 'Madrugadora', time: '7:00 – 8:30'   },
+    { id: 'f2', label: 'Mediodía',    time: '13:30 – 14:30' },
+    { id: 'f3', label: 'Tarde 1',     time: '15:15 – 16:15' },
+    { id: 'f4', label: 'Tarde 2',     time: '16:15 – 16:45' },
   ];
 
-  // Paleta de colores para chips (uno por actividad, cíclico)
+  // Actividades a excluir del cuadrante (no tienen sentido en horario semanal)
+  const EXCLUIR = ['DIA SUELTO','BONO RECOGIDA','CUOTA SOCIO','BONO 10 USOS'];
+
+  // Solo extraescolares, sin productos de bono/suelto
+  const acts = (DB.actividades || []).filter(a => {
+    if (String(a.ACTIVO || '').toUpperCase() === 'NO') return false;
+    const nb = sinTildes(a.NOMBRE || '');
+    if (EXCLUIR.some(ex => nb.includes(sinTildes(ex)))) return false;
+    // Filtrar solo extraescolares si tiene campo LINEA
+    const linea = String(a.LINEA || '');
+    if (linea && esFutbol(linea)) return false;
+    return true;
+  });
+
+  // Colores por grupo de actividad (inglés G1 e inglés G2 → mismo color)
   const PALETTE = [
-    '#2e7d32','#1565c0','#6a1b9a','#ad1457','#e65100',
-    '#00695c','#4527a0','#558b2f','#0277bd','#bf360c',
+    '#1565c0','#6a1b9a','#ad1457','#2e7d32','#e65100',
+    '#00695c','#4527a0','#0277bd','#bf360c','#558b2f',
+    '#37474f','#880e4f','#4e342e','#1a237e','#33691e',
   ];
 
-  // Cargar estado guardado
+  function grupoKey(nombre) {
+    // Quita sufijos de grupo: G1, G2, Grupo 1, Benjamín, Alevín, 1, 2...
+    return sinTildes(nombre)
+      .replace(/\s+(G\d+|GRUPO\s*\d+|BENJAMIN|ALEVIN|INFANTIL|JUNIOR|SENIOR|AVANZADO|INICIACION|BASICO|\d+)$/, '')
+      .trim();
+  }
+
+  const grupoColorMap = {};
+  let _ci = 0;
+  acts.forEach(a => {
+    const gk = grupoKey(a.NOMBRE || '');
+    if (!(gk in grupoColorMap)) grupoColorMap[gk] = PALETTE[_ci++ % PALETTE.length];
+  });
+
+  function actColor(nombre) {
+    return grupoColorMap[grupoKey(nombre)] || '#444';
+  }
+
+  // El ID real del campo es 'ID', no 'ID_ACTIVIDAD'
+  function actById(id) {
+    return acts.find(a => String(a.ID) === String(id));
+  }
+
+  function chipStyleByNombre(nombre) {
+    const c = actColor(nombre);
+    return `background:${c}1a;border:1.5px solid ${c}55;color:${c}`;
+  }
+
   let estado = {};
   try { estado = JSON.parse(localStorage.getItem('cq_estado_v1') || '{}'); } catch(e) {}
-
-  // Asignar colores estables por ID de actividad
-  const acts = (DB.actividades || []).filter(a => a.ACTIVO !== 'NO');
-  const colorMap = {};
-  acts.forEach((a, i) => { colorMap[a.ID_ACTIVIDAD] = PALETTE[i % PALETTE.length]; });
 
   function save() {
     try { localStorage.setItem('cq_estado_v1', JSON.stringify(estado)); } catch(e) {}
@@ -6413,41 +6451,45 @@ function cuadrante() {
 
   function cellKey(diaId, franjaId) { return diaId + '_' + franjaId; }
 
-  function chipStyle(actId) {
-    const c = colorMap[actId] || '#555';
-    return `background:${c}18;border:1.5px solid ${c}50;color:${c}`;
-  }
-
   function renderPage() {
-    // Banco de actividades
-    const bankChips = acts.map(a =>
-      `<div class="cq-chip" draggable="true" data-act-id="${esc(a.ID_ACTIVIDAD)}"
-        style="${chipStyle(a.ID_ACTIVIDAD)}"
-        ondragstart="window._cqDragStart(event,'bank','${esc(a.ID_ACTIVIDAD)}')"
-        title="${esc(a.NOMBRE)}">${esc(a.NOMBRE)}</div>`
-    ).join('');
+    const roLabel = canEdit ? '' :
+      `<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:8px">Solo lectura</span>`;
 
-    // Cabecera de tabla
+    const bankChips = acts.map(a => {
+      const id  = String(a.ID || '');
+      const sty = chipStyleByNombre(a.NOMBRE || '');
+      return canEdit
+        ? `<div class="cq-chip" draggable="true"
+            style="${sty}"
+            ondragstart="window._cqDragStart(event,'bank',${JSON.stringify(id)})"
+            title="${esc(a.NOMBRE)}">${esc(a.NOMBRE)}</div>`
+        : `<div class="cq-chip" style="${sty};cursor:default;opacity:.75">${esc(a.NOMBRE)}</div>`;
+    }).join('');
+
     const thDias = DIAS.map(d => `<th>${d}</th>`).join('');
 
-    // Filas de la tabla
     const filas = FRANJAS.map(f => {
-      const celdas = DIA_ID.map(d => {
+      const celdas = DIA_ID.map((d, di) => {
         const key   = cellKey(d, f.id);
-        const items = (estado[key] || []);
+        const items = estado[key] || [];
         const placed = items.map((actId, idx) => {
-          const act = acts.find(a => a.ID_ACTIVIDAD === actId);
-          const nombre = act ? act.NOMBRE : actId;
-          return `<div class="cq-cell-chip" draggable="true" style="${chipStyle(actId)}"
-            ondragstart="window._cqDragStart(event,'cell','${esc(actId)}','${esc(key)}',${idx})"
-            >${esc(nombre)}<span class="cq-chip-rm"
-              onclick="window._cqRemove('${esc(key)}',${idx});event.stopPropagation()">×</span></div>`;
+          const act    = actById(actId);
+          const nombre = act ? (act.NOMBRE || actId) : actId;
+          const sty    = chipStyleByNombre(nombre);
+          return canEdit
+            ? `<div class="cq-cell-chip" draggable="true" style="${sty}"
+                ondragstart="window._cqDragStart(event,'cell',${JSON.stringify(actId)},${JSON.stringify(key)},${idx})"
+                >${esc(nombre)}<span class="cq-chip-rm"
+                  onclick="window._cqRemove(${JSON.stringify(key)},${idx});event.stopPropagation()">×</span></div>`
+            : `<div class="cq-cell-chip" style="${sty};cursor:default">${esc(nombre)}</div>`;
         }).join('');
-        return `<td><div class="cq-cell" id="cq-${esc(key)}"
-          ondragover="event.preventDefault();this.classList.add('drag-over')"
-          ondragleave="this.classList.remove('drag-over')"
-          ondrop="window._cqDrop(event,'${esc(d)}','${esc(f.id)}');this.classList.remove('drag-over')"
-          >${placed}</div></td>`;
+
+        const dropAttrs = canEdit
+          ? `ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="window._cqDrop(event,${JSON.stringify(d)},${JSON.stringify(f.id)});this.classList.remove('drag-over')"`
+          : '';
+        return `<td><div class="cq-cell" ${dropAttrs}>${placed}</div></td>`;
       }).join('');
 
       return `<tr>
@@ -6458,8 +6500,10 @@ function cuadrante() {
 
     render(`<div class="cq-wrap">
       <div class="cq-bank">
-        <div class="cq-bank-title">Banco de actividades — arrastra al cuadrante</div>
-        <div class="cq-bank-chips">${bankChips}</div>
+        <div class="cq-bank-title" style="display:flex;align-items:center">
+          <span>SM Extraescolares — ${canEdit ? 'arrastra al cuadrante' : 'cuadrante semanal'}</span>${roLabel}
+        </div>
+        <div class="cq-bank-chips">${bankChips || '<span style="color:var(--text3);font-size:12px">Sin actividades extraescolares</span>'}</div>
       </div>
       <div class="cq-table-wrap">
         <table class="cq-table">
@@ -6467,22 +6511,19 @@ function cuadrante() {
           <tbody>${filas}</tbody>
         </table>
       </div>
-      <div class="cq-actions">
+      ${canEdit ? `<div class="cq-actions">
         <button class="btn btn-secondary" onclick="window._cqReset()">Limpiar cuadrante</button>
         <button class="btn btn-secondary" onclick="window._cqExport()">Exportar texto</button>
-      </div>
+      </div>` : ''}
     </div>`);
   }
 
-  // Drag source tracking
   let _dragSrc = null;
 
   window._cqDragStart = function(e, origin, actId, fromKey, fromIdx) {
     _dragSrc = { origin, actId, fromKey, fromIdx };
-    e.dataTransfer.effectAllowed = 'copy';
-    e.dataTransfer.setData('text/plain', actId);
-    if (e.currentTarget) e.currentTarget.classList.add('dragging');
-    setTimeout(() => { if (e.currentTarget) e.currentTarget.classList.remove('dragging'); }, 0);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(actId));
   };
 
   window._cqDrop = function(e, diaId, franjaId) {
@@ -6490,16 +6531,13 @@ function cuadrante() {
     if (!_dragSrc) return;
     const key = cellKey(diaId, franjaId);
     if (!estado[key]) estado[key] = [];
-
-    // Si viene de otra celda: quitar de origen primero
     if (_dragSrc.origin === 'cell' && _dragSrc.fromKey) {
       const src = estado[_dragSrc.fromKey] || [];
       src.splice(_dragSrc.fromIdx, 1);
       if (!src.length) delete estado[_dragSrc.fromKey];
       else estado[_dragSrc.fromKey] = src;
     }
-
-    estado[key].push(_dragSrc.actId);
+    estado[key].push(String(_dragSrc.actId));
     save();
     _dragSrc = null;
     renderPage();
@@ -6521,24 +6559,19 @@ function cuadrante() {
   };
 
   window._cqExport = function() {
-    const lines = ['CUADRANTE SEMANAL SM ACADEMIA', ''];
+    const lines = ['CUADRANTE SEMANAL — SM EXTRAESCOLARES', ''];
     FRANJAS.forEach(f => {
-      lines.push(`${f.label} (${f.time})`);
+      lines.push(f.label + ' (' + f.time + ')');
       DIA_ID.forEach((d, i) => {
-        const key   = cellKey(d, f.id);
-        const items = (estado[key] || []);
+        const items = estado[cellKey(d, f.id)] || [];
         if (items.length) {
-          const nombres = items.map(id => {
-            const a = acts.find(x => x.ID_ACTIVIDAD === id);
-            return a ? a.NOMBRE : id;
-          });
-          lines.push(`  ${DIAS[i]}: ${nombres.join(', ')}`);
+          const nombres = items.map(id => { const a = actById(id); return a ? a.NOMBRE : id; });
+          lines.push('  ' + DIAS[i] + ': ' + nombres.join(', '));
         }
       });
       lines.push('');
     });
-    const txt = lines.join('\n');
-    const blob = new Blob([txt], { type: 'text/plain' });
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = 'cuadrante_sm.txt'; a.click();
