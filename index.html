@@ -310,6 +310,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('comunicacion')" data-page="comunicacion">
           <span class="nav-icon">📨</span><span>Comunicación</span>
         </div>
+        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
+          <span class="nav-icon">📅</span><span>Cuadrante</span>
+        </div>
       </div>
 
       <div class="nav-section" id="nav-futbol">
@@ -329,9 +332,6 @@ tr:hover td{background:#f8f8f8}
         </div>
         <div class="nav-item" onclick="navigate('asistencias-extra')" data-page="asistencias-extra">
           <span class="nav-icon">✅</span><span>Asistencia</span>
-        </div>
-        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
-          <span class="nav-icon">🗓️</span><span>Cuadrante</span>
         </div>
       </div>
 
@@ -770,7 +770,7 @@ function applyRoleVisibility() {
 
   // Para FAMILIA: dentro de nav-general ocultar páginas de gestión
   if (rol === 'FAMILIA') {
-    ['preinscripciones','clientes','alumnos','actividades','facturas','inscripciones','pagos']
+    ['preinscripciones','clientes','alumnos','actividades','facturas','inscripciones','pagos','cuadrante','comunicacion','analisis-ingresos']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
