@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-//  SM ACADEMIA — Google Apps Script v2.3
+//  SM ACADEMIA — Google Apps Script v2.4
 //  Sheets ID: 1oHJIUoyR3V5N0iweWnMagZic_8YkWtVV6CsshXloX4k
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -294,34 +294,50 @@ function nuevaPreinscripcion(data) {
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
     .map(function(h) { return String(h).trim(); });
 
-  var existing   = sheetToJSON(book, 'PREINSCRIPCIONES');
-  var nombreNorm = stripAccents_(data.NOMBRE_ALUMNO);
-  var emailNorm  = String(data.EMAIL_TUTOR || '').toLowerCase().trim();
+  // Acepta tanto claves en mayúsculas (manual/API) como minúsculas (formulario público)
+  var d = data;
+  var nombreNormRaw = d.NOMBRE_ALUMNO   || d.nombre_alumno   || '';
+  var emailRaw      = d.EMAIL_TUTOR     || d.email_tutor1    || d.email_tutor    || '';
+  var nombreNorm    = stripAccents_(nombreNormRaw);
+  var emailNorm     = String(emailRaw).toLowerCase().trim();
 
+  var existing = sheetToJSON(book, 'PREINSCRIPCIONES');
   var dup = existing.some(function(r) {
-    return stripAccents_(r.NOMBRE_ALUMNO)           === nombreNorm &&
-           String(r.EMAIL_TUTOR || '').toLowerCase() === emailNorm &&
-           String(r.ESTADO || '').toUpperCase()      !== 'RECHAZADA';
+    if (String(r.ESTADO || '').toUpperCase() === 'RECHAZADA') return false;
+    var mismoNombre = nombreNorm && stripAccents_(r.NOMBRE_ALUMNO) === nombreNorm;
+    var mismoEmail  = emailNorm  && String(r.EMAIL_TUTOR || '').toLowerCase() === emailNorm;
+    return mismoNombre && mismoEmail;
   });
 
   if (dup) return { ok: false, error: 'Ya existe una preinscripción para este alumno.' };
 
   var id = nextId_(sheet, 'PREINSCRIPCIONES', headers);
 
+  var actividadInteres = d.ACTIVIDAD_INTERES || d.actividad_interes ||
+    (Array.isArray(d.actividades) ? d.actividades.join(', ') : (d.actividades || ''));
+
   var rowObj = {
     ID:               id,
     FECHA_SOLICITUD:  Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
-    NOMBRE_ALUMNO:    String(data.NOMBRE_ALUMNO   || '').toUpperCase().trim(),
-    APELLIDOS_ALUMNO: String(data.APELLIDOS_ALUMNO|| '').toUpperCase().trim(),
-    FECHA_NAC:        data.FECHA_NAC              || '',
-    NOMBRE_TUTOR:     String(data.NOMBRE_TUTOR    || '').toUpperCase().trim(),
-    APELLIDOS_TUTOR:  String(data.APELLIDOS_TUTOR || '').toUpperCase().trim(),
+    NOMBRE_ALUMNO:    String(nombreNormRaw).toUpperCase().trim(),
+    APELLIDOS_ALUMNO: String(d.APELLIDOS_ALUMNO || d.apellidos_alumno || '').toUpperCase().trim(),
+    FECHA_NAC:        d.FECHA_NAC  || d.fecha_nac  || '',
+    CURSO_ALUMNO:     d.CURSO_ALUMNO|| d.curso_alumno|| '',
+    CENTRO:           d.CENTRO     || d.centro     || 'ESCALERITAS',
+    NOMBRE_TUTOR:     String(d.NOMBRE_TUTOR    || d.nombre_tutor1    || d.nombre_tutor    || '').toUpperCase().trim(),
+    APELLIDOS_TUTOR:  String(d.APELLIDOS_TUTOR || d.apellidos_tutor1 || d.apellidos_tutor || '').toUpperCase().trim(),
+    RELACION_TUTOR:   d.RELACION_TUTOR || d.relacion_tutor1 || '',
+    NIF_TUTOR:        d.NIF_TUTOR      || d.nif_tutor1      || '',
     EMAIL_TUTOR:      emailNorm,
-    'TELÉFONO_TUTOR': data.TELEFONO_TUTOR || data['TELÉFONO_TUTOR'] || '',
-    ACTIVIDAD_INTERES:data.ACTIVIDAD_INTERES      || '',
-    LINEA:            data.LINEA                  || 'EXTRAESCOLARES',
+    'TELÉFONO_TUTOR': d.TELEFONO_TUTOR || d['TELÉFONO_TUTOR'] || d.telefono_tutor1 || '',
+    ACTIVIDAD_INTERES:actividadInteres,
+    DIAS_DISPONIBLES: d.DIAS_DISPONIBLES || d.dias_disponibles || '',
+    LINEA:            d.LINEA || (actividadInteres.toUpperCase().includes('FUTBOL') ? 'FUTBOL' : 'EXTRAESCOLARES'),
+    AUTORIZA_IMAGEN:  d.AUTORIZA_IMAGEN  || d.autoriza_imagen  || 'NO',
+    SALUD:            d.SALUD || d.salud || '',
     ESTADO:           'RECIBIDA',
-    NOTAS:            data.NOTAS                  || '',
+    NOTAS:            d.NOTAS || d.observaciones || d.notas || '',
+    CANAL:            d.CANAL || (d.nombre_alumno ? 'WEB' : 'MANUAL'),
   };
 
   var newRow = headers.map(function(h) {

@@ -1003,9 +1003,9 @@ function badgeActivo(v) {
 
 function badgeEstado(v) {
   const s = String(v||'').toUpperCase();
-  if (s === 'ACTIVA' || s === 'PAGADO' || s === 'PAGADA') return `<span class="badge badge-green">${esc(v)}</span>`;
+  if (s === 'ACTIVA' || s === 'PAGADO' || s === 'PAGADA' || s === 'CONFIRMADA') return `<span class="badge badge-green">${esc(v)}</span>`;
   if (s === 'BAJA'   || s === 'RECHAZADA')                 return `<span class="badge badge-red">${esc(v)}</span>`;
-  if (s === 'PENDIENTE' || s === 'PARCIAL')                 return `<span class="badge badge-amber">${esc(v)}</span>`;
+  if (s === 'PENDIENTE' || s === 'PARCIAL' || s === 'RECIBIDA') return `<span class="badge badge-amber">${esc(v)}</span>`;
   return `<span class="badge badge-gray">${esc(v)}</span>`;
 }
 
@@ -1631,8 +1631,9 @@ function guardarActividad(id) {
 //  MÓDULO: PREINSCRIPCIONES
 // ══════════════════════════════════════════════════════════════════════════
 function preinscripciones() {
+  document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva manual', () => modalNuevaPreinscripcion(), 'btn-secondary');
-  let filtro = 'RECIBIDA';
+  let filtro = window._preInscFiltro || 'RECIBIDA';
   const render_ = () => {
     const lista = DB.preinscripciones.filter(p =>
       filtro === 'TODAS' || String(p.ESTADO||'RECIBIDA').toUpperCase() === filtro
@@ -1661,12 +1662,11 @@ function preinscripciones() {
       <div class="card" style="padding:14px 20px">
         <div class="table-toolbar">
           <input class="search-input" id="q-pre" placeholder="Buscar…" oninput="filterTable('q-pre','tbl-pre')">
-          <select id="filtro-pre" onchange="document.getElementById('filtro-pre').dataset.v=this.value;preinscripciones()"
-            style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
+          <select id="filtro-pre" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
             <option value="RECIBIDA" ${filtro==='RECIBIDA'?'selected':''}>Nuevas</option>
             <option value="CONFIRMADA" ${filtro==='CONFIRMADA'?'selected':''}>Confirmadas</option>
             <option value="RECHAZADA" ${filtro==='RECHAZADA'?'selected':''}>Rechazadas</option>
-            <option value="TODAS">Todas</option>
+            <option value="TODAS" ${filtro==='TODAS'?'selected':''}>Todas</option>
           </select>
           <span class="text-muted">${lista.length} registros</span>
         </div>
@@ -1680,25 +1680,37 @@ function preinscripciones() {
 
     // reaplica filtro tras render
     const sel = document.getElementById('filtro-pre');
-    if (sel) sel.onchange = () => { filtro = sel.value; render_(); };
+    if (sel) {
+      sel.value = filtro;
+      sel.onchange = () => { filtro = sel.value; window._preInscFiltro = filtro; render_(); };
+    }
   };
   render_();
 }
 
 function modalNuevaPreinscripcion() {
   const actOpts = DB.actividades.map(a=>`<option value="${esc(a.NOMBRE||a.ID)}">${esc(a.NOMBRE||a.ID)}</option>`).join('');
+  const cursoOpts = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE']
+    .map(c=>`<option value="${c}">${c}</option>`).join('');
   openModal('Nueva preinscripción manual', `
     <p style="font-size:12px;color:var(--text3);margin-bottom:16px">Registra una preinscripción recibida por correo, teléfono u otro canal.</p>
     <div class="form-grid">
       <div class="field"><label>Nombre alumno <span class="req">*</span></label><input id="pre-nom" placeholder="Nombre"></div>
       <div class="field"><label>Apellidos alumno</label><input id="pre-ape" placeholder="Apellidos"></div>
       <div class="field"><label>Fecha nac. alumno</label><input type="date" id="pre-fnac"></div>
+      <div class="field"><label>Curso escolar</label>
+        <select id="pre-curso"><option value="">— Seleccionar —</option>${cursoOpts}</select></div>
       <div class="field"><label>Nombre tutor <span class="req">*</span></label><input id="pre-tnom" placeholder="Nombre tutor"></div>
       <div class="field"><label>Apellidos tutor</label><input id="pre-tape" placeholder="Apellidos tutor"></div>
       <div class="field"><label>Email tutor</label><input type="email" id="pre-email" placeholder="email@ejemplo.com"></div>
       <div class="field"><label>Teléfono tutor</label><input id="pre-tel" placeholder="600 000 000"></div>
       <div class="field"><label>Actividad de interés</label>
         <select id="pre-act"><option value="">— Seleccionar —</option>${actOpts}</select></div>
+      <div class="field"><label>Línea</label>
+        <select id="pre-linea">
+          <option value="EXTRAESCOLARES">Extraescolares</option>
+          <option value="FUTBOL">SM Fútbol</option>
+        </select></div>
       <div class="field" style="grid-column:span 2"><label>Observaciones / notas del correo</label>
         <textarea id="pre-notas" style="height:70px" placeholder="Pega aquí el contenido del correo o añade notas…"></textarea></div>
     </div>`,
@@ -1712,14 +1724,16 @@ function guardarPreinscManual() {
   if (!nom || !tnom) { showToast('Nombre del alumno y del tutor son obligatorios','error'); return; }
   const row = {
     FECHA_SOLICITUD:   new Date().toISOString().slice(0,10),
-    NOMBRE_ALUMNO:     nom,
-    APELLIDOS_ALUMNO:  document.getElementById('pre-ape')?.value.trim()||'',
+    NOMBRE_ALUMNO:     nom.toUpperCase(),
+    APELLIDOS_ALUMNO:  (document.getElementById('pre-ape')?.value.trim()||'').toUpperCase(),
     FECHA_NAC:         document.getElementById('pre-fnac')?.value||'',
-    NOMBRE_TUTOR:      tnom,
-    APELLIDOS_TUTOR:   document.getElementById('pre-tape')?.value.trim()||'',
-    EMAIL_TUTOR:       document.getElementById('pre-email')?.value.trim()||'',
+    CURSO_ALUMNO:      document.getElementById('pre-curso')?.value||'',
+    NOMBRE_TUTOR:      tnom.toUpperCase(),
+    APELLIDOS_TUTOR:   (document.getElementById('pre-tape')?.value.trim()||'').toUpperCase(),
+    EMAIL_TUTOR:       (document.getElementById('pre-email')?.value.trim()||'').toLowerCase(),
     'TELÉFONO_TUTOR':  document.getElementById('pre-tel')?.value.trim()||'',
     ACTIVIDAD_INTERES: document.getElementById('pre-act')?.value||'',
+    LINEA:             document.getElementById('pre-linea')?.value||'EXTRAESCOLARES',
     NOTAS:             document.getElementById('pre-notas')?.value.trim()||'',
     ESTADO:            'RECIBIDA',
     CANAL:             'MANUAL',
@@ -1732,16 +1746,27 @@ function guardarPreinscManual() {
 function verPreinsc(id) {
   const p = DB.preinscripciones.find(x => String(x.ID) === String(id));
   if (!p) return;
+  const row2 = (lbl, val) => val ? `<div class="field"><label>${lbl}</label><input readonly value="${esc(val)}"></div>` : '';
   openModal('Preinscripción ' + id, `
     <div class="form-grid">
-      <div class="field"><label>Alumno</label><input readonly value="${esc(p.NOMBRE_ALUMNO+' '+(p.APELLIDOS_ALUMNO||''))}"></div>
+      <div class="field"><label>Alumno</label><input readonly value="${esc((p.NOMBRE_ALUMNO||'')+' '+(p.APELLIDOS_ALUMNO||''))}"></div>
       <div class="field"><label>Fecha nacimiento</label><input readonly value="${esc(fmtFecha(p.FECHA_NAC))}"></div>
-      <div class="field"><label>Tutor</label><input readonly value="${esc(p.NOMBRE_TUTOR+' '+(p.APELLIDOS_TUTOR||''))}"></div>
+      ${row2('Curso escolar', p.CURSO_ALUMNO)}
+      ${row2('Centro', p.CENTRO)}
+      <div class="field"><label>Tutor</label><input readonly value="${esc((p.NOMBRE_TUTOR||'')+' '+(p.APELLIDOS_TUTOR||''))}"></div>
+      ${row2('Relación', p.RELACION_TUTOR)}
+      ${row2('NIF/DNI', p.NIF_TUTOR)}
       <div class="field"><label>Email</label><input readonly value="${esc(p.EMAIL_TUTOR||'')}"></div>
-      <div class="field"><label>Teléfono</label><input readonly value="${esc(p.TELÉFONO_TUTOR||'')}"></div>
+      <div class="field"><label>Teléfono</label><input readonly value="${esc(p['TELÉFONO_TUTOR']||'')}"></div>
       <div class="field"><label>Actividad de interés</label><input readonly value="${esc(p.ACTIVIDAD_INTERES||'')}"></div>
-      <div class="field span2"><label>Notas</label><textarea readonly>${esc(p.NOTAS||'')}</textarea></div>
-    </div>`, '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>');
+      ${row2('Días disponibles', p.DIAS_DISPONIBLES)}
+      ${row2('Canal', p.CANAL)}
+      ${row2('Imagen autorizada', p.AUTORIZA_IMAGEN)}
+      ${p.NOTAS||p.SALUD ? `<div class="field span2"><label>Notas / salud</label><textarea readonly style="height:60px">${esc((p.NOTAS||'')+(p.SALUD?'\n[Salud] '+p.SALUD:''))}</textarea></div>` : ''}
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+     ${String(p.ESTADO||'').toUpperCase()==='RECIBIDA'?`<button class="btn btn-primary" onclick="closeModal();confirmarPreinsc('${esc(p.ID)}')">Confirmar</button>`:''}`,
+    'wide');
 }
 
 function confirmarPreinsc(id) {
@@ -1770,7 +1795,7 @@ function confirmarPreinsc(id) {
         <select id="cp-curso">
           <option value="">— Selecciona —</option>
           ${['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE']
-            .map(c=>`<option value="${c}">${c}</option>`).join('')}
+            .map(c=>`<option value="${c}" ${(p.CURSO_ALUMNO||'')===c?'selected':''}>${c}</option>`).join('')}
         </select></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -1791,6 +1816,11 @@ function ejecutarConfirmacion(preinscId, cliIdExistente) {
   const btn = document.querySelector('#modal-footer .btn-primary');
   if(btn) { btn.disabled=true; btn.textContent='Guardando…'; }
 
+  // Capturamos la actividad antes de cerrar el modal
+  const pre = DB.preinscripciones.find(x => String(x.ID) === String(preinscId));
+  const actividadInteres = pre?.ACTIVIDAD_INTERES || '';
+  const autorImg = pre?.AUTORIZA_IMAGEN || 'NO';
+
   const crearCliente = cliIdExistente
     ? Promise.resolve({ id: cliIdExistente })
     : writeToSheet('CLIENTES', {
@@ -1802,6 +1832,8 @@ function ejecutarConfirmacion(preinscId, cliIdExistente) {
         FECHA_ALTA: new Date().toISOString().slice(0,10),
       });
 
+  let nuevoAluId = null;
+
   crearCliente.then(res => {
     const cliId = res.id || cliIdExistente;
     return writeToSheet('ALUMNOS', {
@@ -1810,22 +1842,32 @@ function ejecutarConfirmacion(preinscId, cliIdExistente) {
       FECHA_NAC: document.getElementById('cp-fnac').value,
       CURSO:     document.getElementById('cp-curso').value,
       ID_CLIENTE: cliId,
-      'CESIÓN_IMAGEN': 'NO',
+      'CESIÓN_IMAGEN': autorImg.toUpperCase().startsWith('S') ? 'SÍ' : 'NO',
       ACTIVO: 'SÍ',
     });
-  }).then(() => {
+  }).then(aluRes => {
+    nuevoAluId = aluRes.id;
     return writeToSheet('PREINSCRIPCIONES', { ESTADO: 'CONFIRMADA' }, preinscId);
   }).then(() => {
-    // Enviar email de bienvenida
-    const emailTutor = document.getElementById('cp-email').value.trim();
+    // Email de bienvenida (fire-and-forget)
     sendEmail(EMAILJS_TPL_CONFIRMACION, {
-      to_email: emailTutor,
-      to_name: document.getElementById('cp-nomb').value.trim(),
-      alumno:  aluNom,
+      to_email: email,
+      to_name:  nombre,
+      alumno:   aluNom,
     });
-    showToast('Preinscripción confirmada. Cliente y alumno creados.');
     closeModal();
-    loadAllData().then(preinscripciones);
+    loadAllData().then(() => {
+      preinscripciones();
+      // Abrir modal de inscripción pre-relleno con el alumno recién creado
+      const actMatch = DB.actividades.find(a =>
+        actividadInteres && (
+          sinTildes(a.NOMBRE||'').toLowerCase().includes(sinTildes(actividadInteres).toLowerCase()) ||
+          sinTildes(actividadInteres).toLowerCase().includes(sinTildes(a.NOMBRE||'').toLowerCase())
+        )
+      );
+      showToast('✅ Alumno creado. Completa la inscripción y guarda.');
+      modalInscripcion({ ID_ALUMNO: nuevoAluId, ID_ACTIVIDAD: actMatch?.ID || '' });
+    });
   }).catch(err => {
     showToast('Error: ' + err.message, 'error');
     if(btn) { btn.disabled=false; btn.textContent='Confirmar'; }

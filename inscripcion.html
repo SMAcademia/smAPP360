@@ -627,7 +627,7 @@
       if (res.ok) {
         document.querySelectorAll('.card').forEach(c => c.style.display = 'none');
         document.getElementById('screen-ok').style.display = 'block';
-        document.getElementById('id-result').textContent = res.preinscId;
+        document.getElementById('id-result').textContent = res.id;
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         mostrarBanner('Error al enviar: ' + (res.error || 'Inténtalo de nuevo.'));
