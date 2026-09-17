@@ -197,6 +197,31 @@ tr:hover td{background:#f8f8f8}
 .stub h2{font-size:18px;font-weight:700;color:var(--black);margin-bottom:8px}
 .stub p{color:var(--text3);font-size:13px}
 
+/* ── Cuadrante semanal ───────────────────────────────────────────────────── */
+.cq-wrap{display:flex;flex-direction:column;gap:16px;padding:16px}
+.cq-bank{background:var(--white);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px}
+.cq-bank-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+.cq-bank-chips{display:flex;flex-wrap:wrap;gap:8px;min-height:36px}
+.cq-bank-chips:empty::after{content:'Sin actividades cargadas';color:var(--text3);font-size:12px;align-self:center}
+.cq-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;cursor:grab;user-select:none;transition:transform .1s,opacity .1s}
+.cq-chip:active{cursor:grabbing;transform:scale(.96)}
+.cq-chip.dragging{opacity:.4}
+.cq-chip-rm{margin-left:2px;font-size:14px;line-height:1;cursor:pointer;opacity:.6;flex-shrink:0}
+.cq-chip-rm:hover{opacity:1}
+.cq-table-wrap{overflow-x:auto}
+.cq-table{border-collapse:collapse;width:100%;min-width:600px;background:var(--white);border-radius:var(--r2);overflow:hidden;box-shadow:var(--shadow)}
+.cq-table th{background:var(--black);color:#fff;font-size:12px;font-weight:600;padding:10px 12px;text-align:center;letter-spacing:.04em}
+.cq-table th:first-child{background:#1e1e1e;text-align:left;font-size:11px;color:rgba(255,255,255,.6);width:120px}
+.cq-table td{border:1px solid var(--border);padding:8px;vertical-align:top;min-height:70px;width:calc((100% - 120px)/5)}
+.cq-table td:first-child{background:#fafafa;font-size:11px;font-weight:700;color:var(--text2);padding:10px 12px;white-space:nowrap;border-left:none}
+.cq-table td:first-child .cq-franja-time{font-size:10px;color:var(--text3);font-weight:400;margin-top:2px}
+.cq-cell{min-height:60px;display:flex;flex-direction:column;gap:5px;border-radius:var(--r);transition:background .12s;padding:2px}
+.cq-cell.drag-over{background:var(--green-l);outline:2px dashed var(--green)}
+.cq-cell-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:14px;font-size:11px;font-weight:600;cursor:grab}
+.cq-cell-chip:active{cursor:grabbing}
+.cq-actions{display:flex;gap:8px;justify-content:flex-end}
+.cq-legend{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--text3)}
+
 /* ── Google Sign-In / Login extras ──────────────────────────────────────── */
 .login-divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--text3);font-size:12px}
 .login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--gray)}
@@ -304,6 +329,9 @@ tr:hover td{background:#f8f8f8}
         </div>
         <div class="nav-item" onclick="navigate('asistencias-extra')" data-page="asistencias-extra">
           <span class="nav-icon">✅</span><span>Asistencia</span>
+        </div>
+        <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
+          <span class="nav-icon">🗓️</span><span>Cuadrante</span>
         </div>
       </div>
 
@@ -766,6 +794,8 @@ function applyRoleVisibility() {
       });
     const elAsistExt = document.querySelector('[data-page="asistencias-extra"]');
     if (elAsistExt) elAsistExt.style.display = 'none';
+    const elCq = document.querySelector('[data-page="cuadrante"]');
+    if (elCq) elCq.style.display = 'none';
   }
 }
 
@@ -786,6 +816,7 @@ const PAGE_META = {
   'asistencias-futbol': { title: 'Ranking',               sub: 'Clasificación y estadísticas fútbol' },
   'extra-resumen':      { title: 'SM Extraescolares',    sub: 'Panel de actividades y asistencia' },
   'asistencias-extra':  { title: 'Asistencia',           sub: 'SM Extraescolares' },
+  'cuadrante':          { title: 'Cuadrante semanal',    sub: 'Organización de actividades por franja horaria' },
   'personal':           { title: 'Trabajadores',         sub: 'Ficha de personal' },
   'ausencias':          { title: 'Ausencias',            sub: 'Bajas, vacaciones y permisos' },
   'registro-horario':   { title: 'Registro horario',     sub: 'Control de entradas y salidas' },
@@ -813,6 +844,7 @@ const MODULES = {
   'asistencias-futbol': asistenciasFutbol,
   'extra-resumen':      extraResumen,
   'asistencias-extra':  asistenciasExtra,
+  'cuadrante':          cuadrante,
   'personal':           personal,
   'ausencias':          ausencias,
   'registro-horario':   registroHorario,
@@ -6343,6 +6375,177 @@ function setEval(btn) {
   btn.style.borderColor = 'var(--green)';
   btn.style.background  = 'var(--green)';
   btn.style.color       = 'white';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  CUADRANTE SEMANAL
+// ══════════════════════════════════════════════════════════════════════════
+function cuadrante() {
+  'use strict';
+
+  const DIAS   = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
+  const DIA_ID = ['L','M','X','J','V'];
+  const FRANJAS = [
+    { id: 'f1', label: 'Madrugadora',  time: '7:00 – 8:30'   },
+    { id: 'f2', label: 'Mediodía',     time: '13:30 – 14:30' },
+    { id: 'f3', label: 'Tarde 1',      time: '15:15 – 16:15' },
+    { id: 'f4', label: 'Tarde 2',      time: '16:15 – 16:45' },
+  ];
+
+  // Paleta de colores para chips (uno por actividad, cíclico)
+  const PALETTE = [
+    '#2e7d32','#1565c0','#6a1b9a','#ad1457','#e65100',
+    '#00695c','#4527a0','#558b2f','#0277bd','#bf360c',
+  ];
+
+  // Cargar estado guardado
+  let estado = {};
+  try { estado = JSON.parse(localStorage.getItem('cq_estado_v1') || '{}'); } catch(e) {}
+
+  // Asignar colores estables por ID de actividad
+  const acts = (DB.actividades || []).filter(a => a.ACTIVO !== 'NO');
+  const colorMap = {};
+  acts.forEach((a, i) => { colorMap[a.ID_ACTIVIDAD] = PALETTE[i % PALETTE.length]; });
+
+  function save() {
+    try { localStorage.setItem('cq_estado_v1', JSON.stringify(estado)); } catch(e) {}
+  }
+
+  function cellKey(diaId, franjaId) { return diaId + '_' + franjaId; }
+
+  function chipStyle(actId) {
+    const c = colorMap[actId] || '#555';
+    return `background:${c}18;border:1.5px solid ${c}50;color:${c}`;
+  }
+
+  function renderPage() {
+    // Banco de actividades
+    const bankChips = acts.map(a =>
+      `<div class="cq-chip" draggable="true" data-act-id="${esc(a.ID_ACTIVIDAD)}"
+        style="${chipStyle(a.ID_ACTIVIDAD)}"
+        ondragstart="window._cqDragStart(event,'bank','${esc(a.ID_ACTIVIDAD)}')"
+        title="${esc(a.NOMBRE)}">${esc(a.NOMBRE)}</div>`
+    ).join('');
+
+    // Cabecera de tabla
+    const thDias = DIAS.map(d => `<th>${d}</th>`).join('');
+
+    // Filas de la tabla
+    const filas = FRANJAS.map(f => {
+      const celdas = DIA_ID.map(d => {
+        const key   = cellKey(d, f.id);
+        const items = (estado[key] || []);
+        const placed = items.map((actId, idx) => {
+          const act = acts.find(a => a.ID_ACTIVIDAD === actId);
+          const nombre = act ? act.NOMBRE : actId;
+          return `<div class="cq-cell-chip" draggable="true" style="${chipStyle(actId)}"
+            ondragstart="window._cqDragStart(event,'cell','${esc(actId)}','${esc(key)}',${idx})"
+            >${esc(nombre)}<span class="cq-chip-rm"
+              onclick="window._cqRemove('${esc(key)}',${idx});event.stopPropagation()">×</span></div>`;
+        }).join('');
+        return `<td><div class="cq-cell" id="cq-${esc(key)}"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="window._cqDrop(event,'${esc(d)}','${esc(f.id)}');this.classList.remove('drag-over')"
+          >${placed}</div></td>`;
+      }).join('');
+
+      return `<tr>
+        <td><strong>${esc(f.label)}</strong><div class="cq-franja-time">${esc(f.time)}</div></td>
+        ${celdas}
+      </tr>`;
+    }).join('');
+
+    render(`<div class="cq-wrap">
+      <div class="cq-bank">
+        <div class="cq-bank-title">Banco de actividades — arrastra al cuadrante</div>
+        <div class="cq-bank-chips">${bankChips}</div>
+      </div>
+      <div class="cq-table-wrap">
+        <table class="cq-table">
+          <thead><tr><th></th>${thDias}</tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+      <div class="cq-actions">
+        <button class="btn btn-secondary" onclick="window._cqReset()">Limpiar cuadrante</button>
+        <button class="btn btn-secondary" onclick="window._cqExport()">Exportar texto</button>
+      </div>
+    </div>`);
+  }
+
+  // Drag source tracking
+  let _dragSrc = null;
+
+  window._cqDragStart = function(e, origin, actId, fromKey, fromIdx) {
+    _dragSrc = { origin, actId, fromKey, fromIdx };
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', actId);
+    if (e.currentTarget) e.currentTarget.classList.add('dragging');
+    setTimeout(() => { if (e.currentTarget) e.currentTarget.classList.remove('dragging'); }, 0);
+  };
+
+  window._cqDrop = function(e, diaId, franjaId) {
+    e.preventDefault();
+    if (!_dragSrc) return;
+    const key = cellKey(diaId, franjaId);
+    if (!estado[key]) estado[key] = [];
+
+    // Si viene de otra celda: quitar de origen primero
+    if (_dragSrc.origin === 'cell' && _dragSrc.fromKey) {
+      const src = estado[_dragSrc.fromKey] || [];
+      src.splice(_dragSrc.fromIdx, 1);
+      if (!src.length) delete estado[_dragSrc.fromKey];
+      else estado[_dragSrc.fromKey] = src;
+    }
+
+    estado[key].push(_dragSrc.actId);
+    save();
+    _dragSrc = null;
+    renderPage();
+  };
+
+  window._cqRemove = function(key, idx) {
+    if (!estado[key]) return;
+    estado[key].splice(idx, 1);
+    if (!estado[key].length) delete estado[key];
+    save();
+    renderPage();
+  };
+
+  window._cqReset = function() {
+    if (!confirm('¿Limpiar todo el cuadrante?')) return;
+    estado = {};
+    save();
+    renderPage();
+  };
+
+  window._cqExport = function() {
+    const lines = ['CUADRANTE SEMANAL SM ACADEMIA', ''];
+    FRANJAS.forEach(f => {
+      lines.push(`${f.label} (${f.time})`);
+      DIA_ID.forEach((d, i) => {
+        const key   = cellKey(d, f.id);
+        const items = (estado[key] || []);
+        if (items.length) {
+          const nombres = items.map(id => {
+            const a = acts.find(x => x.ID_ACTIVIDAD === id);
+            return a ? a.NOMBRE : id;
+          });
+          lines.push(`  ${DIAS[i]}: ${nombres.join(', ')}`);
+        }
+      });
+      lines.push('');
+    });
+    const txt = lines.join('\n');
+    const blob = new Blob([txt], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'cuadrante_sm.txt'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  renderPage();
 }
 
 function configuracion() {
