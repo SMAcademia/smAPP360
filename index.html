@@ -365,6 +365,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('fiscal')" data-page="fiscal">
           <span class="nav-icon">📂</span><span>Fiscal</span>
         </div>
+        <div class="nav-item" onclick="navigate('presupuesto')" data-page="presupuesto">
+          <span class="nav-icon">🧮</span><span>Presupuestos</span>
+        </div>
       </div>
 
       <div class="nav-section" id="nav-ampa">
@@ -832,6 +835,7 @@ const PAGE_META = {
   'portal-familia':     { title: 'Portal Familia',       sub: 'Inscripciones, pagos y asistencias' },
   'comunicacion':       { title: 'Comunicación',          sub: 'Mensajes y avisos a familias' },
   'configuracion':      { title: 'Configuración',        sub: 'Ajustes del sistema' },
+  'presupuesto':        { title: 'Presupuestos',          sub: 'Calculadora de costes, margen e impuestos' },
 };
 
 const MODULES = {
@@ -861,6 +865,7 @@ const MODULES = {
   'portal-familia':     portalFamilia,
   'comunicacion':       comunicacion,
   'configuracion':      configuracion,
+  'presupuesto':        presupuesto,
 };
 
 function navigate(page) {
@@ -6919,6 +6924,163 @@ function cuadrante() {
   };
 
   cuadrante._render();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: PRESUPUESTOS
+// ══════════════════════════════════════════════════════════════════════════
+function presupuesto() {
+  document.getElementById('topbar-actions').innerHTML = '';
+
+  render(`
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
+
+    <!-- Conceptos -->
+    <div class="card" style="padding:18px 20px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)">1. Conceptos y costes directos</div>
+      <div id="pres-items" style="margin-bottom:10px"></div>
+      <button class="btn btn-secondary" style="width:100%;font-size:13px" onclick="window._presAddItem()">+ Añadir concepto / coste</button>
+    </div>
+
+    <!-- Márgenes e impuestos -->
+    <div class="card" style="padding:18px 20px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)">2. Ajustes</div>
+      <div class="form-grid" style="gap:10px">
+        <div class="field span2"><label>Cliente / Proyecto</label>
+          <input id="pres-cliente" placeholder="Nombre del cliente o proyecto" oninput="window._presCalc()"></div>
+        <div class="field"><label>Costes fijos proporcionales (€)</label>
+          <input id="pres-fijos" type="number" value="0" min="0" step="0.01" oninput="window._presCalc()"></div>
+        <div class="field"><label>Margen deseado (%)</label>
+          <input id="pres-margen" type="number" value="20" min="0" step="1" oninput="window._presCalc()"></div>
+        <div class="field"><label>Impuesto</label>
+          <select id="pres-imp" onchange="window._presToggleTax()">
+            <option value="0">Sin impuesto (0 %)</option>
+            <option value="7" selected>IGIC General (7 %)</option>
+            <option value="21">IVA General (21 %)</option>
+            <option value="custom">Personalizado</option>
+          </select></div>
+        <div class="field" id="pres-imp-wrap" style="display:none"><label>% personalizado</label>
+          <input id="pres-imp-custom" type="number" value="0" min="0" step="0.1" oninput="window._presCalc()"></div>
+      </div>
+    </div>
+
+    <!-- Desglose -->
+    <div class="card" style="grid-column:1/-1;padding:18px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:700">Desglose del presupuesto</div>
+        <div id="pres-proyecto" style="font-size:12px;color:var(--text3);font-weight:600"></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody id="pres-tbody"></tbody>
+      </table>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-secondary" style="flex:1" onclick="window._presImprimir()">🖨 Imprimir / PDF</button>
+        <button class="btn btn-secondary" style="flex:1" onclick="window._presNuevo()">🗑 Limpiar</button>
+      </div>
+    </div>
+
+  </div>`);
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  const fmt = n => new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n);
+
+  window._presAddItem = function(nombre='', importe='') {
+    const cont = document.getElementById('pres-items');
+    const row  = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center';
+    row.innerHTML = `
+      <input placeholder="Concepto" value="${esc(nombre)}"
+        style="flex:2;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);font-size:13px"
+        oninput="window._presCalc()">
+      <input type="number" placeholder="€" value="${importe}" min="0" step="0.01"
+        style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);font-size:13px"
+        oninput="window._presCalc()">
+      <button style="padding:6px 10px;background:var(--red-l);color:var(--red);border:none;border-radius:var(--r);font-size:13px;cursor:pointer;font-weight:700"
+        onclick="this.parentElement.remove();window._presCalc()">✕</button>`;
+    cont.appendChild(row);
+    window._presCalc();
+  };
+
+  window._presToggleTax = function() {
+    const sel = document.getElementById('pres-imp');
+    document.getElementById('pres-imp-wrap').style.display = sel.value==='custom' ? '' : 'none';
+    window._presCalc();
+  };
+
+  window._presCalc = function() {
+    const rows    = document.querySelectorAll('#pres-items > div');
+    let directos  = 0;
+    rows.forEach(r => {
+      const inputs = r.querySelectorAll('input');
+      directos += parseFloat(inputs[1].value) || 0;
+    });
+    const fijos   = parseFloat(document.getElementById('pres-fijos')?.value) || 0;
+    const margen  = parseFloat(document.getElementById('pres-margen')?.value) || 0;
+    const sel     = document.getElementById('pres-imp');
+    const impPct  = sel?.value==='custom'
+      ? (parseFloat(document.getElementById('pres-imp-custom')?.value) || 0)
+      : (parseFloat(sel?.value) || 0);
+
+    const base    = directos + fijos;
+    const beneficio = base * (margen/100);
+    const subtotal  = base + beneficio;
+    const impuesto  = subtotal * (impPct/100);
+    const total     = subtotal + impuesto;
+
+    const cliente = document.getElementById('pres-cliente')?.value||'';
+    document.getElementById('pres-proyecto').textContent = cliente ? 'Cliente: '+cliente : '';
+
+    const fila = (label, valor, bold, highlight) =>
+      `<tr style="${highlight?'border-top:2px solid var(--border)':''}">
+        <td style="padding:9px 0;border-bottom:1px solid var(--border2);font-size:13px;${bold?'font-weight:700':'color:var(--text2)'}">${label}</td>
+        <td style="padding:9px 0;border-bottom:1px solid var(--border2);text-align:right;font-size:13px;font-weight:${bold?'700':'600'};${highlight?'color:var(--green);font-size:15px':''}">${valor}</td>
+      </tr>`;
+
+    document.getElementById('pres-tbody').innerHTML =
+      fila('Total costes directos',        fmt(directos))   +
+      fila('Costes fijos proporcionales',  fmt(fijos))      +
+      fila('Coste total base',             fmt(base), true) +
+      fila(`Margen de beneficio (${margen}%)`, fmt(beneficio)) +
+      fila('Base imponible (subtotal)',    fmt(subtotal), true) +
+      fila(`Impuesto (${impPct}%)`,        fmt(impuesto))   +
+      fila('TOTAL PRESUPUESTO',            fmt(total), true, true);
+  };
+
+  window._presImprimir = function() {
+    const cliente  = document.getElementById('pres-cliente')?.value || '';
+    const rows     = document.querySelectorAll('#pres-items > div');
+    const itemsHtml = [...rows].map(r => {
+      const inputs = r.querySelectorAll('input');
+      const nombre = inputs[0].value || '—';
+      const imp    = parseFloat(inputs[1].value)||0;
+      return `<tr><td>${esc(nombre)}</td><td style="text-align:right">${fmt(imp)}</td></tr>`;
+    }).join('');
+    const resumen  = document.getElementById('pres-tbody')?.innerHTML || '';
+    const titulo   = 'Presupuesto' + (cliente ? ' — '+cliente : '');
+    exportarPDF(titulo, `
+      ${cliente ? `<p style="font-weight:600;margin-bottom:12px">Cliente / Proyecto: ${esc(cliente)}</p>` : ''}
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#666;margin-bottom:6px">Conceptos</h3>
+      <table><thead><tr><th>Concepto</th><th style="text-align:right">Importe</th></tr></thead>
+        <tbody>${itemsHtml}</tbody></table>
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#666;margin:16px 0 6px">Desglose</h3>
+      <table><tbody>${resumen}</tbody></table>`);
+  };
+
+  window._presNuevo = function() {
+    if (!confirm('¿Limpiar el presupuesto actual?')) return;
+    document.getElementById('pres-items').innerHTML = '';
+    document.getElementById('pres-cliente').value = '';
+    document.getElementById('pres-fijos').value = '0';
+    document.getElementById('pres-margen').value = '20';
+    document.getElementById('pres-imp').value = '7';
+    document.getElementById('pres-imp-wrap').style.display = 'none';
+    window._presAddItem('Materiales / Recursos', 100);
+    window._presAddItem('Horas de trabajo / Servicio', 150);
+  };
+
+  // Inicializar con dos filas por defecto
+  window._presAddItem('Materiales / Recursos', 100);
+  window._presAddItem('Horas de trabajo / Servicio', 150);
 }
 
 function configuracion() {
