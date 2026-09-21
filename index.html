@@ -1582,6 +1582,7 @@ function guardarAlumno(id) {
     .then(() => {
       showToast(id ? 'Alumno actualizado' : 'Alumno creado');
       closeModal();
+      if (!id) _autoCrearAccesoFamilia(cliId, row.FECHA_NAC);
       loadAllData().then(alumnos);
     })
     .catch(err => showToast('Error: ' + err.message, 'error'));
@@ -2055,12 +2056,16 @@ function ejecutarConfirmacion(preinscId, cliIdExistente) {
 
   let nuevoAluId = null;
 
+  let _preinfnac = '';
+  const _cliDataDirecto = { NOMBRE: nombre, APELLIDOS: document.getElementById('cp-ape').value.trim(), EMAIL: email };
+
   crearCliente.then(res => {
     const cliId = res.id || cliIdExistente;
+    _preinfnac = document.getElementById('cp-fnac').value;
     return writeToSheet('ALUMNOS', {
       NOMBRE:    aluNom,
       APELLIDOS: document.getElementById('cp-alu-a').value.trim(),
-      FECHA_NAC: document.getElementById('cp-fnac').value,
+      FECHA_NAC: _preinfnac,
       CURSO:     document.getElementById('cp-curso').value,
       ID_CLIENTE: cliId,
       'CESIÓN_IMAGEN': autorImg.toUpperCase().startsWith('S') ? 'SÍ' : 'NO',
@@ -2068,6 +2073,9 @@ function ejecutarConfirmacion(preinscId, cliIdExistente) {
     });
   }).then(aluRes => {
     nuevoAluId = aluRes.id;
+    // Usar datos directos del cliente para nuevos; para existentes, buscar en DB
+    const cliRef = cliIdExistente ? cliIdExistente : _cliDataDirecto;
+    _autoCrearAccesoFamilia(cliRef, _preinfnac);
     return writeToSheet('PREINSCRIPCIONES', { ESTADO: 'CONFIRMADA' }, preinscId);
   }).then(() => {
     // Email de bienvenida (fire-and-forget)
@@ -4997,6 +5005,37 @@ function personal() {
         </table>
       </div>
     </div>`);
+}
+
+// cliOrId: ID_CLIENTE (busca en DB.clientes) o {NOMBRE,APELLIDOS,EMAIL} directo
+async function _autoCrearAccesoFamilia(cliOrId, fechaNac) {
+  let cli;
+  if (cliOrId && typeof cliOrId === 'object') {
+    cli = cliOrId;
+  } else {
+    cli = DB.clientes.find(c => String(c.ID_CLIENTE) === String(cliOrId));
+  }
+  if (!cli || !cli.EMAIL || !cli.EMAIL.includes('@')) return;
+  const email = String(cli.EMAIL).toLowerCase().trim();
+  const yaExiste = DB.personal.some(p =>
+    String(p.ROL||'').toUpperCase() === 'FAMILIA' &&
+    String(p.EMAIL||'').toLowerCase() === email
+  );
+  if (yaExiste) return;
+  function _ini(n, a) { return ((n||'')+' '+(a||'')).trim().split(/\s+/).map(w=>w[0]||'').join('').toUpperCase(); }
+  function _ddmm(f) { const m=String(f||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+m[2]:''; }
+  const pass = _ini(cli.NOMBRE, cli.APELLIDOS) + _ddmm(fechaNac);
+  if (!pass || pass.length < 4) return;
+  try {
+    await writeToSheet('PERSONAL', {
+      NOMBRE: cli.NOMBRE, APELLIDOS: cli.APELLIDOS||'', EMAIL: email,
+      ROL: 'FAMILIA', USERNAME: email, PASSWORD: pass,
+      ACTIVO: 'SÍ', FECHA_ALTA: new Date().toISOString().slice(0,10),
+    }, null);
+    showToast('Acceso portal familia creado: ' + email, 'info');
+    DB.personal.push({ NOMBRE:cli.NOMBRE, APELLIDOS:cli.APELLIDOS||'', EMAIL:email,
+      ROL:'FAMILIA', USERNAME:email, PASSWORD:pass, ACTIVO:'SÍ' });
+  } catch(e) { /* silent — se puede crear manualmente desde Personal */ }
 }
 
 function _generarAccesosFamilias() {
