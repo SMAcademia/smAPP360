@@ -3309,7 +3309,16 @@ function _comMsgWA(f) {
     case 'AREA_PRIVADA': {
       const _famPer = DB.personal.find(p => String(p.ROL||'').toUpperCase()==='FAMILIA' && String(p.EMAIL||'').toLowerCase()===String(f.email||'').toLowerCase());
       const _usuario = _famPer ? (String(_famPer.USERNAME||_famPer.EMAIL||'')) : f.email||'[tu email]';
-      const _clave   = _famPer ? (String(_famPer.PASSWORD||'')) : '[clave provisional]';
+      let _clave = _famPer ? String(_famPer.PASSWORD||'') : '';
+      if (!_clave) {
+        // Calcular contraseña en el momento: iniciales tutor + DDMM nacimiento primer alumno
+        const _ini = (f.nombre||'').trim().split(/\s+/).map(w=>w[0]||'').join('').toUpperCase();
+        const _alu0 = (f.alumnos||[])[0];
+        const _fnac = String(_alu0?.FECHA_NAC||'');
+        const _m = _fnac.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const _ddmm = _m ? _m[3]+_m[2] : '';
+        _clave = (_ini + _ddmm) || '[pendiente]';
+      }
       return 'Hola '+tutor+' 👋\n\n'
         +'¡Ya puedes acceder a tu *área privada* de SM Academia! 🏫\n\n'
         +'🔗 *smacademia.github.io/smAPP360/*\n\n'
@@ -3383,7 +3392,14 @@ function _comMsgEmail(f) {
     case 'AREA_PRIVADA': {
       const _famPer = DB.personal.find(p => String(p.ROL||'').toUpperCase()==='FAMILIA' && String(p.EMAIL||'').toLowerCase()===String(f.email||'').toLowerCase());
       const _usuario = _famPer ? String(_famPer.USERNAME||_famPer.EMAIL||'') : f.email||'[tu email]';
-      const _clave   = _famPer ? String(_famPer.PASSWORD||'') : '[clave provisional]';
+      let _clave = _famPer ? String(_famPer.PASSWORD||'') : '';
+      if (!_clave) {
+        const _ini = (f.nombre||'').trim().split(/\s+/).map(w=>w[0]||'').join('').toUpperCase();
+        const _alu0 = (f.alumnos||[])[0];
+        const _m = String(_alu0?.FECHA_NAC||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const _ddmm = _m ? _m[3]+_m[2] : '';
+        _clave = (_ini + _ddmm) || '[pendiente]';
+      }
       return 'Hola '+tutor+',\n\n'
         +'Ya puedes acceder a tu área privada de SM Academia:\n\n'
         +'🔗 smacademia.github.io/smAPP360/\n\n'
