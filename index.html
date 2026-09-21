@@ -6554,6 +6554,137 @@ function setEval(btn) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  MIGRACIÓN DE ACTIVIDADES — SEPTIEMBRE 2026
+// ══════════════════════════════════════════════════════════════════════════
+window._migracionOct26Preview = function() {
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  // ── Plan hardcoded con datos reales del Sheet ─────────────────────────
+  const ACTS_INACTIVAS = [
+    { id: 22, nombre: 'BALONCESTO G1 (Lunes/Miércoles)' },
+    { id: 13, nombre: 'MULTIDEPORTE G2 (Martes/Jueves)' },
+    { id: 16, nombre: 'HERRAMIENTAS EDUCATIVAS CON IA (Viernes)' },
+  ];
+
+  const REASIGNAR = [
+    { inscId: 'INSC-056', alumno: 'Leo Diallo Suárez',       de: 'Baloncesto G1',   a: 'Baloncesto G2 (Ma/Ju)',   actId: 23 },
+    { inscId: 'INSC-110', alumno: 'Mía González Montoya',    de: 'Baloncesto G1',   a: 'Baloncesto G2 (Ma/Ju)',   actId: 23 },
+    { inscId: 'INSC-057', alumno: 'Leo Diallo Suárez',       de: 'Multideporte G2', a: 'Multideporte G1 (Lu/Mi)', actId: 12 },
+    { inscId: 'INSC-062', alumno: 'José Santana Piedra',     de: 'Multideporte G2', a: 'Multideporte G1 (Lu/Mi)', actId: 12 },
+    { inscId: 'INSC-065', alumno: 'Mateo Santana Piedra',    de: 'Multideporte G2', a: 'Multideporte G1 (Lu/Mi)', actId: 12 },
+    { inscId: 'INSC-080', alumno: 'Eyra Lucía Santana',      de: 'Multideporte G2', a: 'Multideporte G1 (Lu/Mi)', actId: 12 },
+    { inscId: 'INSC-093', alumno: 'Daniela Calderín Godoy',  de: 'Multideporte G2', a: 'Multideporte G1 (Lu/Mi)', actId: 12 },
+    { inscId: 'INSC-101', alumno: 'Mérida Galván Amador',    de: 'Multideporte G2', a: 'Multideporte G1 (Lu/Mi)', actId: 12 },
+  ];
+
+  const BAJAS = [
+    { inscId: 'INSC-073', alumno: 'Mathias Moreno Espinel', motivo: 'Ya inscrito en Multideporte G1 — duplicado' },
+    { inscId: 'INSC-060', alumno: 'Acorán Vendrell Rivero', motivo: 'Actividad eliminada: Herramientas IA' },
+    { inscId: 'INSC-071', alumno: 'Mérida Galván Amador',   motivo: 'Actividad eliminada: Herramientas IA' },
+  ];
+
+  const rowStyle = 'padding:6px 0;border-bottom:1px solid var(--border2);font-size:12px;display:flex;gap:10px;align-items:baseline';
+
+  const htmlInact = ACTS_INACTIVAS.map(a =>
+    `<div style="${rowStyle}">
+      <span style="width:14px;text-align:center;flex-shrink:0">🔴</span>
+      <span><strong>${esc(a.nombre)}</strong> → INACTIVA</span>
+    </div>`).join('');
+
+  const htmlReas = REASIGNAR.map(r =>
+    `<div style="${rowStyle}">
+      <span style="width:14px;text-align:center;flex-shrink:0">🔄</span>
+      <span><strong>${esc(r.alumno)}</strong> — ${esc(r.de)} → <span style="color:var(--green);font-weight:600">${esc(r.a)}</span></span>
+    </div>`).join('');
+
+  const htmlBajas = BAJAS.map(b =>
+    `<div style="${rowStyle}">
+      <span style="width:14px;text-align:center;flex-shrink:0">⬇</span>
+      <span><strong>${esc(b.alumno)}</strong> — ${esc(b.motivo)}</span>
+    </div>`).join('');
+
+  openModal('Plan de migración de actividades', `
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="background:var(--amber-l);border-left:3px solid var(--amber);padding:10px 12px;border-radius:var(--r);font-size:12px;color:var(--amber)">
+        ⚠ Esta acción modifica ${ACTS_INACTIVAS.length} actividades y ${REASIGNAR.length + BAJAS.length} inscripciones en Sheets. Revisa el plan y confirma.
+      </div>
+
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Actividades → INACTIVA (${ACTS_INACTIVAS.length})</div>
+        ${htmlInact}
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Reasignaciones (${REASIGNAR.length})</div>
+        ${htmlReas}
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Bajas de inscripción (${BAJAS.length})</div>
+        ${htmlBajas}
+      </div>
+
+      <div id="mig-log" style="font-size:11px;color:var(--text3);min-height:16px"></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" style="background:var(--amber);border-color:var(--amber)" id="mig-exec-btn"
+       onclick="window._migracionOct26Ejecutar()">Ejecutar migración</button>`
+  );
+
+  window._migracionOct26Ejecutar = async function() {
+    const btn = document.getElementById('mig-exec-btn');
+    const log = document.getElementById('mig-log');
+    if (btn) btn.disabled = true;
+    let ok = 0, err = 0;
+
+    function logLine(msg) { if (log) log.textContent = msg; }
+
+    // 1. Marcar actividades como inactivas
+    for (const act of ACTS_INACTIVAS) {
+      try {
+        logLine(`Desactivando ${act.nombre}…`);
+        await writeToSheet('ACTIVIDADES', { ACTIVO: 'NO' }, act.id);
+        const a = DB.actividades.find(x => String(x.ID) === String(act.id));
+        if (a) a.ACTIVO = 'NO';
+        ok++;
+      } catch(e) { err++; logLine(`Error en ${act.nombre}: ${e.message}`); }
+    }
+
+    // 2. Reasignar inscripciones
+    for (const r of REASIGNAR) {
+      try {
+        logLine(`Reasignando ${r.alumno} → ${r.a}…`);
+        await writeToSheet('INSCRIPCIONES', { ID_ACTIVIDAD: r.actId }, r.inscId);
+        const i = DB.inscripciones.find(x => String(x.ID_INSCRIPCION) === String(r.inscId));
+        if (i) i.ID_ACTIVIDAD = r.actId;
+        ok++;
+      } catch(e) { err++; logLine(`Error reasignando ${r.alumno}: ${e.message}`); }
+    }
+
+    // 3. Dar de baja inscripciones
+    for (const b of BAJAS) {
+      try {
+        logLine(`Dando de baja ${b.alumno}…`);
+        await writeToSheet('INSCRIPCIONES', { ESTADO: 'BAJA', FECHA_BAJA: hoy }, b.inscId);
+        const i = DB.inscripciones.find(x => String(x.ID_INSCRIPCION) === String(b.inscId));
+        if (i) { i.ESTADO = 'BAJA'; i.FECHA_BAJA = hoy; }
+        ok++;
+      } catch(e) { err++; logLine(`Error baja ${b.alumno}: ${e.message}`); }
+    }
+
+    logLine(err ? `⚠ Completado con ${err} error(es). OK: ${ok}` : `✓ Migración completada — ${ok} cambios aplicados`);
+    showToast(err ? `Migración con ${err} errores` : '✓ Migración completada', err ? 'warn' : 'success');
+
+    // Marcar como ejecutada y recargar datos
+    const estadoEl = document.getElementById('mig-estado');
+    if (estadoEl) estadoEl.textContent = '✓ Ejecutada';
+    if (!err) {
+      setTimeout(() => { closeModal(); loadAllData().then(configuracion); }, 1200);
+    } else if (btn) {
+      btn.disabled = false;
+    }
+  };
+};
+
+// ══════════════════════════════════════════════════════════════════════════
 //  LISTADOS DE ALUMNOS POR ACTIVIDAD
 // ══════════════════════════════════════════════════════════════════════════
 function listados() {
@@ -7195,6 +7326,20 @@ function configuracion() {
               Para verificar manualmente añade <code style="font-size:11px;background:var(--bg);padding:2px 5px;border-radius:3px">?action=PING&callback=test</code> al final de la URL.
               Debe devolver <code style="font-size:11px">test({"ok":true})</code>.
             </p>
+          </div>
+
+          <div class="card" style="grid-column:span 2;border-left:3px solid var(--amber)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div class="card-title" style="margin-bottom:0;color:var(--amber)">🔧 Migración de actividades — Sep 2026</div>
+              <span id="mig-estado" style="font-size:11px;color:var(--text3)"></span>
+            </div>
+            <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+              Elimina Baloncesto G1, Multideporte G2 y Herramientas IA; reasigna los alumnos afectados.
+              Esta acción es irreversible — revisa el plan antes de ejecutar.
+            </p>
+            <button class="btn btn-secondary" style="border-color:var(--amber);color:var(--amber)" onclick="window._migracionOct26Preview()">
+              Ver plan detallado y ejecutar
+            </button>
           </div>
 
         </div>
