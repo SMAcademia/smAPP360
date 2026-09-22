@@ -3986,16 +3986,25 @@ function pagos(filtro) {
 
 function facturaDesdePago(p) {
   const esExterno = LINEAS_EXT.includes(p.LINEA);
-  const cliId = p.ID_CLIENTE || '';
+  let cliId = '';
   let cliNombre = '';
 
   if (esExterno) {
     cliNombre = (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'').trim();
   } else {
-    const cli = DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(p.ID_CLIENTE));
-    const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
-    cliNombre = cli ? `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim()
-               : alu ? `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim() : '';
+    // 1. Buscar por ID_CLIENTE del pago
+    let cli = p.ID_CLIENTE
+      ? DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(p.ID_CLIENTE))
+      : null;
+    // 2. Si no, buscar a través del alumno → su ID_CLIENTE
+    if (!cli && p.ID_ALUMNO) {
+      const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+      if (alu?.ID_CLIENTE) {
+        cli = DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(alu.ID_CLIENTE));
+      }
+    }
+    cliId    = cli ? String(cli.ID_CLIENTE||cli.ID||'') : (p.ID_CLIENTE||'');
+    cliNombre = cli ? `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim() : '';
   }
 
   const mes      = p.MES ? ` — ${p.MES}` : '';
