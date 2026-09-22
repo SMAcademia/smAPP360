@@ -3810,21 +3810,15 @@ function _ofrecerWAConfirmPago(row) {
 }
 
 function _opcionesInscPago(aluId, selId, forceId) {
-  const inscs = DB.inscripciones.filter(i => {
-    if (String(i.ID_ALUMNO) !== String(aluId)) return false;
-    if (String(i.ESTADO||'').toUpperCase() === 'ACTIVA') return true;
-    if (forceId && String(i.ID_INSCRIPCION||i.ID) === String(forceId)) return true;
-    return false;
-  });
-  const opts = inscs.map(i => {
-    const act   = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
-    const nom   = act ? act.NOMBRE : (i.ID_ACTIVIDAD||'Actividad');
-    const grp   = i.GRUPO ? ' Gr.'+i.GRUPO : '';
-    const bruto = parseFloat(i.PRECIO_ACORDADO||0);
-    const dto   = parseFloat(i.DESCUENTO||0);
-    const descEur = Math.round(bruto * dto/100 * 100)/100;
-    const neto  = Math.round((bruto - descEur) * 100)/100;
-    const sel   = String(selId) === String(i.ID_INSCRIPCION) ? 'selected' : '';
+  function _buildOpt(i, selId) {
+    const act    = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+    const nom    = act ? act.NOMBRE : (i.ID_ACTIVIDAD||'Actividad');
+    const grp    = i.GRUPO ? ' Gr.'+i.GRUPO : '';
+    const bruto  = parseFloat(i.PRECIO_ACORDADO||0);
+    const dto    = parseFloat(i.DESCUENTO||0);
+    const descEur= Math.round(bruto * dto/100 * 100)/100;
+    const neto   = Math.round((bruto - descEur) * 100)/100;
+    const sel    = String(selId) === String(i.ID_INSCRIPCION) ? 'selected' : '';
     return `<option value="${esc(i.ID_INSCRIPCION)}" ${sel}
       data-linea="${esc(i.LINEA||'')}"
       data-servicio="${esc(nom+grp)}"
@@ -3833,7 +3827,14 @@ function _opcionesInscPago(aluId, selId, forceId) {
       data-neto="${neto.toFixed(2)}"
       data-cliente="${esc(i.ID_CLIENTE||'')}"
     >${esc(nom+grp)} — ${fmtEur(neto)}${dto?` (${dto}% dto.)`:''}${i.TIPO_PRECIO==='PAGO_ÚNICO'?' · pago único':''}</option>`;
-  }).join('');
+  }
+
+  const todas = DB.inscripciones.filter(i => String(i.ID_ALUMNO) === String(aluId));
+  const activas = todas.filter(i => String(i.ESTADO||'').toUpperCase() === 'ACTIVA');
+  const bajas   = todas.filter(i => String(i.ESTADO||'').toUpperCase() !== 'ACTIVA');
+
+  const optsActivas = activas.map(i => _buildOpt(i, selId)).join('');
+
   const alu   = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(aluId));
   const socio = alu ? DB.ampaSocios.find(s =>
     sinTildes(s.NOMBRE||'') === sinTildes(alu.NOMBRE||'') ||
@@ -3843,7 +3844,13 @@ function _opcionesInscPago(aluId, selId, forceId) {
     ? `<option value="CUOTA_SOCIO" data-linea="AMPA" data-servicio="CUOTA SOCIO AMPA ${new Date().getFullYear()}"
         data-importe="${parseFloat(socio.CUOTA_ANUAL||0).toFixed(2)}" data-desc="0" data-neto="${parseFloat(socio.CUOTA_ANUAL||0).toFixed(2)}" data-cliente="${esc(alu?.ID_CLIENTE||'')}">
         Cuota socio AMPA ${new Date().getFullYear()} — ${fmtEur(socio.CUOTA_ANUAL)}</option>` : '';
-  return opts + optSocio || '<option value="" disabled>Sin inscripciones activas</option>';
+
+  const optsBajas = bajas.length
+    ? `<optgroup label="── Bajas / históricas ──">${bajas.map(i => _buildOpt(i, selId)).join('')}</optgroup>`
+    : '';
+
+  const todo = optsActivas + optSocio + optsBajas;
+  return todo || '<option value="" disabled>Sin inscripciones para este alumno</option>';
 }
 
 function actualizarInscPago() {
