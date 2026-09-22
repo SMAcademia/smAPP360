@@ -406,6 +406,9 @@ tr:hover td{background:#f8f8f8}
           <div id="topbar-title">—</div>
           <div id="topbar-sub"></div>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-right:4px">
+          <span id="ar-chip" title="Última sincronización" style="font-size:11px;color:var(--text3);cursor:default;white-space:nowrap"></span>
+        </div>
         <div class="topbar-actions" id="topbar-actions"></div>
       </div>
       <div id="page-content"><div class="loading">Cargando…</div></div>
@@ -459,6 +462,61 @@ let DB          = {};
 let currentUser = null;
 let currentPage = '';
 
+// ── Auto-refresco ─────────────────────────────────────────────────────────
+let _arTimer      = null;   // setInterval handle
+let _arPending    = false;  // refresco pendiente (modal abierto)
+let _arWriting    = 0;      // contador de escrituras en curso
+let _arLastTs     = null;   // timestamp del último refresco OK
+const AR_INTERVAL = 30000;  // 30 s
+
+function _arStart() {
+  if (_arTimer) return;
+  _arTimer = setInterval(_arTick, AR_INTERVAL);
+}
+function _arStop() { clearInterval(_arTimer); _arTimer = null; }
+
+function _arTick() {
+  if (_arWriting > 0) { _arPending = true; return; } // esperar a que termine la escritura
+  const modalOpen = document.getElementById('modal-overlay')?.classList.contains('open');
+  loadAllData().then(() => {
+    _arLastTs = new Date();
+    _arUpdateChip();
+    if (!modalOpen) {
+      _arPending = false;
+      _arRerender();
+    } else {
+      _arPending = true; // re-renderizar cuando se cierre el modal
+    }
+  }).catch(() => {}); // fallos de red silenciosos
+}
+
+function _arRerender() {
+  if (!currentPage) return;
+  const fn = MODULES[currentPage];
+  if (fn) try { fn(); } catch(_) {}
+}
+
+function _arUpdateChip() {
+  const el = document.getElementById('ar-chip');
+  if (!el || !_arLastTs) return;
+  const hm = _arLastTs.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  el.textContent = '↺ ' + hm;
+  el.title = 'Última sincronización: ' + hm;
+}
+
+// Llamar tras escritura exitosa: refresca en ~3 s para confirmar
+function _arPostWrite() {
+  setTimeout(() => {
+    if (_arWriting > 0) return;
+    loadAllData().then(() => {
+      _arLastTs = new Date();
+      _arUpdateChip();
+      const modalOpen = document.getElementById('modal-overlay')?.classList.contains('open');
+      if (!modalOpen) _arRerender();
+    }).catch(() => {});
+  }, 3000);
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 //  GAS REQUEST (JSONP)
 // ══════════════════════════════════════════════════════════════════════════
@@ -496,6 +554,7 @@ async function writeToSheet(sheetName, rowObj, id) {
   const action  = id ? 'UPDATE' : 'APPEND';
   const payload = JSON.stringify({ action, sheet: sheetName, row: rowObj, ...(id ? { id } : {}) });
 
+  _arWriting++;
   const MAX_TRIES = 3;
   let lastErr;
   for (let t = 0; t < MAX_TRIES; t++) {
@@ -511,6 +570,8 @@ async function writeToSheet(sheetName, rowObj, id) {
         e._gasError = true;
         throw e;
       }
+      _arWriting = Math.max(0, _arWriting - 1);
+      _arPostWrite();
       return data;
     } catch (err) {
       clearTimeout(timer);
@@ -518,6 +579,7 @@ async function writeToSheet(sheetName, rowObj, id) {
       if (err._gasError) break; // error de lógica GAS → no reintentar
     }
   }
+  _arWriting = Math.max(0, _arWriting - 1);
   // Solo encolar errores de red/timeout, no errores de lógica GAS
   if (!lastErr._gasError) {
     offlineQueue.push({ action, sheetName, rowObj, id });
@@ -576,6 +638,8 @@ function loadAllData() {
   return gasRequest('GET_ALL', {}, 30000).then(raw => {
     if (!raw.ok) throw new Error(raw.error || 'Error al cargar datos');
     normalizarDB(raw);
+    _arLastTs = new Date();
+    _arUpdateChip();
   });
 }
 
@@ -712,6 +776,7 @@ function loginUser(p) {
   document.getElementById('sidebar-rol').textContent    = currentUser.rol;
 
   applyRoleVisibility();
+  _arStart();
   navigate(currentUser.rol === 'FAMILIA' ? 'portal-familia' : 'dashboard');
 }
 
@@ -924,6 +989,8 @@ function closeModal() {
     btn.style.opacity = '';
   });
   document.getElementById('modal-overlay').classList.remove('open');
+  // Si había un refresco pendiente (modal estaba abierto), re-renderizar ahora
+  if (_arPending) { _arPending = false; _arRerender(); }
 }
 
 function showToast(msg, type) {
