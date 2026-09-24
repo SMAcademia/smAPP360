@@ -3054,13 +3054,31 @@ const _COM_IBAN      = 'ES69 0182 5036 7102 0163 5388';
 const _COM_IBAN_AMPA = 'ES43 0049 1306 0823 1023 0054'; // concepto: nombre+apellidos+curso del alumno
 
 const _COM_TIPOS = {
-  COBRO:        { label: 'Cobro mensual',        icon: '💶', needsMes: true,  needsFinanciero: true  },
-  INICIO:       { label: 'Inicio de curso',      icon: '🎒', needsMes: false, needsFinanciero: false },
-  AREA_PRIVADA: { label: 'Acceso área privada',  icon: '🔐', needsMes: false, needsFinanciero: false },
-  SUSPENSION:   { label: 'Suspensión de clases', icon: '⚠️', needsMes: false, needsFinanciero: false },
-  CAMBIO:       { label: 'Aviso / Cambio',       icon: '📢', needsMes: false, needsFinanciero: false },
-  PRESENTACION: { label: 'Presentación curso',   icon: '📋', needsMes: false, needsFinanciero: false },
+  COBRO:         { label: 'Cobro mensual',              icon: '💶', needsMes: true,  needsFinanciero: true  },
+  CONFIRM_INSC:  { label: 'Confirmación inscripciones', icon: '✅', needsMes: false, needsFinanciero: false },
+  INICIO:        { label: 'Inicio de curso',            icon: '🎒', needsMes: false, needsFinanciero: false },
+  AREA_PRIVADA:  { label: 'Acceso área privada',        icon: '🔐', needsMes: false, needsFinanciero: false },
+  SUSPENSION:    { label: 'Suspensión de clases',       icon: '⚠️', needsMes: false, needsFinanciero: false },
+  CAMBIO:        { label: 'Aviso / Cambio',             icon: '📢', needsMes: false, needsFinanciero: false },
+  PRESENTACION:  { label: 'Presentación curso',         icon: '📋', needsMes: false, needsFinanciero: false },
 };
+
+function _ampaCuota(numActs) {
+  if (numActs >= 3) return 27;
+  if (numActs === 2) return 20;
+  if (numActs === 1) return 10;
+  return 0;
+}
+
+function _comInscExtrasAlu(aluId) {
+  return DB.inscripciones
+    .filter(i => String(i.ID_ALUMNO) === String(aluId)
+              && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
+              && esExtraescolar(i.LINEA||''))
+    .map(i => { const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD)); return a ? a.NOMBRE : null; })
+    .filter(Boolean)
+    .filter((v,i,arr) => arr.indexOf(v) === i); // únicos
+}
 
 function comunicacion() {
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
@@ -3094,11 +3112,12 @@ function _renderCom() {
   const tipoOps = Object.entries(_COM_TIPOS).map(([k,v])=>'<option value="'+k+'"'+(k===_comTipo?' selected':'')+'>'+v.icon+' '+v.label+'</option>').join('');
 
   const emailSubject = {
-    COBRO:       'SM Academia — Pago '+_comFiltros.mes,
-    INICIO:      'SM Academia — Bienvenida al nuevo curso',
-    SUSPENSION:  'SM Academia — Suspensión de actividad',
-    CAMBIO:      'SM Academia — Aviso importante',
-    PRESENTACION:'SM Academia — Presentación del curso',
+    COBRO:        'SM Academia — Pago '+_comFiltros.mes,
+    CONFIRM_INSC: 'SM Academia — Confirma tus inscripciones 2026/2027',
+    INICIO:       'SM Academia — Bienvenida al nuevo curso',
+    SUSPENSION:   'SM Academia — Suspensión de actividad',
+    CAMBIO:       'SM Academia — Aviso importante',
+    PRESENTACION: 'SM Academia — Presentación del curso',
   }[_comTipo] || 'SM Academia';
 
   const cols = cfg.needsFinanciero ? 5 : 3;
@@ -3399,6 +3418,37 @@ function _comMsgWA(f) {
         +'_Puedes cambiar la contraseña desde tu perfil una vez dentro._\n\n'
         +'Para cualquier duda: 📲 '+_COM_BIZUM+'\nSM Academia 🎒';
     }
+    case 'CONFIRM_INSC': {
+      const alus = f.alumnos || [];
+      let bloques = '';
+      let totalFam = 0;
+      alus.forEach(alu => {
+        const nomAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+        const curso  = alu.CURSO || '—';
+        const acts   = _comInscExtrasAlu(alu.ID_ALUMNO);
+        const cuota  = _ampaCuota(acts.length);
+        totalFam += cuota;
+        bloques += `👦 *${esc(nomAlu)}* — ${esc(curso)}\n`;
+        bloques += acts.map(a => `   • ${esc(a)}`).join('\n') + (acts.length ? '\n' : '   _Sin actividades registradas_\n');
+        bloques += `   💰 Cuota mensual: *${cuota}€*\n\n`;
+      });
+      return 'Hola '+tutor+' 👋\n\n'
+        +'Aquí tienes el resumen de *inscripciones 2026/2027*. Confirma que todo es correcto respondiendo "OK" o indícanos cualquier cambio. ✅\n\n'
+        +'─────────────────────\n'
+        +bloques
+        +(alus.length > 1 ? '💶 *Total mensual familia: '+totalFam+'€*\n\n' : '')
+        +'─────────────────────\n'
+        +'💳 *Datos de pago (cuota mensual AMPA):*\n'
+        +'🏦 Transferencia bancaria\n'
+        +'   '+_COM_IBAN_AMPA+'\n'
+        +'📝 Concepto *OBLIGATORIO:*\n'
+        +'   Nombre y apellidos del alumno/a + curso\n'
+        +'   _Ej: Juan Pérez - 4º Primaria_\n\n'
+        +(alus.length > 1 ? '_Si tienes más de un alumno, realiza una transferencia por cada uno con su concepto correspondiente._\n\n' : '')
+        +'⏰ Plazo: del 1 al 10 de cada mes.\n\n'
+        +(nota?'📌 '+nota+'\n\n':'')
+        +'¡Gracias! 🙏\nSM Academia · 📲 '+_COM_BIZUM;
+    }
     case 'SUSPENSION':
       return 'Hola '+tutor+' 👋\n\n'
         +'⚠️ Te comunicamos que la actividad queda *suspendida* temporalmente.\n\n'
@@ -3478,14 +3528,43 @@ function _comMsgEmail(f) {
         +'Para cualquier duda estamos disponibles en el '+_COM_BIZUM+'.\n\n'
         +'Un saludo,\nSM Academia';
     }
+    case 'CONFIRM_INSC': {
+      const alus = f.alumnos || [];
+      let bloques = '';
+      let totalFam = 0;
+      alus.forEach(alu => {
+        const nomAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+        const curso  = alu.CURSO || '—';
+        const acts   = _comInscExtrasAlu(alu.ID_ALUMNO);
+        const cuota  = _ampaCuota(acts.length);
+        totalFam += cuota;
+        bloques += `${nomAlu} — ${curso}\n`;
+        bloques += acts.map(a => `  • ${a}`).join('\n') + (acts.length ? '\n' : '  Sin actividades registradas\n');
+        bloques += `  Cuota mensual: ${cuota}€\n\n`;
+      });
+      return 'Hola '+tutor+',\n\n'
+        +'Te enviamos el resumen de inscripciones para el curso 2026/2027.\n'
+        +'Por favor, confirma que los datos son correctos respondiéndonos o indica el cambio necesario.\n\n'
+        +'── INSCRIPCIONES ──\n'
+        +bloques
+        +(alus.length > 1 ? 'Total mensual familia: '+totalFam+'€\n\n' : '')
+        +'── DATOS DE PAGO ──\n'
+        +'Cuota mensual AMPA (transferencia bancaria):\n'
+        +'  IBAN: '+_COM_IBAN_AMPA+'\n'
+        +'  Concepto OBLIGATORIO: Nombre y apellidos del alumno/a + curso\n'
+        +'  Ejemplo: Juan Pérez - 4º Primaria\n\n'
+        +(alus.length > 1 ? 'Si tienes más de un alumno, realiza una transferencia por cada uno con su concepto correspondiente.\n\n' : '')
+        +'Plazo de pago: del 1 al 10 de cada mes.\n\n'
+        +(nota?nota+'\n\n':'')
+        +'Para cualquier consulta estamos disponibles en el '+_COM_BIZUM+'.\n\n'
+        +'Un saludo,\nSM Academia';
+    }
     default:
       return _comMsgWA(f).replace(/\*([^*]+)\*/g,'$1').replace(/_([^_]+)_/g,'$1');
   }
 }
 
 function _comMsgEjemplo() {
-  const cfg = _COM_TIPOS[_comTipo] || _COM_TIPOS.COBRO;
-  const nota = (_comNota||'').trim();
   if (_comTipo === 'COBRO') {
     return 'Hola [Nombre] 👋\n\n'
       +'Te recordamos que el pago de *[importe]* correspondiente a *[mes]* está pendiente.\n\n'
@@ -3496,7 +3575,25 @@ function _comMsgEjemplo() {
       +'⏰ Plazo: del 1 al 10 de cada mes.\n\n'
       +'¡Muchas gracias! 🙏\nSM Academia';
   }
-  return _comMsgWA({ nombre: '[Nombre]', importe: 0, concepto: '', mes: '' });
+  if (_comTipo === 'CONFIRM_INSC') {
+    return 'Hola [Nombre] 👋\n\n'
+      +'Aquí tienes el resumen de *inscripciones 2026/2027*. Confirma que todo es correcto respondiendo "OK" o indícanos cualquier cambio. ✅\n\n'
+      +'─────────────────────\n'
+      +'👦 *[Alumno]* — [Curso]\n'
+      +'   • [Actividad 1]\n'
+      +'   • [Actividad 2]\n'
+      +'   💰 Cuota mensual: *20€*\n\n'
+      +'─────────────────────\n'
+      +'💳 *Datos de pago (cuota mensual AMPA):*\n'
+      +'🏦 Transferencia bancaria\n'
+      +'   '+_COM_IBAN_AMPA+'\n'
+      +'📝 Concepto *OBLIGATORIO:*\n'
+      +'   Nombre y apellidos del alumno/a + curso\n'
+      +'   _Ej: Juan Pérez - 4º Primaria_\n\n'
+      +'⏰ Plazo: del 1 al 10 de cada mes.\n\n'
+      +'¡Gracias! 🙏\nSM Academia · 📲 '+_COM_BIZUM;
+  }
+  return _comMsgWA({ nombre: '[Nombre]', importe: 0, concepto: '', mes: '', alumnos: [] });
 }
 
 function _comGetMsg(f) {
