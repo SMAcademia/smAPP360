@@ -3087,6 +3087,9 @@ function _ampaCuota(numActs) {
   return 0;
 }
 
+const _COM_SVC_RE      = /madrugadora|recogida|bono|cuota|d[ií]a suelto/i;
+const _COM_OCULTAR_RE  = /recogida tard|bono recogida/i;   // se suprimen del mensaje
+const _COM_TEMPRANA_RE = /madrugadora|recogida temp/i;     // pago SM Academia 27€
 function _comInscExtrasAlu(aluId) {
   const seen = new Set();
   return DB.inscripciones
@@ -3096,12 +3099,12 @@ function _comInscExtrasAlu(aluId) {
     .map(i => {
       const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
       if (!a || seen.has(a.ID)) return null;
+      if (_COM_OCULTAR_RE.test(a.NOMBRE||'')) return null;  // ocultar tardía y bono
       seen.add(a.ID);
       return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||''), horario: String(i.HORARIO||'').trim(), diasRaw: String(i.DIAS_SEMANA||a.DIAS_SEMANA||'') };
     })
     .filter(Boolean);
 }
-const _COM_SVC_RE = /madrugadora|recogida|bono|cuota|d[ií]a suelto/i;
 function _comInscAmpaAlu(aluId) {
   // Solo actividades programadas → pago al AMPA (excluye servicios y bono/cuota)
   const seen = new Set();
@@ -3121,7 +3124,7 @@ function _comTieneMadrugadora(aluId) {
   return DB.inscripciones.some(i =>
     String(i.ID_ALUMNO) === String(aluId) &&
     String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
-    /madrugadora/i.test(DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD))?.NOMBRE||'')
+    _COM_TEMPRANA_RE.test(DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD))?.NOMBRE||'')
   );
 }
 
