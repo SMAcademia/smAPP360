@@ -6797,14 +6797,15 @@ function setEval(btn) {
 //  REORGANIZACIÓN GRUPOS INGLÉS — SEPTIEMBRE 2026
 // ══════════════════════════════════════════════════════════════════════════
 window._reoInglesPreview = function() {
-  // G1 (ID 11, Mar/Jue): cursos hasta 2º Primaria
-  // G2 (ID 10, Lun/Mié): 3º Primaria en adelante
+  // G1 = ID 11 = MARTES,JUEVES  → Infantil 3 años – 2º Primaria
+  // G2 = ID 10 = LUNES,MIÉRCOLES → 3º Primaria – 6º Primaria
   const G1_ID = '11', G2_ID = '10';
+  const G1_DIAS = 'MARTES,JUEVES';
+  const G2_DIAS = 'LUNES,MIÉRCOLES';
   const CURSOS_G1 = new Set(['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA']);
 
-  // Construir plan dinámicamente desde DB en lugar de hardcodearlo
-  const cambios = [];
-  const sinGrupo = [];
+  const cambios  = [];   // mover a otra actividad
+  const fixDatos = [];   // misma actividad, pero DIAS_SEMANA o GRUPO incorrecto
 
   DB.inscripciones.forEach(i => {
     const actId = String(i.ID_ACTIVIDAD||'');
@@ -6813,72 +6814,86 @@ window._reoInglesPreview = function() {
     const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
     if (!alu) return;
 
-    const inscId = String(i.ID_INSCRIPCION||i.ID);
-    const cursoOk = CURSOS_G1.has(String(alu.CURSO||'').trim().toUpperCase());
-    const debeG1  = cursoOk;
-    const estaG1  = actId === G1_ID;
+    const inscId    = String(i.ID_INSCRIPCION||i.ID);
+    const debeG1    = CURSOS_G1.has(String(alu.CURSO||'').trim().toUpperCase());
+    const estaG1    = actId === G1_ID;
     const nombreAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
     const cursoAlu  = alu.CURSO || '—';
+    const targetId  = debeG1 ? G1_ID : G2_ID;
+    const targetGrupo = debeG1 ? '1' : '2';
+    const targetDias  = debeG1 ? G1_DIAS : G2_DIAS;
 
-    if (!i.GRUPO && actId === G1_ID) {
-      sinGrupo.push({ inscId, nombreAlu, cursoAlu });
-    }
-
-    if (debeG1 && !estaG1) {
-      cambios.push({ inscId, nombreAlu, cursoAlu, de: 'G2 (Lun/Mié)', a: 'G1 (Mar/Jue)', newActId: G1_ID, newGrupo: '1' });
-    } else if (!debeG1 && estaG1) {
-      cambios.push({ inscId, nombreAlu, cursoAlu, de: 'G1 (Mar/Jue)', a: 'G2 (Lun/Mié)', newActId: G2_ID, newGrupo: '2' });
+    if (actId !== targetId) {
+      cambios.push({
+        inscId, nombreAlu, cursoAlu,
+        de: estaG1 ? 'G1 (Mar/Jue)' : 'G2 (Lun/Mié)',
+        a:  debeG1 ? 'G1 (Mar/Jue)' : 'G2 (Lun/Mié)',
+        newActId: targetId, newGrupo: targetGrupo, newDias: targetDias,
+      });
+    } else {
+      // Mismo grupo — revisar si DIAS_SEMANA o GRUPO están mal
+      const curDias  = String(i.DIAS_SEMANA||'').replace(/\s/g,'').toUpperCase();
+      const curGrupo = String(i.GRUPO||'');
+      if (curDias !== targetDias || curGrupo !== targetGrupo) {
+        fixDatos.push({
+          inscId, nombreAlu, cursoAlu,
+          newGrupo: targetGrupo, newDias: targetDias,
+          info: `G${curGrupo||'?'} ${curDias||'sin días'} → G${targetGrupo} ${targetDias}`,
+        });
+      }
     }
   });
+
+  if (!cambios.length && !fixDatos.length) {
+    showToast('Los grupos ya están correctamente asignados.', 'info'); return;
+  }
 
   const filasCambios = cambios.map(c =>
     `<tr><td class="mono">${esc(c.inscId)}</td><td><strong>${esc(c.nombreAlu)}</strong></td><td>${esc(c.cursoAlu)}</td>
      <td><span style="color:var(--red)">${esc(c.de)}</span> → <span style="color:var(--green)">${esc(c.a)}</span></td></tr>`
   ).join('');
 
-  const filasSinGrupo = sinGrupo.map(s =>
-    `<tr><td class="mono">${esc(s.inscId)}</td><td>${esc(s.nombreAlu)}</td><td>${esc(s.cursoAlu)}</td><td style="color:var(--amber)">Asignar G1</td></tr>`
+  const filasFixDatos = fixDatos.map(s =>
+    `<tr><td class="mono">${esc(s.inscId)}</td><td>${esc(s.nombreAlu)}</td><td>${esc(s.cursoAlu)}</td>
+     <td style="color:var(--amber);font-size:11px">${esc(s.info)}</td></tr>`
   ).join('');
 
-  if (!cambios.length && !sinGrupo.length) {
-    showToast('Los grupos ya están correctamente asignados.', 'info'); return;
-  }
-
+  const total = cambios.length + fixDatos.length;
   openModal('🔀 Reorganización grupos Inglés',
     `<p style="font-size:12px;color:var(--text3);margin-bottom:12px">
-       G1 (Martes/Jueves): Infantil 3 años → 2º Primaria<br>
-       G2 (Lunes/Miércoles): 3º Primaria → 6º Primaria
+       <strong>G1</strong> (Martes/Jueves, ID 11): Infantil 3 años → 2º Primaria<br>
+       <strong>G2</strong> (Lunes/Miércoles, ID 10): 3º Primaria → 6º Primaria
      </p>
      ${cambios.length ? `
      <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
        Cambios de grupo (${cambios.length})
      </div>
-     <div class="table-wrap" style="max-height:260px;overflow-y:auto;margin-bottom:12px">
+     <div class="table-wrap" style="max-height:220px;overflow-y:auto;margin-bottom:12px">
        <table style="font-size:12px">
          <thead><tr><th>Inscripción</th><th>Alumno</th><th>Curso</th><th>Cambio</th></tr></thead>
          <tbody>${filasCambios}</tbody>
        </table>
      </div>` : ''}
-     ${sinGrupo.length ? `
+     ${fixDatos.length ? `
      <div style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
-       Grupo vacío → asignar G1 (${sinGrupo.length})
+       Corregir días/grupo en inscripción (${fixDatos.length})
      </div>
-     <div class="table-wrap" style="max-height:140px;overflow-y:auto">
+     <div class="table-wrap" style="max-height:160px;overflow-y:auto">
        <table style="font-size:12px">
-         <thead><tr><th>Inscripción</th><th>Alumno</th><th>Curso</th><th>Acción</th></tr></thead>
-         <tbody>${filasSinGrupo}</tbody>
+         <thead><tr><th>Inscripción</th><th>Alumno</th><th>Curso</th><th>Corrección</th></tr></thead>
+         <tbody>${filasFixDatos}</tbody>
        </table>
      </div>` : ''}`,
-    `<button class="btn btn-primary" onclick="window._reoInglesEjecutar()">Aplicar ${cambios.length + sinGrupo.length} cambios</button>
+    `<button class="btn btn-primary" onclick="window._reoInglesEjecutar()">Aplicar ${total} cambio${total!==1?'s':''}</button>
      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>`
   );
-  window._reoInglesPlan = { cambios, sinGrupo };
+  window._reoInglesPlan = { cambios, fixDatos };
 };
 
 window._reoInglesEjecutar = async function() {
-  const { cambios, sinGrupo } = window._reoInglesPlan || {};
-  if (!cambios?.length && !sinGrupo?.length) { closeModal(); return; }
-  const total = (cambios?.length||0) + (sinGrupo?.length||0);
+  const { cambios, fixDatos } = window._reoInglesPlan || {};
+  if (!cambios?.length && !fixDatos?.length) { closeModal(); return; }
+  const total = (cambios?.length||0) + (fixDatos?.length||0);
   const btnEl = document.querySelector('.modal-footer .btn-primary');
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = `Aplicando 0/${total}…`; }
 
@@ -6887,25 +6902,25 @@ window._reoInglesEjecutar = async function() {
 
   for (const c of (cambios||[])) {
     try {
-      await writeToSheet('INSCRIPCIONES', { ID_ACTIVIDAD: c.newActId, GRUPO: c.newGrupo }, c.inscId);
+      await writeToSheet('INSCRIPCIONES', { ID_ACTIVIDAD: c.newActId, GRUPO: c.newGrupo, DIAS_SEMANA: c.newDias }, c.inscId);
       const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID) === c.inscId);
-      if (insc) { insc.ID_ACTIVIDAD = c.newActId; insc.GRUPO = c.newGrupo; }
+      if (insc) { insc.ID_ACTIVIDAD = c.newActId; insc.GRUPO = c.newGrupo; insc.DIAS_SEMANA = c.newDias; }
       ok++;
     } catch(e) { err++; }
     if (btnEl) btnEl.textContent = `Aplicando ${ok+err}/${total}…`;
   }
-  for (const s of (sinGrupo||[])) {
+  for (const s of (fixDatos||[])) {
     try {
-      await writeToSheet('INSCRIPCIONES', { GRUPO: '1' }, s.inscId);
+      await writeToSheet('INSCRIPCIONES', { GRUPO: s.newGrupo, DIAS_SEMANA: s.newDias }, s.inscId);
       const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID) === s.inscId);
-      if (insc) insc.GRUPO = '1';
+      if (insc) { insc.GRUPO = s.newGrupo; insc.DIAS_SEMANA = s.newDias; }
       ok++;
     } catch(e) { err++; }
     if (btnEl) btnEl.textContent = `Aplicando ${ok+err}/${total}…`;
   }
 
   closeModal();
-  showToast(`${ok} cambios aplicados${err?' · '+err+' errores':''}`);
+  showToast(`${ok} cambio${ok!==1?'s':''} aplicado${ok!==1?'s':''}${err?' · '+err+' errores':''}`);
   if (estadoEl) estadoEl.textContent = `✓ Aplicado ${new Date().toLocaleDateString('es-ES')}`;
   window._reoInglesPlan = null;
   loadAllData().then(configuracion);
