@@ -1120,6 +1120,23 @@ function fmtDias(raw) {
   const ABREV = {LUNES:'Lu',MARTES:'Ma',MIERCOLES:'Mi',JUEVES:'Ju',VIERNES:'Vi',SABADO:'Sa'};
   return String(raw).split(',').map(d => ABREV[sinTildes(d.trim())] || d.trim().slice(0,2)).filter(Boolean).join(' ');
 }
+function fmtDiasLargo(raw) {
+  if (!raw) return '';
+  const MAP = {LUNES:'Lunes',MARTES:'Martes',MIERCOLES:'Miércoles',JUEVES:'Jueves',VIERNES:'Viernes',SABADO:'Sábado'};
+  const parts = String(raw).split(',').map(d => MAP[sinTildes(d.trim())] || d.trim()).filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  return parts.slice(0,-1).join(', ') + ' y ' + parts[parts.length-1];
+}
+function _actHorario(actId) {
+  const i = (DB.inscripciones||[]).find(x => String(x.ID_ACTIVIDAD)===String(actId) && String(x.ESTADO||'').toUpperCase()==='ACTIVA' && (x.HORARIO||'').trim());
+  return (i?.HORARIO||'').trim();
+}
+function fmtHorarioLargo(h) {
+  if (!h) return '';
+  const p = h.split('-');
+  return p.length === 2 ? 'de '+p[0].trim()+' a '+p[1].trim() : h;
+}
 
 function fmtFecha(v) {
   if (!v) return '—';
@@ -7141,15 +7158,25 @@ function listados() {
     </tr>`;
   }
 
+  function actSubtitle(actId, act) {
+    const dias = fmtDiasLargo(act?.DIAS_SEMANA||'');
+    const hor  = fmtHorarioLargo(_actHorario(actId));
+    return [dias, hor].filter(Boolean).join(' ');
+  }
+
   function tablaAct(actId) {
     const act   = actsDisp.find(a => String(a.ID)===actId);
     const alus  = aluDeAct(actId);
     if (!alus.length) return '';
+    const sub   = actSubtitle(actId, act);
     const thead = '<thead><tr><th>Nombre</th><th>Curso</th><th>Tutor</th><th>Teléfono</th><th>Centro</th></tr></thead>';
     return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:0">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--black);color:#fff">
-        <span style="font-size:13px;font-weight:700">${esc(act?.NOMBRE||actId)}</span>
-        <span style="font-size:12px;opacity:.7">${alus.length} alumno${alus.length===1?'':'s'}</span>
+        <div>
+          <div style="font-size:13px;font-weight:700">${esc(act?.NOMBRE||actId)}</div>
+          ${sub?`<div style="font-size:11px;opacity:.65;margin-top:1px">${esc(sub)}</div>`:''}
+        </div>
+        <span style="font-size:12px;opacity:.7;white-space:nowrap">${alus.length} alumno${alus.length===1?'':'s'}</span>
       </div>
       <div class="table-wrap">
         <table>${thead}<tbody>${alus.map(filaAlu).join('')}</tbody></table>
@@ -7202,7 +7229,9 @@ function listados() {
         const act  = actsDisp.find(a=>String(a.ID)===actId);
         const alus = aluDeAct(actId);
         if (!alus.length) return;
-        bodyHtml += `<h3 style="margin:18px 0 6px;font-size:13px;color:#444">${esc(act?.NOMBRE||actId)} <span style="font-weight:400;color:#888">(${alus.length})</span></h3>
+        const sub  = actSubtitle(actId, act);
+        bodyHtml += `<h3 style="margin:18px 0 2px;font-size:13px;color:#1b5e20;font-weight:700">${esc(act?.NOMBRE||actId)} <span style="font-weight:400;color:#888">(${alus.length})</span></h3>
+          ${sub?`<p style="font-size:11px;color:#666;margin:0 0 6px">${esc(sub)}</p>`:'<div style="margin-bottom:6px"></div>'}
           <table>${thead}<tbody>${alus.map(filaAlu).join('')}</tbody></table>`;
       });
     const tit = activas.length === actsDisp.length ? 'Listado completo de alumnos — SM Extraescolares'
