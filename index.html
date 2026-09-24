@@ -3533,7 +3533,7 @@ function _comMsgWA(f) {
         const cuotaAmpa   = _ampaCuota(actsAmpa);
         const madBase     = tieneMad ? 27 : 0;
         const esHermano   = aluIdx > 0 && madBase > 0;
-        const cuotaMad    = esHermano ? Math.round(madBase * 0.9) : madBase;
+        const cuotaMad    = esHermano ? +(madBase * 0.9).toFixed(2) : madBase;
         const confls      = _detectarConflictos(alu.ID_ALUMNO);
         totalAmpa += cuotaAmpa; totalMad += cuotaMad;
         if (cuotaAmpa) alguienAmpa = true;
@@ -3678,7 +3678,7 @@ function _comMsgEmail(f) {
         const cuotaAmpa   = _ampaCuota(actsAmpa);
         const madBase     = tieneMad ? 27 : 0;
         const esHermano   = aluIdx > 0 && madBase > 0;
-        const cuotaMad    = esHermano ? Math.round(madBase * 0.9) : madBase;
+        const cuotaMad    = esHermano ? +(madBase * 0.9).toFixed(2) : madBase;
         const confls      = _detectarConflictos(alu.ID_ALUMNO);
         totalAmpa += cuotaAmpa; totalMad += cuotaMad;
         if (cuotaAmpa) alguienAmpa = true;
