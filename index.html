@@ -3106,7 +3106,7 @@ function _ampaCuota(acts) {
 }
 
 const _COM_SVC_RE      = /madrugadora|recogida|bono|cuota|d[ií]a suelto/i;
-const _COM_OCULTAR_RE  = /recogida tard|bono recogida/i;   // se suprimen del mensaje
+const _COM_OCULTAR_RE  = /recogida tard|bono recogida|d[ií]a suelto/i;  // no mostrar en mensaje
 const _COM_TEMPRANA_RE = /madrugadora|recogida temp/i;     // pago SM Academia 27€
 function _comInscExtrasAlu(aluId) {
   const seen = new Set();
@@ -3117,11 +3117,12 @@ function _comInscExtrasAlu(aluId) {
     .map(i => {
       const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
       if (!a || seen.has(a.ID)) return null;
-      if (_COM_OCULTAR_RE.test(a.NOMBRE||'')) return null;  // ocultar tardía y bono
+      if (_COM_OCULTAR_RE.test(a.NOMBRE||'')) return null;
       seen.add(a.ID);
-      // diasRaw: prioridad a la actividad (verdad canónica) sobre la inscripción (puede estar obsoleta)
       const diasRaw = String(a.DIAS_SEMANA||i.DIAS_SEMANA||'');
-      return { nombre: a.NOMBRE, dias: fmtDias(diasRaw), horario: String(i.HORARIO||'').trim(), diasRaw };
+      // Para servicios (recogida temprana, etc.) no mostrar días — son servicios, no actividades con horario fijo
+      const esSvc = _COM_TEMPRANA_RE.test(a.NOMBRE||'');
+      return { nombre: a.NOMBRE, dias: esSvc ? '' : fmtDias(diasRaw), horario: String(i.HORARIO||'').trim(), diasRaw };
     })
     .filter(Boolean);
 }
@@ -3550,10 +3551,11 @@ function _comMsgWA(f) {
         }
         bloques += '\n';
       });
-      const totalFam = totalAmpa + totalMad;
+      const totalFam = +(totalAmpa + totalMad).toFixed(2);
+      const fmtE = n => Number.isInteger(n) ? n+'€' : n.toFixed(2).replace('.',',')+'€';
       const resumenTotal = alus.length > 1 && totalFam > 0
-        ? '💶 *Total mensual familia: '+totalFam+'€*'
-          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Recogida Temprana)' : '')
+        ? '💶 *Total mensual familia: '+fmtE(totalFam)+'*'
+          +(totalAmpa && totalMad ? ' ('+fmtE(totalAmpa)+' AMPA + '+fmtE(totalMad)+' Recogida Temprana)' : '')
           +'\n\n'
         : '';
       const pagoAmpa = alguienAmpa
@@ -3695,10 +3697,11 @@ function _comMsgEmail(f) {
         }
         bloques += '\n';
       });
-      const totalFam = totalAmpa + totalMad;
+      const totalFam = +(totalAmpa + totalMad).toFixed(2);
+      const fmtE = n => Number.isInteger(n) ? n+'€' : n.toFixed(2).replace('.',',')+'€';
       const resumenTotal = alus.length > 1 && totalFam > 0
-        ? 'Total mensual familia: '+totalFam+'€'
-          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Recogida Temprana)' : '')
+        ? 'Total mensual familia: '+fmtE(totalFam)
+          +(totalAmpa && totalMad ? ' ('+fmtE(totalAmpa)+' AMPA + '+fmtE(totalMad)+' Recogida Temprana)' : '')
           +'\n\n'
         : '';
       const pagoAmpa = alguienAmpa
