@@ -6692,6 +6692,124 @@ function setEval(btn) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  REORGANIZACIÓN GRUPOS INGLÉS — SEPTIEMBRE 2026
+// ══════════════════════════════════════════════════════════════════════════
+window._reoInglesPreview = function() {
+  // G1 (ID 10, Lun/Mié): cursos hasta 2º Primaria
+  // G2 (ID 11, Mar/Jue): 3º Primaria en adelante
+  const G1_ID = '10', G2_ID = '11';
+  const CURSOS_G1 = new Set(['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA']);
+
+  // Construir plan dinámicamente desde DB en lugar de hardcodearlo
+  const cambios = [];
+  const sinGrupo = [];
+
+  DB.inscripciones.forEach(i => {
+    const actId = String(i.ID_ACTIVIDAD||'');
+    if (actId !== G1_ID && actId !== G2_ID) return;
+    if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return;
+    const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
+    if (!alu) return;
+
+    const inscId = String(i.ID_INSCRIPCION||i.ID);
+    const cursoOk = CURSOS_G1.has(String(alu.CURSO||'').trim().toUpperCase());
+    const debeG1  = cursoOk;
+    const estaG1  = actId === G1_ID;
+    const nombreAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+    const cursoAlu  = alu.CURSO || '—';
+
+    if (!i.GRUPO && actId === G1_ID) {
+      sinGrupo.push({ inscId, nombreAlu, cursoAlu });
+    }
+
+    if (debeG1 && !estaG1) {
+      cambios.push({ inscId, nombreAlu, cursoAlu, de: 'G2 (Mar/Jue)', a: 'G1 (Lun/Mié)', newActId: G1_ID, newGrupo: '1' });
+    } else if (!debeG1 && estaG1) {
+      cambios.push({ inscId, nombreAlu, cursoAlu, de: 'G1 (Lun/Mié)', a: 'G2 (Mar/Jue)', newActId: G2_ID, newGrupo: '2' });
+    }
+  });
+
+  const filasCambios = cambios.map(c =>
+    `<tr><td class="mono">${esc(c.inscId)}</td><td><strong>${esc(c.nombreAlu)}</strong></td><td>${esc(c.cursoAlu)}</td>
+     <td><span style="color:var(--red)">${esc(c.de)}</span> → <span style="color:var(--green)">${esc(c.a)}</span></td></tr>`
+  ).join('');
+
+  const filasSinGrupo = sinGrupo.map(s =>
+    `<tr><td class="mono">${esc(s.inscId)}</td><td>${esc(s.nombreAlu)}</td><td>${esc(s.cursoAlu)}</td><td style="color:var(--amber)">Asignar G1</td></tr>`
+  ).join('');
+
+  if (!cambios.length && !sinGrupo.length) {
+    showToast('Los grupos ya están correctamente asignados.', 'info'); return;
+  }
+
+  openModal('🔀 Reorganización grupos Inglés',
+    `<p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+       G1 (Lunes/Miércoles): Infantil 3 años → 2º Primaria<br>
+       G2 (Martes/Jueves): 3º Primaria → 6º Primaria
+     </p>
+     ${cambios.length ? `
+     <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
+       Cambios de grupo (${cambios.length})
+     </div>
+     <div class="table-wrap" style="max-height:260px;overflow-y:auto;margin-bottom:12px">
+       <table style="font-size:12px">
+         <thead><tr><th>Inscripción</th><th>Alumno</th><th>Curso</th><th>Cambio</th></tr></thead>
+         <tbody>${filasCambios}</tbody>
+       </table>
+     </div>` : ''}
+     ${sinGrupo.length ? `
+     <div style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
+       Grupo vacío → asignar G1 (${sinGrupo.length})
+     </div>
+     <div class="table-wrap" style="max-height:140px;overflow-y:auto">
+       <table style="font-size:12px">
+         <thead><tr><th>Inscripción</th><th>Alumno</th><th>Curso</th><th>Acción</th></tr></thead>
+         <tbody>${filasSinGrupo}</tbody>
+       </table>
+     </div>` : ''}`,
+    `<button class="btn btn-primary" onclick="window._reoInglesEjecutar()">Aplicar ${cambios.length + sinGrupo.length} cambios</button>
+     <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>`
+  );
+  window._reoInglesPlan = { cambios, sinGrupo };
+};
+
+window._reoInglesEjecutar = async function() {
+  const { cambios, sinGrupo } = window._reoInglesPlan || {};
+  if (!cambios?.length && !sinGrupo?.length) { closeModal(); return; }
+  const total = (cambios?.length||0) + (sinGrupo?.length||0);
+  const btnEl = document.querySelector('.modal-footer .btn-primary');
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = `Aplicando 0/${total}…`; }
+
+  let ok = 0, err = 0;
+  const estadoEl = document.getElementById('reo-ingles-estado');
+
+  for (const c of (cambios||[])) {
+    try {
+      await writeToSheet('INSCRIPCIONES', { ID_ACTIVIDAD: c.newActId, GRUPO: c.newGrupo }, c.inscId);
+      const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID) === c.inscId);
+      if (insc) { insc.ID_ACTIVIDAD = c.newActId; insc.GRUPO = c.newGrupo; }
+      ok++;
+    } catch(e) { err++; }
+    if (btnEl) btnEl.textContent = `Aplicando ${ok+err}/${total}…`;
+  }
+  for (const s of (sinGrupo||[])) {
+    try {
+      await writeToSheet('INSCRIPCIONES', { GRUPO: '1' }, s.inscId);
+      const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID) === s.inscId);
+      if (insc) insc.GRUPO = '1';
+      ok++;
+    } catch(e) { err++; }
+    if (btnEl) btnEl.textContent = `Aplicando ${ok+err}/${total}…`;
+  }
+
+  closeModal();
+  showToast(`${ok} cambios aplicados${err?' · '+err+' errores':''}`);
+  if (estadoEl) estadoEl.textContent = `✓ Aplicado ${new Date().toLocaleDateString('es-ES')}`;
+  window._reoInglesPlan = null;
+  loadAllData().then(configuracion);
+};
+
+// ══════════════════════════════════════════════════════════════════════════
 //  MIGRACIÓN DE ACTIVIDADES — SEPTIEMBRE 2026
 // ══════════════════════════════════════════════════════════════════════════
 window._migracionOct26Preview = function() {
@@ -7477,6 +7595,20 @@ function configuracion() {
             </p>
             <button class="btn btn-secondary" style="border-color:var(--amber);color:var(--amber)" onclick="window._migracionOct26Preview()">
               Ver plan detallado y ejecutar
+            </button>
+          </div>
+
+          <div class="card" style="border:1.5px solid var(--blue);margin-top:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div class="card-title" style="margin-bottom:0;color:var(--blue)">🔀 Reorganización grupos Inglés — Sep 2026</div>
+              <span id="reo-ingles-estado" style="font-size:11px;color:var(--text3)"></span>
+            </div>
+            <p style="font-size:12px;color:var(--text3);margin-bottom:12px">
+              G1 (Lun/Mié): Infantil 3 años → 2º Primaria · G2 (Mar/Jue): 3º Primaria → 6º Primaria.<br>
+              Reasigna 10 inscripciones activas según el curso de cada alumno.
+            </p>
+            <button class="btn btn-secondary" style="border-color:var(--blue);color:var(--blue)" onclick="window._reoInglesPreview()">
+              Ver plan y ejecutar
             </button>
           </div>
 
