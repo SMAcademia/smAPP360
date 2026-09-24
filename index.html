@@ -3524,21 +3524,25 @@ function _comMsgWA(f) {
       let bloques = '';
       let totalAmpa = 0, totalMad = 0;
       let hayConflictos = false, alguienAmpa = false, alguienMad = false;
-      alus.forEach(alu => {
-        const nomAlu   = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
-        const curso    = alu.CURSO || '—';
-        const actsAll  = _comInscExtrasAlu(alu.ID_ALUMNO);
-        const actsAmpa = _comInscAmpaAlu(alu.ID_ALUMNO);
-        const tieneMad = _comTieneMadrugadora(alu.ID_ALUMNO);
-        const cuotaAmpa = _ampaCuota(actsAmpa);
-        const cuotaMad  = tieneMad ? 27 : 0;
-        const confls    = _detectarConflictos(alu.ID_ALUMNO);
+      alus.forEach((alu, aluIdx) => {
+        const nomAlu      = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+        const curso       = alu.CURSO || '—';
+        const actsAll     = _comInscExtrasAlu(alu.ID_ALUMNO);
+        const actsAmpa    = _comInscAmpaAlu(alu.ID_ALUMNO);
+        const tieneMad    = _comTieneMadrugadora(alu.ID_ALUMNO);
+        const cuotaAmpaBase = _ampaCuota(actsAmpa);
+        const esHermano   = aluIdx > 0 && cuotaAmpaBase > 0;
+        const cuotaAmpa   = esHermano ? Math.round(cuotaAmpaBase * 0.9) : cuotaAmpaBase;
+        const cuotaMad    = tieneMad ? 27 : 0;
+        const confls      = _detectarConflictos(alu.ID_ALUMNO);
         totalAmpa += cuotaAmpa; totalMad += cuotaMad;
         if (cuotaAmpa) alguienAmpa = true;
         if (tieneMad)  alguienMad  = true;
         bloques += `👦 *${esc(nomAlu)}* — ${esc(curso)}\n`;
         bloques += actsAll.map(a => `   • ${esc(a.nombre)}${a.dias?' ('+esc(a.dias)+')':''}`).join('\n') + (actsAll.length ? '\n' : '   _Sin actividades registradas_\n');
-        if (cuotaAmpa) bloques += `   💰 Actividades AMPA: *${cuotaAmpa}€/mes*\n`;
+        if (cuotaAmpaBase) bloques += esHermano
+          ? `   💰 Actividades AMPA: *${cuotaAmpa}€/mes* _(dto. 10% hermano/a, antes ${cuotaAmpaBase}€)_\n`
+          : `   💰 Actividades AMPA: *${cuotaAmpa}€/mes*\n`;
         if (cuotaMad)  bloques += `   💰 Recogida Temprana: *${cuotaMad}€/mes*\n`;
         if (confls.length) {
           hayConflictos = true;
@@ -3665,21 +3669,25 @@ function _comMsgEmail(f) {
       let bloques = '';
       let totalAmpa = 0, totalMad = 0;
       let hayConflictos = false, alguienAmpa = false, alguienMad = false;
-      alus.forEach(alu => {
-        const nomAlu   = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
-        const curso    = alu.CURSO || '—';
-        const actsAll  = _comInscExtrasAlu(alu.ID_ALUMNO);
-        const actsAmpa = _comInscAmpaAlu(alu.ID_ALUMNO);
-        const tieneMad = _comTieneMadrugadora(alu.ID_ALUMNO);
-        const cuotaAmpa = _ampaCuota(actsAmpa);
-        const cuotaMad  = tieneMad ? 27 : 0;
-        const confls    = _detectarConflictos(alu.ID_ALUMNO);
+      alus.forEach((alu, aluIdx) => {
+        const nomAlu      = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+        const curso       = alu.CURSO || '—';
+        const actsAll     = _comInscExtrasAlu(alu.ID_ALUMNO);
+        const actsAmpa    = _comInscAmpaAlu(alu.ID_ALUMNO);
+        const tieneMad    = _comTieneMadrugadora(alu.ID_ALUMNO);
+        const cuotaAmpaBase = _ampaCuota(actsAmpa);
+        const esHermano   = aluIdx > 0 && cuotaAmpaBase > 0;
+        const cuotaAmpa   = esHermano ? Math.round(cuotaAmpaBase * 0.9) : cuotaAmpaBase;
+        const cuotaMad    = tieneMad ? 27 : 0;
+        const confls      = _detectarConflictos(alu.ID_ALUMNO);
         totalAmpa += cuotaAmpa; totalMad += cuotaMad;
         if (cuotaAmpa) alguienAmpa = true;
         if (tieneMad)  alguienMad  = true;
         bloques += `${nomAlu} — ${curso}\n`;
         bloques += actsAll.map(a => `  • ${a.nombre}${a.dias?' ('+a.dias+')':''}`).join('\n') + (actsAll.length ? '\n' : '  Sin actividades registradas\n');
-        if (cuotaAmpa) bloques += `  Actividades AMPA: ${cuotaAmpa}€/mes\n`;
+        if (cuotaAmpaBase) bloques += esHermano
+          ? `  Actividades AMPA: ${cuotaAmpa}€/mes (dto. 10% hermano/a, antes ${cuotaAmpaBase}€)\n`
+          : `  Actividades AMPA: ${cuotaAmpa}€/mes\n`;
         if (cuotaMad)  bloques += `  Recogida Temprana: ${cuotaMad}€/mes\n`;
         if (confls.length) {
           hayConflictos = true;
