@@ -3080,10 +3080,28 @@ const _COM_TIPOS = {
   PRESENTACION:  { label: 'Presentación curso',         icon: '📋', needsMes: false, needsFinanciero: false },
 };
 
-function _ampaCuota(numActs) {
-  if (numActs >= 3) return 27;
-  if (numActs === 2) return 20;
-  if (numActs === 1) return 10;
+function _ampaCuota(acts) {
+  // acts: array de objetos {diasRaw, nombre} o número (retrocompatibilidad)
+  if (typeof acts === 'number') {
+    if (acts >= 3) return 27;
+    if (acts === 2) return 20;
+    if (acts === 1) return 10;
+    return 0;
+  }
+  if (!acts || !acts.length) return 0;
+  // Contar días únicos. Multideporte Adaptado cuenta como semana completa (5 días)
+  const dias = new Set();
+  acts.forEach(a => {
+    if (/multideporte adapt/i.test(a.nombre||'')) {
+      ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'].forEach(d => dias.add(d));
+    } else {
+      String(a.diasRaw||'').split(',').map(d => d.trim().toUpperCase()).filter(Boolean).forEach(d => dias.add(d));
+    }
+  });
+  const n = dias.size;
+  if (n >= 5) return 27;  // lunes a viernes (multideporte adaptado o 3+ actividades)
+  if (n >= 3) return 20;  // 3-4 días (2 actividades normales)
+  if (n >= 1) return 10;  // 1-2 días (1 actividad normal)
   return 0;
 }
 
@@ -3509,7 +3527,7 @@ function _comMsgWA(f) {
         const actsAll  = _comInscExtrasAlu(alu.ID_ALUMNO);
         const actsAmpa = _comInscAmpaAlu(alu.ID_ALUMNO);
         const tieneMad = _comTieneMadrugadora(alu.ID_ALUMNO);
-        const cuotaAmpa = _ampaCuota(actsAmpa.length);
+        const cuotaAmpa = _ampaCuota(actsAmpa);
         const cuotaMad  = tieneMad ? 27 : 0;
         const confls    = _detectarConflictos(alu.ID_ALUMNO);
         totalAmpa += cuotaAmpa; totalMad += cuotaMad;
@@ -3650,7 +3668,7 @@ function _comMsgEmail(f) {
         const actsAll  = _comInscExtrasAlu(alu.ID_ALUMNO);
         const actsAmpa = _comInscAmpaAlu(alu.ID_ALUMNO);
         const tieneMad = _comTieneMadrugadora(alu.ID_ALUMNO);
-        const cuotaAmpa = _ampaCuota(actsAmpa.length);
+        const cuotaAmpa = _ampaCuota(actsAmpa);
         const cuotaMad  = tieneMad ? 27 : 0;
         const confls    = _detectarConflictos(alu.ID_ALUMNO);
         totalAmpa += cuotaAmpa; totalMad += cuotaMad;
