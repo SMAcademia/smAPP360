@@ -3480,7 +3480,7 @@ function _comMsgWA(f) {
         +'─────────────────────\n'
         +bloques
         +(alus.length > 1 ? '💶 *Total mensual familia: '+totalFam+'€*\n\n' : '')
-        +(hayConflictos ? '─────────────────────\n⚠️ *AVISO:* Hemos detectado actividades en el mismo horario. Por favor, confírmanos si deseas mantenerlas o realizar algún cambio.\n\n' : '')
+        +(hayConflictos ? '─────────────────────\n⚠️ *AVISO:* Algunas actividades coinciden en el mismo horario. Por favor, *confirma tu elección* entre ellas o indícanos el cambio que prefieras.\n\n' : '')
         +'─────────────────────\n'
         +'💳 *Datos de pago (cuota mensual AMPA):*\n'
         +'🏦 Transferencia bancaria\n'
@@ -3599,7 +3599,7 @@ function _comMsgEmail(f) {
         +'── INSCRIPCIONES ──\n'
         +bloques
         +(alus.length > 1 ? 'Total mensual familia: '+totalFam+'€\n\n' : '')
-        +(hayConflictos ? '── AVISO IMPORTANTE ──\nHemos detectado actividades en el mismo horario (marcadas con ⚠️). Por favor, confírmanos si deseas mantenerlas o realizar algún cambio.\n\n' : '')
+        +(hayConflictos ? '── AVISO IMPORTANTE ──\nAlgunas actividades coinciden en el mismo horario (marcadas con ⚠️). Por favor, confirma tu elección entre ellas o indícanos el cambio que prefieras.\n\n' : '')
         +'── DATOS DE PAGO ──\n'
         +'Cuota mensual AMPA (transferencia bancaria):\n'
         +'  IBAN: '+_COM_IBAN_AMPA+'\n'
