@@ -3101,6 +3101,29 @@ function _comInscExtrasAlu(aluId) {
     })
     .filter(Boolean);
 }
+const _COM_SVC_RE = /madrugadora|recogida|bono|cuota|d[ií]a suelto/i;
+function _comInscAmpaAlu(aluId) {
+  // Solo actividades programadas → pago al AMPA (excluye servicios y bono/cuota)
+  const seen = new Set();
+  return DB.inscripciones
+    .filter(i => String(i.ID_ALUMNO) === String(aluId)
+              && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
+              && esExtraescolar(i.LINEA||''))
+    .map(i => {
+      const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
+      if (!a || seen.has(a.ID) || _COM_SVC_RE.test(a.NOMBRE||'')) return null;
+      seen.add(a.ID);
+      return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||''), diasRaw: String(i.DIAS_SEMANA||a.DIAS_SEMANA||''), horario: String(i.HORARIO||'').trim() };
+    })
+    .filter(Boolean);
+}
+function _comTieneMadrugadora(aluId) {
+  return DB.inscripciones.some(i =>
+    String(i.ID_ALUMNO) === String(aluId) &&
+    String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
+    /madrugadora/i.test(DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD))?.NOMBRE||'')
+  );
+}
 
 function _horariosSolapan(h1, h2) {
   if (!h1 || !h2) return true;
@@ -3475,39 +3498,62 @@ function _comMsgWA(f) {
     case 'CONFIRM_INSC': {
       const alus = f.alumnos || [];
       let bloques = '';
-      let totalFam = 0;
-      let hayConflictos = false;
+      let totalAmpa = 0, totalMad = 0;
+      let hayConflictos = false, alguienAmpa = false, alguienMad = false;
       alus.forEach(alu => {
-        const nomAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
-        const curso  = alu.CURSO || '—';
-        const acts   = _comInscExtrasAlu(alu.ID_ALUMNO);
-        const cuota  = _ampaCuota(acts.length);
-        const confls = _detectarConflictos(alu.ID_ALUMNO);
-        totalFam += cuota;
+        const nomAlu   = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+        const curso    = alu.CURSO || '—';
+        const actsAll  = _comInscExtrasAlu(alu.ID_ALUMNO);
+        const actsAmpa = _comInscAmpaAlu(alu.ID_ALUMNO);
+        const tieneMad = _comTieneMadrugadora(alu.ID_ALUMNO);
+        const cuotaAmpa = _ampaCuota(actsAmpa.length);
+        const cuotaMad  = tieneMad ? 27 : 0;
+        const confls    = _detectarConflictos(alu.ID_ALUMNO);
+        totalAmpa += cuotaAmpa; totalMad += cuotaMad;
+        if (cuotaAmpa) alguienAmpa = true;
+        if (tieneMad)  alguienMad  = true;
         bloques += `👦 *${esc(nomAlu)}* — ${esc(curso)}\n`;
-        bloques += acts.map(a => `   • ${esc(a.nombre)}${a.dias?' ('+esc(a.dias)+')':''}`).join('\n') + (acts.length ? '\n' : '   _Sin actividades registradas_\n');
-        bloques += `   💰 Cuota mensual: *${cuota}€*\n`;
+        bloques += actsAll.map(a => `   • ${esc(a.nombre)}${a.dias?' ('+esc(a.dias)+')':''}`).join('\n') + (actsAll.length ? '\n' : '   _Sin actividades registradas_\n');
+        if (cuotaAmpa) bloques += `   💰 Actividades AMPA: *${cuotaAmpa}€/mes*\n`;
+        if (cuotaMad)  bloques += `   💰 Madrugadora: *${cuotaMad}€/mes*\n`;
         if (confls.length) {
           hayConflictos = true;
           bloques += confls.map(c => `   ⚠️ _${esc(c.a)} y ${esc(c.b)} coinciden el ${esc(c.dias)}${c.hora?' ('+esc(c.hora)+')':''}_`).join('\n') + '\n';
         }
         bloques += '\n';
       });
+      const totalFam = totalAmpa + totalMad;
+      const resumenTotal = alus.length > 1 && totalFam > 0
+        ? '💶 *Total mensual familia: '+totalFam+'€*'
+          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Madrugadora)' : '')
+          +'\n\n'
+        : '';
+      const pagoAmpa = alguienAmpa
+        ? '─────────────────────\n'
+          +'💳 *Pago actividades extraescolares (AMPA):*\n'
+          +'🏦 Transferencia bancaria\n'
+          +'   '+_COM_IBAN_AMPA+'\n'
+          +'📝 Concepto *OBLIGATORIO:* Nombre y apellidos + curso\n'
+          +'   _Ej: Juan Pérez - 4º Primaria_\n'
+          +(alus.length > 1 ? '_Una transferencia por alumno._\n' : '')
+          +'\n'
+        : '';
+      const pagoMad = alguienMad
+        ? '─────────────────────\n'
+          +'💳 *Pago Madrugadora (SM Academia):*\n'
+          +'🏦 Transferencia: '+_COM_IBAN+'\n'
+          +'   o Bizum: 📲 '+_COM_BIZUM+'\n'
+          +'📝 Concepto: Nombre y apellidos + curso\n\n'
+        : '';
       return 'Hola '+tutor+' 👋\n\n'
         +'Aquí tienes el resumen de *inscripciones 2026/2027*. Confirma que todo es correcto respondiendo "OK" o indícanos cualquier cambio. ✅\n\n'
         +'─────────────────────\n'
         +bloques
-        +(alus.length > 1 ? '💶 *Total mensual familia: '+totalFam+'€*\n\n' : '')
+        +resumenTotal
         +(hayConflictos ? '─────────────────────\n⚠️ *AVISO:* Algunas actividades coinciden en el mismo horario. Por favor, *confirma tu elección* entre ellas o indícanos el cambio que prefieras.\n\n' : '')
-        +'─────────────────────\n'
-        +'💳 *Datos de pago (cuota mensual AMPA):*\n'
-        +'🏦 Transferencia bancaria\n'
-        +'   '+_COM_IBAN_AMPA+'\n'
-        +'📝 Concepto *OBLIGATORIO:*\n'
-        +'   Nombre y apellidos del alumno/a + curso\n'
-        +'   _Ej: Juan Pérez - 4º Primaria_\n\n'
-        +(alus.length > 1 ? '_Si tienes más de un alumno, realiza una transferencia por cada uno con su concepto correspondiente._\n\n' : '')
-        +'⏰ Plazo: del 1 al 10 de cada mes.\n\n'
+        +pagoAmpa
+        +pagoMad
+        +'⏰ Plazo de pago: del 1 al 10 de cada mes.\n\n'
         +(nota?'📌 '+nota+'\n\n':'')
         +'¡Gracias! 🙏\nSM Academia · 📲 '+_COM_BIZUM;
     }
@@ -3593,37 +3639,60 @@ function _comMsgEmail(f) {
     case 'CONFIRM_INSC': {
       const alus = f.alumnos || [];
       let bloques = '';
-      let totalFam = 0;
-      let hayConflictos = false;
+      let totalAmpa = 0, totalMad = 0;
+      let hayConflictos = false, alguienAmpa = false, alguienMad = false;
       alus.forEach(alu => {
-        const nomAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
-        const curso  = alu.CURSO || '—';
-        const acts   = _comInscExtrasAlu(alu.ID_ALUMNO);
-        const cuota  = _ampaCuota(acts.length);
-        const confls = _detectarConflictos(alu.ID_ALUMNO);
-        totalFam += cuota;
+        const nomAlu   = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
+        const curso    = alu.CURSO || '—';
+        const actsAll  = _comInscExtrasAlu(alu.ID_ALUMNO);
+        const actsAmpa = _comInscAmpaAlu(alu.ID_ALUMNO);
+        const tieneMad = _comTieneMadrugadora(alu.ID_ALUMNO);
+        const cuotaAmpa = _ampaCuota(actsAmpa.length);
+        const cuotaMad  = tieneMad ? 27 : 0;
+        const confls    = _detectarConflictos(alu.ID_ALUMNO);
+        totalAmpa += cuotaAmpa; totalMad += cuotaMad;
+        if (cuotaAmpa) alguienAmpa = true;
+        if (tieneMad)  alguienMad  = true;
         bloques += `${nomAlu} — ${curso}\n`;
-        bloques += acts.map(a => `  • ${a.nombre}${a.dias?' ('+a.dias+')':''}`).join('\n') + (acts.length ? '\n' : '  Sin actividades registradas\n');
-        bloques += `  Cuota mensual: ${cuota}€\n`;
+        bloques += actsAll.map(a => `  • ${a.nombre}${a.dias?' ('+a.dias+')':''}`).join('\n') + (actsAll.length ? '\n' : '  Sin actividades registradas\n');
+        if (cuotaAmpa) bloques += `  Actividades AMPA: ${cuotaAmpa}€/mes\n`;
+        if (cuotaMad)  bloques += `  Madrugadora: ${cuotaMad}€/mes\n`;
         if (confls.length) {
           hayConflictos = true;
           bloques += confls.map(c => `  ⚠️ AVISO: ${c.a} y ${c.b} coinciden el ${c.dias}${c.hora?' ('+c.hora+')':''}`).join('\n') + '\n';
         }
         bloques += '\n';
       });
+      const totalFam = totalAmpa + totalMad;
+      const resumenTotal = alus.length > 1 && totalFam > 0
+        ? 'Total mensual familia: '+totalFam+'€'
+          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Madrugadora)' : '')
+          +'\n\n'
+        : '';
+      const pagoAmpa = alguienAmpa
+        ? '── PAGO ACTIVIDADES EXTRAESCOLARES (AMPA) ──\n'
+          +'Transferencia bancaria:\n'
+          +'  IBAN: '+_COM_IBAN_AMPA+'\n'
+          +'  Concepto OBLIGATORIO: Nombre y apellidos + curso\n'
+          +'  Ejemplo: Juan Pérez - 4º Primaria\n'
+          +(alus.length > 1 ? '  (Una transferencia por alumno)\n' : '')
+          +'\n'
+        : '';
+      const pagoMad = alguienMad
+        ? '── PAGO MADRUGADORA (SM ACADEMIA) ──\n'
+          +'Transferencia: '+_COM_IBAN+'\n'
+          +'o Bizum: '+_COM_BIZUM+'\n'
+          +'Concepto: Nombre y apellidos + curso\n\n'
+        : '';
       return 'Hola '+tutor+',\n\n'
         +'Te enviamos el resumen de inscripciones para el curso 2026/2027.\n'
         +'Por favor, confirma que los datos son correctos respondiéndonos o indica el cambio necesario.\n\n'
         +'── INSCRIPCIONES ──\n'
         +bloques
-        +(alus.length > 1 ? 'Total mensual familia: '+totalFam+'€\n\n' : '')
+        +resumenTotal
         +(hayConflictos ? '── AVISO IMPORTANTE ──\nAlgunas actividades coinciden en el mismo horario (marcadas con ⚠️). Por favor, confirma tu elección entre ellas o indícanos el cambio que prefieras.\n\n' : '')
-        +'── DATOS DE PAGO ──\n'
-        +'Cuota mensual AMPA (transferencia bancaria):\n'
-        +'  IBAN: '+_COM_IBAN_AMPA+'\n'
-        +'  Concepto OBLIGATORIO: Nombre y apellidos del alumno/a + curso\n'
-        +'  Ejemplo: Juan Pérez - 4º Primaria\n\n'
-        +(alus.length > 1 ? 'Si tienes más de un alumno, realiza una transferencia por cada uno con su concepto correspondiente.\n\n' : '')
+        +pagoAmpa
+        +pagoMad
         +'Plazo de pago: del 1 al 10 de cada mes.\n\n'
         +(nota?nota+'\n\n':'')
         +'Para cualquier consulta estamos disponibles en el '+_COM_BIZUM+'.\n\n'
