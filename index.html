@@ -3096,7 +3096,8 @@ function _horariosSolapan(h1, h2) {
 }
 
 function _detectarConflictos(aluId) {
-  const acts = _comInscExtrasAlu(aluId);
+  const EXCLUIR_SVC = /recogida|madrugadora|bono|cuota|d[ií]a suelto/i;
+  const acts = _comInscExtrasAlu(aluId).filter(a => !EXCLUIR_SVC.test(a.nombre));
   const ABREV = { LUNES:'Lu', MARTES:'Ma', 'MIÉRCOLES':'Mi', MIERCOLES:'Mi', JUEVES:'Ju', VIERNES:'Vi' };
   const conflictos = [];
   for (let x = 0; x < acts.length; x++) {
