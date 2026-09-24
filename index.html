@@ -3119,7 +3119,9 @@ function _comInscExtrasAlu(aluId) {
       if (!a || seen.has(a.ID)) return null;
       if (_COM_OCULTAR_RE.test(a.NOMBRE||'')) return null;  // ocultar tardía y bono
       seen.add(a.ID);
-      return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||''), horario: String(i.HORARIO||'').trim(), diasRaw: String(i.DIAS_SEMANA||a.DIAS_SEMANA||'') };
+      // diasRaw: prioridad a la actividad (verdad canónica) sobre la inscripción (puede estar obsoleta)
+      const diasRaw = String(a.DIAS_SEMANA||i.DIAS_SEMANA||'');
+      return { nombre: a.NOMBRE, dias: fmtDias(diasRaw), horario: String(i.HORARIO||'').trim(), diasRaw };
     })
     .filter(Boolean);
 }
@@ -3134,7 +3136,8 @@ function _comInscAmpaAlu(aluId) {
       const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
       if (!a || seen.has(a.ID) || _COM_SVC_RE.test(a.NOMBRE||'')) return null;
       seen.add(a.ID);
-      return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||''), diasRaw: String(i.DIAS_SEMANA||a.DIAS_SEMANA||''), horario: String(i.HORARIO||'').trim() };
+      const diasRaw = String(a.DIAS_SEMANA||i.DIAS_SEMANA||'');
+      return { nombre: a.NOMBRE, dias: fmtDias(diasRaw), diasRaw, horario: String(i.HORARIO||'').trim() };
     })
     .filter(Boolean);
 }
