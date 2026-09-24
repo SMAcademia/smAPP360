@@ -3518,7 +3518,7 @@ function _comMsgWA(f) {
         bloques += `👦 *${esc(nomAlu)}* — ${esc(curso)}\n`;
         bloques += actsAll.map(a => `   • ${esc(a.nombre)}${a.dias?' ('+esc(a.dias)+')':''}`).join('\n') + (actsAll.length ? '\n' : '   _Sin actividades registradas_\n');
         if (cuotaAmpa) bloques += `   💰 Actividades AMPA: *${cuotaAmpa}€/mes*\n`;
-        if (cuotaMad)  bloques += `   💰 Madrugadora: *${cuotaMad}€/mes*\n`;
+        if (cuotaMad)  bloques += `   💰 Recogida Temprana: *${cuotaMad}€/mes*\n`;
         if (confls.length) {
           hayConflictos = true;
           bloques += confls.map(c => `   ⚠️ _${esc(c.a)} y ${esc(c.b)} coinciden el ${esc(c.dias)}${c.hora?' ('+esc(c.hora)+')':''}_`).join('\n') + '\n';
@@ -3528,7 +3528,7 @@ function _comMsgWA(f) {
       const totalFam = totalAmpa + totalMad;
       const resumenTotal = alus.length > 1 && totalFam > 0
         ? '💶 *Total mensual familia: '+totalFam+'€*'
-          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Madrugadora)' : '')
+          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Recogida Temprana)' : '')
           +'\n\n'
         : '';
       const pagoAmpa = alguienAmpa
@@ -3543,7 +3543,7 @@ function _comMsgWA(f) {
         : '';
       const pagoMad = alguienMad
         ? '─────────────────────\n'
-          +'💳 *Pago Madrugadora (SM Academia):*\n'
+          +'💳 *Pago Recogida Temprana (SM Academia):*\n'
           +'🏦 Transferencia: '+_COM_IBAN+'\n'
           +'   o Bizum: 📲 '+_COM_BIZUM+'\n'
           +'📝 Concepto: Nombre y apellidos + curso\n\n'
@@ -3659,7 +3659,7 @@ function _comMsgEmail(f) {
         bloques += `${nomAlu} — ${curso}\n`;
         bloques += actsAll.map(a => `  • ${a.nombre}${a.dias?' ('+a.dias+')':''}`).join('\n') + (actsAll.length ? '\n' : '  Sin actividades registradas\n');
         if (cuotaAmpa) bloques += `  Actividades AMPA: ${cuotaAmpa}€/mes\n`;
-        if (cuotaMad)  bloques += `  Madrugadora: ${cuotaMad}€/mes\n`;
+        if (cuotaMad)  bloques += `  Recogida Temprana: ${cuotaMad}€/mes\n`;
         if (confls.length) {
           hayConflictos = true;
           bloques += confls.map(c => `  ⚠️ AVISO: ${c.a} y ${c.b} coinciden el ${c.dias}${c.hora?' ('+c.hora+')':''}`).join('\n') + '\n';
@@ -3669,7 +3669,7 @@ function _comMsgEmail(f) {
       const totalFam = totalAmpa + totalMad;
       const resumenTotal = alus.length > 1 && totalFam > 0
         ? 'Total mensual familia: '+totalFam+'€'
-          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Madrugadora)' : '')
+          +(totalAmpa && totalMad ? ' ('+totalAmpa+'€ AMPA + '+totalMad+'€ Recogida Temprana)' : '')
           +'\n\n'
         : '';
       const pagoAmpa = alguienAmpa
@@ -3682,7 +3682,7 @@ function _comMsgEmail(f) {
           +'\n'
         : '';
       const pagoMad = alguienMad
-        ? '── PAGO MADRUGADORA (SM ACADEMIA) ──\n'
+        ? '── PAGO RECOGIDA TEMPRANA (SM ACADEMIA) ──\n'
           +'Transferencia: '+_COM_IBAN+'\n'
           +'o Bizum: '+_COM_BIZUM+'\n'
           +'Concepto: Nombre y apellidos + curso\n\n'
@@ -7351,7 +7351,7 @@ function cuadrante() {
   const DIAS   = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
   const DIA_ID = ['L','M','X','J','V'];
   const FRANJAS = [
-    { id: 'f1', label: 'Madrugadora', time: '7:00 – 8:30'   },
+    { id: 'f1', label: 'Recogida Temprana', time: '7:00 – 8:30'   },
     { id: 'f2', label: 'Mediodía',    time: '13:30 – 14:30' },
     { id: 'f3', label: 'Tarde 1',     time: '15:15 – 16:15' },
     { id: 'f4', label: 'Tarde 2',     time: '16:15 – 16:45' },
