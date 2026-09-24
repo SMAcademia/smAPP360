@@ -3071,13 +3071,18 @@ function _ampaCuota(numActs) {
 }
 
 function _comInscExtrasAlu(aluId) {
+  const seen = new Set();
   return DB.inscripciones
     .filter(i => String(i.ID_ALUMNO) === String(aluId)
               && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
               && esExtraescolar(i.LINEA||''))
-    .map(i => { const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD)); return a ? a.NOMBRE : null; })
-    .filter(Boolean)
-    .filter((v,i,arr) => arr.indexOf(v) === i); // únicos
+    .map(i => {
+      const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
+      if (!a || seen.has(a.ID)) return null;
+      seen.add(a.ID);
+      return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||'') };
+    })
+    .filter(Boolean);
 }
 
 function comunicacion() {
@@ -3429,7 +3434,7 @@ function _comMsgWA(f) {
         const cuota  = _ampaCuota(acts.length);
         totalFam += cuota;
         bloques += `👦 *${esc(nomAlu)}* — ${esc(curso)}\n`;
-        bloques += acts.map(a => `   • ${esc(a)}`).join('\n') + (acts.length ? '\n' : '   _Sin actividades registradas_\n');
+        bloques += acts.map(a => `   • ${esc(a.nombre)}${a.dias?' ('+esc(a.dias)+')':''}`).join('\n') + (acts.length ? '\n' : '   _Sin actividades registradas_\n');
         bloques += `   💰 Cuota mensual: *${cuota}€*\n\n`;
       });
       return 'Hola '+tutor+' 👋\n\n'
@@ -3539,7 +3544,7 @@ function _comMsgEmail(f) {
         const cuota  = _ampaCuota(acts.length);
         totalFam += cuota;
         bloques += `${nomAlu} — ${curso}\n`;
-        bloques += acts.map(a => `  • ${a}`).join('\n') + (acts.length ? '\n' : '  Sin actividades registradas\n');
+        bloques += acts.map(a => `  • ${a.nombre}${a.dias?' ('+a.dias+')':''}`).join('\n') + (acts.length ? '\n' : '  Sin actividades registradas\n');
         bloques += `  Cuota mensual: ${cuota}€\n\n`;
       });
       return 'Hola '+tutor+',\n\n'
