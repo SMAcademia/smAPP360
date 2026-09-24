@@ -3080,9 +3080,40 @@ function _comInscExtrasAlu(aluId) {
       const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
       if (!a || seen.has(a.ID)) return null;
       seen.add(a.ID);
-      return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||'') };
+      return { nombre: a.NOMBRE, dias: fmtDias(a.DIAS_SEMANA||''), horario: String(i.HORARIO||'').trim(), diasRaw: String(i.DIAS_SEMANA||a.DIAS_SEMANA||'') };
     })
     .filter(Boolean);
+}
+
+function _horariosSolapan(h1, h2) {
+  if (!h1 || !h2) return true;
+  try {
+    const toMin = t => { const [hh,mm] = t.trim().split(':').map(Number); return (hh||0)*60+(mm||0); };
+    const [s1,e1] = h1.split('-').map(toMin);
+    const [s2,e2] = h2.split('-').map(toMin);
+    return s1 < e2 && s2 < e1;
+  } catch { return true; }
+}
+
+function _detectarConflictos(aluId) {
+  const acts = _comInscExtrasAlu(aluId);
+  const ABREV = { LUNES:'Lu', MARTES:'Ma', 'MIÉRCOLES':'Mi', MIERCOLES:'Mi', JUEVES:'Ju', VIERNES:'Vi' };
+  const conflictos = [];
+  for (let x = 0; x < acts.length; x++) {
+    for (let y = x+1; y < acts.length; y++) {
+      const a = acts[x], b = acts[y];
+      const diasA = a.diasRaw.split(',').map(d => d.trim().toUpperCase()).filter(Boolean);
+      const diasB = b.diasRaw.split(',').map(d => d.trim().toUpperCase()).filter(Boolean);
+      const comunes = diasA.filter(d => diasB.includes(d));
+      if (!comunes.length) continue;
+      if (_horariosSolapan(a.horario, b.horario)) {
+        const diasStr = comunes.map(d => ABREV[d]||d).join('/');
+        const hora = a.horario || b.horario;
+        conflictos.push({ a: a.nombre, b: b.nombre, dias: diasStr, hora });
+      }
+    }
+  }
+  return conflictos;
 }
 
 function comunicacion() {
@@ -3427,21 +3458,29 @@ function _comMsgWA(f) {
       const alus = f.alumnos || [];
       let bloques = '';
       let totalFam = 0;
+      let hayConflictos = false;
       alus.forEach(alu => {
         const nomAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
         const curso  = alu.CURSO || '—';
         const acts   = _comInscExtrasAlu(alu.ID_ALUMNO);
         const cuota  = _ampaCuota(acts.length);
+        const confls = _detectarConflictos(alu.ID_ALUMNO);
         totalFam += cuota;
         bloques += `👦 *${esc(nomAlu)}* — ${esc(curso)}\n`;
         bloques += acts.map(a => `   • ${esc(a.nombre)}${a.dias?' ('+esc(a.dias)+')':''}`).join('\n') + (acts.length ? '\n' : '   _Sin actividades registradas_\n');
-        bloques += `   💰 Cuota mensual: *${cuota}€*\n\n`;
+        bloques += `   💰 Cuota mensual: *${cuota}€*\n`;
+        if (confls.length) {
+          hayConflictos = true;
+          bloques += confls.map(c => `   ⚠️ _${esc(c.a)} y ${esc(c.b)} coinciden el ${esc(c.dias)}${c.hora?' ('+esc(c.hora)+')':''}_`).join('\n') + '\n';
+        }
+        bloques += '\n';
       });
       return 'Hola '+tutor+' 👋\n\n'
         +'Aquí tienes el resumen de *inscripciones 2026/2027*. Confirma que todo es correcto respondiendo "OK" o indícanos cualquier cambio. ✅\n\n'
         +'─────────────────────\n'
         +bloques
         +(alus.length > 1 ? '💶 *Total mensual familia: '+totalFam+'€*\n\n' : '')
+        +(hayConflictos ? '─────────────────────\n⚠️ *AVISO:* Hemos detectado actividades en el mismo horario. Por favor, confírmanos si deseas mantenerlas o realizar algún cambio.\n\n' : '')
         +'─────────────────────\n'
         +'💳 *Datos de pago (cuota mensual AMPA):*\n'
         +'🏦 Transferencia bancaria\n'
@@ -3537,15 +3576,22 @@ function _comMsgEmail(f) {
       const alus = f.alumnos || [];
       let bloques = '';
       let totalFam = 0;
+      let hayConflictos = false;
       alus.forEach(alu => {
         const nomAlu = `${alu.NOMBRE||''} ${alu.APELLIDOS||''}`.trim();
         const curso  = alu.CURSO || '—';
         const acts   = _comInscExtrasAlu(alu.ID_ALUMNO);
         const cuota  = _ampaCuota(acts.length);
+        const confls = _detectarConflictos(alu.ID_ALUMNO);
         totalFam += cuota;
         bloques += `${nomAlu} — ${curso}\n`;
         bloques += acts.map(a => `  • ${a.nombre}${a.dias?' ('+a.dias+')':''}`).join('\n') + (acts.length ? '\n' : '  Sin actividades registradas\n');
-        bloques += `  Cuota mensual: ${cuota}€\n\n`;
+        bloques += `  Cuota mensual: ${cuota}€\n`;
+        if (confls.length) {
+          hayConflictos = true;
+          bloques += confls.map(c => `  ⚠️ AVISO: ${c.a} y ${c.b} coinciden el ${c.dias}${c.hora?' ('+c.hora+')':''}`).join('\n') + '\n';
+        }
+        bloques += '\n';
       });
       return 'Hola '+tutor+',\n\n'
         +'Te enviamos el resumen de inscripciones para el curso 2026/2027.\n'
@@ -3553,6 +3599,7 @@ function _comMsgEmail(f) {
         +'── INSCRIPCIONES ──\n'
         +bloques
         +(alus.length > 1 ? 'Total mensual familia: '+totalFam+'€\n\n' : '')
+        +(hayConflictos ? '── AVISO IMPORTANTE ──\nHemos detectado actividades en el mismo horario (marcadas con ⚠️). Por favor, confírmanos si deseas mantenerlas o realizar algún cambio.\n\n' : '')
         +'── DATOS DE PAGO ──\n'
         +'Cuota mensual AMPA (transferencia bancaria):\n'
         +'  IBAN: '+_COM_IBAN_AMPA+'\n'
