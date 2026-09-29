@@ -8645,7 +8645,9 @@ function portalFamilia() {
       .map(f => String(f.ID_FACTURA||''))
   );
   const cliPagos   = DB.pagos.filter(p => {
-    if (String(p.ID_CLIENTE||'') !== cliId) return false;
+    const matchCli = cliId && String(p.ID_CLIENTE||'') === cliId;
+    const matchAlu = alumnoIds.has(String(p.ID_ALUMNO||''));
+    if (!matchCli && !matchAlu) return false;
     if (p.ID_FACTURA && _facAnuladasIds.has(String(p.ID_FACTURA))) return false;
     return true;
   });
