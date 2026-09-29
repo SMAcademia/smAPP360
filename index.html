@@ -8760,6 +8760,79 @@ function portalFamilia() {
             </table></div>
           </div>
           ${(() => {
+            // ── FACTURAS ──────────────────────────────────────────────────
+            const misFacs = DB.facturas.filter(f =>
+              String(f.ID_CLIENTE||'') === cliId &&
+              String(f.ESTADO_AEAT||'').toUpperCase() !== 'ANULADA'
+            ).slice().sort((a,b) => (b.FECHA_EXP||b.FECHA||'') > (a.FECHA_EXP||a.FECHA||'') ? 1 : -1);
+            if (!misFacs.length) return '';
+            const filasFac = misFacs.map(f => {
+              const est  = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
+              const fJson = JSON.stringify(f).replace(/'/g,"&#39;");
+              return `<tr>
+                <td>${fmtFecha(f.FECHA_EXP||f.FECHA)}</td>
+                <td class="mono" style="font-size:12px">${esc(f.ID_FACTURA||f.SERIE+'-'+String(f.NUMERO||'').padStart(3,'0'))}</td>
+                <td>${esc(f.CONCEPTO||'—')}</td>
+                <td class="mono" style="font-weight:700">${fmtEur(f.TOTAL)}</td>
+                <td><span class="badge ${est==='COBRADA'?'badge-green':est==='EMITIDA'?'badge-amber':'badge-red'}">${est==='COBRADA'?'Pagada':est==='EMITIDA'?'Emitida':'—'}</span></td>
+                <td><button class="btn btn-sm" style="background:var(--g1);color:#fff" onclick='exportarFacturaPDF(${fJson})'>↓ PDF</button></td>
+              </tr>`;
+            }).join('');
+            return `<div class="card">
+              <div class="card-title">🧾 Facturas</div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Fecha</th><th>Nº</th><th>Concepto</th><th>Importe</th><th>Estado</th><th></th></tr></thead>
+                <tbody>${filasFac}</tbody>
+              </table></div>
+            </div>`;
+          })()}
+          ${(() => {
+            // ── ASISTENCIAS EXTRAESCOLARES ─────────────────────────────────
+            const filas = [];
+            misAlumnos.forEach(alum => {
+              const aId = String(alum.ID_ALUMNO||alum.ID||'');
+              const aluNom = (alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim();
+              const inscsAlu = DB.inscripciones.filter(i =>
+                String(i.ID_ALUMNO||'') === aId && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
+              );
+              inscsAlu.forEach(ins => {
+                const act = DB.actividades.find(a => String(a.ID||'') === String(ins.ID_ACTIVIDAD||''));
+                if (!act) return;
+                if (!esExtraescolar(act.LINEA||'')) return;
+                if (_COM_SVC_RE.test(act.NOMBRE||'')) return;
+                const sesAct = DB.asistenciasExtra.filter(s => String(s.ID_ACTIVIDAD||'') === String(act.ID));
+                const total  = sesAct.length;
+                if (!total) return;
+                const asistidas = sesAct.filter(s =>
+                  String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aId)
+                ).length;
+                const pct = Math.round(asistidas / total * 100);
+                const color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+                filas.push(`<tr>
+                  <td>${esc(aluNom)}</td>
+                  <td>${esc(act.NOMBRE||'—')}</td>
+                  <td style="font-variant-numeric:tabular-nums">${asistidas}/${total}</td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+                        <div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div>
+                      </div>
+                      <span style="font-weight:700;color:${color};min-width:36px;text-align:right">${pct}%</span>
+                    </div>
+                  </td>
+                </tr>`);
+              });
+            });
+            if (!filas.length) return '';
+            return `<div class="card">
+              <div class="card-title">📊 Asistencia a actividades</div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Alumno/a</th><th>Actividad</th><th>Sesiones</th><th>Asistencia</th></tr></thead>
+                <tbody>${filas.join('')}</tbody>
+              </table></div>
+            </div>`;
+          })()}
+          ${(() => {
             const alumnoIds = new Set(misAlumnos.map(a => String(a.ID_ALUMNO||a.ID||'')));
             const hists = (DB.encuestasSatisfaccion||[])
               .filter(e => alumnoIds.has(String(e.ID_ALUMNO||'')))
