@@ -310,6 +310,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('comunicacion')" data-page="comunicacion">
           <span class="nav-icon">📨</span><span>Comunicación</span>
         </div>
+        <div class="nav-item" onclick="navigate('solicitudes')" data-page="solicitudes" id="nav-item-solicitudes">
+          <span class="nav-icon">✏️</span><span>Solicitudes</span><span id="badge-solicitudes" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;min-width:16px;text-align:center"></span>
+        </div>
         <div class="nav-item" onclick="navigate('cuadrante')" data-page="cuadrante">
           <span class="nav-icon">📅</span><span>Cuadrante</span>
         </div>
@@ -661,6 +664,7 @@ function normalizarDB(raw) {
   DB.preinscripciones     = raw.preinscripciones     || [];
   DB.nominas              = raw.nominas              || [];
   DB.ampaSocios              = raw.ampaSocios              || [];
+  DB.solicitudes             = raw.solicitudes             || [];
   DB.encuestasSatisfaccion   = raw.encuestasSatisfaccion   || [];
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
@@ -817,6 +821,14 @@ function isEntrenador()   { return currentUser?.rol === 'ENTRENADOR'; }
 function isFamilia()      { return currentUser?.rol === 'FAMILIA'; }
 function isAmpa()         { return currentUser?.rol === 'AMPA'; }
 
+function _refreshBadgeSolicitudes() {
+  const el = document.getElementById('badge-solicitudes');
+  if (!el) return;
+  const n = (DB.solicitudes||[]).filter(s => String(s.ESTADO||'').toUpperCase() === 'PENDIENTE').length;
+  el.textContent = n;
+  el.style.display = n > 0 ? '' : 'none';
+}
+
 function applyRoleVisibility() {
   const rol = currentUser?.rol;
   const adminLike  = ['ADMIN','COORDINADOR'].includes(rol);
@@ -855,6 +867,11 @@ function applyRoleVisibility() {
       if (el) el.style.display = 'none';
     });
   }
+
+  // Solicitudes: solo admin/coordinador
+  const navSol = document.querySelector('[data-page="solicitudes"]');
+  if (navSol) navSol.style.display = adminLike ? '' : 'none';
+  _refreshBadgeSolicitudes();
 
   // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
@@ -898,6 +915,7 @@ const PAGE_META = {
   'fiscal':             { title: 'Fiscal',               sub: 'Resúmenes trimestrales y anuales' },
   'ampa-socios':        { title: 'Socios AMPA',          sub: 'Gestión del padrón de socios' },
   'portal-familia':     { title: 'Portal Familia',       sub: 'Inscripciones, pagos y asistencias' },
+  'solicitudes':        { title: 'Solicitudes de cambio', sub: 'Cambios de datos solicitados por familias' },
   'comunicacion':       { title: 'Comunicación',          sub: 'Mensajes y avisos a familias' },
   'configuracion':      { title: 'Configuración',        sub: 'Ajustes del sistema' },
   'presupuesto':        { title: 'Presupuestos',          sub: 'Calculadora de costes, margen e impuestos' },
@@ -928,6 +946,7 @@ const MODULES = {
   'fiscal':             fiscal,
   'ampa-socios':        ampaSocios,
   'portal-familia':     portalFamilia,
+  'solicitudes':        solicitudesCambio,
   'comunicacion':       comunicacion,
   'configuracion':      configuracion,
   'presupuesto':        presupuesto,
@@ -8486,6 +8505,158 @@ function saveAusencia(isNew, id) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: SOLICITUDES DE CAMBIO DE DATOS
+// ══════════════════════════════════════════════════════════════════════════
+function solicitudesCambio() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  document.getElementById('topbar-actions').innerHTML = '';
+
+  const todas     = (DB.solicitudes||[]).slice().sort((a,b) => (b.FECHA||'') > (a.FECHA||'') ? 1 : -1);
+  const pendientes = todas.filter(s => String(s.ESTADO||'').toUpperCase() === 'PENDIENTE');
+  const resueltas  = todas.filter(s => String(s.ESTADO||'').toUpperCase() !== 'PENDIENTE');
+
+  const fmtCambios = cambiosJson => {
+    try {
+      const cambios = typeof cambiosJson === 'string' ? JSON.parse(cambiosJson) : (cambiosJson||{});
+      return Object.entries(cambios).map(([campo, {viejo, nuevo}]) =>
+        `<div style="font-size:12px;padding:3px 0">
+          <span style="color:var(--text3)">${esc(campo)}:</span>
+          <span style="text-decoration:line-through;color:var(--text3);margin:0 4px">${esc(viejo||'—')}</span>
+          <span style="font-weight:600;color:var(--text)">→ ${esc(nuevo||'—')}</span>
+        </div>`
+      ).join('');
+    } catch(_) { return `<span style="font-size:12px;color:var(--text3)">${esc(String(cambiosJson||''))}</span>`; }
+  };
+
+  const filasSol = (lista, mostrarAcciones) => lista.length
+    ? lista.map(s => {
+        const id   = String(s.ID_SOLICITUD||s.ID||'');
+        const est  = String(s.ESTADO||'PENDIENTE').toUpperCase();
+        const tipo = String(s.TIPO||'').toUpperCase();
+        return `<tr>
+          <td style="white-space:nowrap">${fmtFecha(s.FECHA)}</td>
+          <td><strong>${esc(s.NOMBRE_FAMILIA||'—')}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(s.NOMBRE_REF||s.ID_REF||tipo)}</span></td>
+          <td>${fmtCambios(s.CAMBIOS)}</td>
+          <td><span class="badge ${est==='APROBADO'?'badge-green':est==='RECHAZADO'?'badge-red':'badge-amber'}">${est==='APROBADO'?'Aprobado':est==='RECHAZADO'?'Rechazado':'Pendiente'}</span></td>
+          ${mostrarAcciones ? `<td style="white-space:nowrap">
+            <button class="btn btn-sm btn-success" onclick="_aprobarSolicitud('${id}')">✓ Aprobar</button>
+            <button class="btn btn-sm btn-danger"  onclick="_rechazarSolicitud('${id}')" style="margin-left:4px">✗ Rechazar</button>
+          </td>` : `<td style="font-size:11px;color:var(--text3)">${fmtFecha(s.FECHA_RESOLUCION||'')}</td>`}
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="${mostrarAcciones?5:5}" class="text-muted" style="text-align:center;padding:16px">Sin solicitudes</td></tr>`;
+
+  render(`
+    <div style="display:grid;gap:20px">
+      <div class="card">
+        <div class="card-title">⏳ Pendientes de revisión <span style="color:var(--amber)">(${pendientes.length})</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Fecha</th><th>Familia / Ref.</th><th>Cambios solicitados</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>${filasSol(pendientes, true)}</tbody>
+        </table></div>
+      </div>
+      ${resueltas.length ? `<div class="card">
+        <div class="card-title">✅ Resueltas</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Fecha</th><th>Familia / Ref.</th><th>Cambios</th><th>Estado</th><th>Resuelta</th></tr></thead>
+          <tbody>${filasSol(resueltas, false)}</tbody>
+        </table></div>
+      </div>` : ''}
+    </div>`);
+}
+
+function _aprobarSolicitud(id) {
+  const sol = (DB.solicitudes||[]).find(s => String(s.ID_SOLICITUD||s.ID||'') === id);
+  if (!sol) return showToast('Solicitud no encontrada','error');
+  let cambios;
+  try { cambios = typeof sol.CAMBIOS === 'string' ? JSON.parse(sol.CAMBIOS) : sol.CAMBIOS; }
+  catch(_) { cambios = {}; }
+  const tipo   = String(sol.TIPO||'').toUpperCase();
+  const refId  = String(sol.ID_REF||'');
+  const sheet  = tipo === 'ALUMNO' ? 'ALUMNOS' : 'CLIENTES';
+  const fields = {};
+  Object.entries(cambios||{}).forEach(([campo, {nuevo}]) => { fields[campo] = nuevo; });
+  if (!Object.keys(fields).length) return showToast('Sin cambios que aplicar','error');
+  writeToSheet(sheet, fields, refId)
+    .then(() => writeToSheet('SOLICITUDES', { ESTADO: 'APROBADO', FECHA_RESOLUCION: new Date().toISOString().slice(0,10) }, id))
+    .then(() => { showToast('Solicitud aprobada y datos actualizados'); loadAllData().then(() => { _refreshBadgeSolicitudes(); solicitudesCambio(); }); })
+    .catch(err => showToast('Error: '+err.message, 'error'));
+}
+
+function _rechazarSolicitud(id) {
+  if (!confirm('¿Rechazar esta solicitud de cambio?')) return;
+  writeToSheet('SOLICITUDES', { ESTADO: 'RECHAZADO', FECHA_RESOLUCION: new Date().toISOString().slice(0,10) }, id)
+    .then(() => { showToast('Solicitud rechazada'); loadAllData().then(() => { _refreshBadgeSolicitudes(); solicitudesCambio(); }); })
+    .catch(err => showToast('Error: '+err.message, 'error'));
+}
+
+function _solicitarCambioDatos(cliId, misAlumnos) {
+  const cli = DB.clientes.find(c => String(c.ID||c.ID_CLIENTE||'') === cliId);
+  if (!cli) return showToast('Error: perfil no encontrado','error');
+
+  // Recoger campos del tutor
+  const cambiosCli = {};
+  ['TELÉFONO','DIRECCIÓN','CP','POBLACIÓN'].forEach(campo => {
+    const el = document.getElementById('sol-cli-'+campo);
+    if (!el) return;
+    const nuevo = el.value.trim();
+    const viejo = String(cli[campo]||'').trim();
+    if (nuevo && nuevo !== viejo) cambiosCli[campo] = { viejo, nuevo };
+  });
+
+  // Recoger observaciones por alumno
+  const cambiosAlumnos = [];
+  misAlumnos.forEach(alum => {
+    const aId = String(alum.ID_ALUMNO||alum.ID||'');
+    const el  = document.getElementById('sol-alu-obs-'+aId);
+    if (!el) return;
+    const nuevo = el.value.trim();
+    const viejo = String(alum.OBSERVACIONES||'').trim();
+    if (nuevo && nuevo !== viejo)
+      cambiosAlumnos.push({ alum, aId, cambios: { OBSERVACIONES: { viejo, nuevo } } });
+  });
+
+  const hayAlgo = Object.keys(cambiosCli).length > 0 || cambiosAlumnos.length > 0;
+  if (!hayAlgo) return showToast('No hay cambios para enviar','error');
+
+  const hoy = new Date().toISOString().slice(0,10);
+  const nombreFam = String(cli.NOMBRE||cli.NOMBRE_COMPLETO||cli.EMAIL||'').trim();
+
+  const promesas = [];
+  if (Object.keys(cambiosCli).length) {
+    promesas.push(writeToSheet('SOLICITUDES', {
+      FECHA:           hoy,
+      ID_CLIENTE:      cliId,
+      NOMBRE_FAMILIA:  nombreFam,
+      TIPO:            'CLIENTE',
+      ID_REF:          cliId,
+      NOMBRE_REF:      nombreFam,
+      CAMBIOS:         JSON.stringify(cambiosCli),
+      ESTADO:          'PENDIENTE',
+      FECHA_RESOLUCION: '',
+    }, null));
+  }
+  cambiosAlumnos.forEach(({alum, aId, cambios}) => {
+    const aluNom = (alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim();
+    promesas.push(writeToSheet('SOLICITUDES', {
+      FECHA:           hoy,
+      ID_CLIENTE:      cliId,
+      NOMBRE_FAMILIA:  nombreFam,
+      TIPO:            'ALUMNO',
+      ID_REF:          aId,
+      NOMBRE_REF:      aluNom,
+      CAMBIOS:         JSON.stringify(cambios),
+      ESTADO:          'PENDIENTE',
+      FECHA_RESOLUCION: '',
+    }, null));
+  });
+
+  Promise.all(promesas)
+    .then(() => { showToast('Solicitud enviada. La academia revisará los cambios.'); loadAllData().then(portalFamilia); })
+    .catch(err => showToast('Error: '+err.message, 'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: PORTAL FAMILIA
 // ══════════════════════════════════════════════════════════════════════════
 function portalFamilia() {
@@ -8870,6 +9041,51 @@ function portalFamilia() {
                 }).join('')
               + '</div></div>';
           })()}
+        </div>
+      </details>
+
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-weight:600;padding:10px 0;color:var(--text2);font-size:14px;list-style:none;display:flex;justify-content:space-between;align-items:center">
+          <span>✏️ Mis datos</span><span style="color:var(--text3)">▾</span>
+        </summary>
+        <div style="margin-top:12px">
+          <div class="card">
+            <div class="card-title">Datos del tutor/a</div>
+            <p style="font-size:12px;color:var(--text3);margin:0 0 14px">Rellena solo los campos que quieres cambiar. La academia revisará tu solicitud.</p>
+            <div style="display:grid;gap:12px">
+              ${[
+                {id:'TELÉFONO',   label:'Teléfono',    placeholder: String(cli.TELÉFONO||'')  || 'Teléfono actual'},
+                {id:'DIRECCIÓN',  label:'Dirección',   placeholder: String(cli.DIRECCIÓN||cli.DIRECCION||'') || 'Dirección actual'},
+                {id:'CP',         label:'Código postal',placeholder: String(cli.CP||'')       || 'CP actual'},
+                {id:'POBLACIÓN',  label:'Población',   placeholder: String(cli.POBLACIÓN||cli.POBLACION||'') || 'Población actual'},
+              ].map(f => `<div>
+                <label style="font-size:12px;font-weight:600;color:var(--text3);display:block;margin-bottom:4px">${f.label}</label>
+                <input id="sol-cli-${f.id}" type="text" placeholder="${esc(f.placeholder)}"
+                  style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:8px;
+                         background:var(--bg);color:var(--text);font-size:14px;box-sizing:border-box">
+              </div>`).join('')}
+            </div>
+            ${misAlumnos.length ? `<div style="margin-top:16px">
+              <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Observaciones por alumno/a</div>
+              <div style="display:grid;gap:10px">
+                ${misAlumnos.map(alum => {
+                  const aId = String(alum.ID_ALUMNO||alum.ID||'');
+                  const aluNom = (alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim();
+                  return `<div>
+                    <label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px">${esc(aluNom)}</label>
+                    <textarea id="sol-alu-obs-${aId}" rows="2"
+                      placeholder="${esc(alum.OBSERVACIONES||'Sin observaciones actuales')}"
+                      style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:8px;
+                             background:var(--bg);color:var(--text);font-size:13px;resize:none;box-sizing:border-box"></textarea>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>` : ''}
+            <button class="btn btn-primary" style="margin-top:16px;width:100%"
+              onclick="_solicitarCambioDatos('${cliId}', DB.alumnos.filter(a=>String(a.ID_CLIENTE||'')===String('${cliId}')))">
+              Enviar solicitud de cambio
+            </button>
+          </div>
         </div>
       </details>
     </div>`);
