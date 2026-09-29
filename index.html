@@ -3303,9 +3303,47 @@ function _renderCom() {
     +'<th>Enviar</th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'
     +'</table></div></div>'
+    // — Contactos AMPA
+    +_renderContactosAmpa()
     // — Bonos activos
     +_renderBonosPanel()
     +'</div>');
+}
+
+function _renderContactosAmpa() {
+  const contactos = (DB.personal||[]).filter(p => String(p.ROL||'').toUpperCase() === 'AMPA');
+  if (!contactos.length) return '';
+  let _notaAmpa = window._comNotaAmpa || '';
+  const filas = contactos.map(p => {
+    const nombre = `${p.NOMBRE||''} ${p.APELLIDOS||''}`.trim();
+    const tel = String(p.TELEFONO||p.TELEFONO1||'').replace(/\D/g,'');
+    const email = String(p.EMAIL||'').trim();
+    const msg = _notaAmpa || ('Hola '+((p.NOMBRE||'').split(' ')[0])+'! 👋\n\n');
+    const wa  = tel ? 'https://wa.me/'+(tel.length===9?'34'+tel:tel)+'?text='+encodeURIComponent(msg) : '';
+    const mailHref = email ? 'mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent('SM Academia')+'&body='+encodeURIComponent(msg) : '';
+    return '<tr>'
+      +'<td><strong>'+esc(nombre)+'</strong>'+(email?'<br><span style="font-size:11px;color:var(--text3)">'+esc(email)+'</span>':'')+'</td>'
+      +'<td style="font-size:12px;color:var(--text3)">'+(tel?tel:'—')+'</td>'
+      +'<td style="white-space:nowrap">'
+      +(wa?'<a href="'+wa+'" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;margin-right:4px">📲 WA</a>':'')
+      +(mailHref?'<a href="'+mailHref+'" class="btn btn-sm btn-secondary">✉ Email</a>':'')
+      +((!wa&&!mailHref)?'<span style="font-size:11px;color:var(--text3)">Sin contacto</span>':'')
+      +'</td></tr>';
+  }).join('');
+  return '<div class="card" style="padding:14px 20px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    +'<span style="font-size:15px">🏫</span>'
+    +'<div class="card-title" style="margin:0">Contacto AMPA</div>'
+    +'</div>'
+    +'<div style="margin-bottom:10px">'
+    +'<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Mensaje <span style="font-weight:400;color:var(--text3)">(opcional)</span></label>'
+    +'<textarea rows="2" style="width:100%;font-size:12px;resize:vertical" placeholder="Escribe aquí el mensaje para el AMPA..." oninput="window._comNotaAmpa=this.value;_renderCom()">'+esc(_notaAmpa)+'</textarea>'
+    +'</div>'
+    +'<div class="table-wrap"><table style="font-size:13px">'
+    +'<thead><tr><th>Contacto</th><th>Teléfono</th><th>Enviar</th></tr></thead>'
+    +'<tbody>'+filas+'</tbody>'
+    +'</table></div>'
+    +'</div>';
 }
 
 function _comSetLinea(v) { _comFiltros.linea = v; _comFiltros.actIds = new Set(); _renderCom(); }
