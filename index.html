@@ -1565,9 +1565,12 @@ function modalAlumno(a) {
         const pct = cap > 0 ? Math.round(usos/cap*100) : 0;
         const restantes = cap - usos;
         const barColor = restantes <= 2 ? '#ef4444' : restantes <= 4 ? '#f59e0b' : '#22c55e';
+        const fmtDia = d => { const p=d.split('-'); return p.length===3?p[2].replace(/^0/,'')+'/'+p[1].replace(/^0/,''):d; };
+        const ultimas10 = fechas.slice(-10).reverse();
         const fechaItems = fechas.length
-          ? fechas.slice().reverse().map(d => `<span style="font-size:10px;background:var(--bg3,#e5e7eb);padding:1px 6px;border-radius:8px">${d}</span>`).join(' ')
+          ? ultimas10.map(d => `<span style="font-size:11px;background:var(--bg3,#e5e7eb);padding:2px 7px;border-radius:8px;font-variant-numeric:tabular-nums">${fmtDia(d)}</span>`).join(' ')
           : '<span style="font-size:11px;color:var(--text3)">Sin fechas registradas</span>';
+        const totalFechas = fechas.length;
         const btnCorr = canEditBono
           ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
                <span style="font-size:11px;color:var(--text3)">Corregir usos:</span>
@@ -1584,7 +1587,10 @@ function modalAlumno(a) {
             </div>
             <span style="font-size:11px;color:var(--text3)">${restantes} restante${restantes===1?'':'s'}</span>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${fechaItems}</div>
+          <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-top:6px;margin-bottom:3px">
+            Últimas ${Math.min(10,totalFechas)} asistencias${totalFechas>10?' (de '+totalFechas+' totales)':''}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">${fechaItems}</div>
           ${btnCorr}
         </div>`;
       }
@@ -3882,15 +3888,18 @@ function _renderBonosPanel() {
       +(agotado?'<span style="font-size:11px;background:var(--text3);color:#fff;padding:1px 8px;border-radius:10px">Agotado</span>'
                :alerta?'<span style="font-size:11px;background:var(--red);color:#fff;padding:1px 8px;border-radius:10px">⚠ Renovar</span>':'')
       +'</td>'
-      +'<td>'+(agotado?'<span style="font-size:11px;color:var(--text3)">Renovar inscripción</span>'
-                      :'<button class="btn btn-sm" onclick="_comRegistrarUsoBono(\''+esc(String(ins.ID_INSCRIPCION||ins.ID))+'\','+usos+','+cap+')">+1 Uso manual</button>')
-      +'</td>'
+      +'<td style="font-size:11px;color:var(--text3);max-width:180px">'+(() => {
+        const fds = bonoFechas(ins).slice(-10).map(d => {
+          const p = d.split('-'); return p.length===3 ? p[2].replace(/^0/,'')+'/'+p[1].replace(/^0/,'') : d;
+        });
+        return fds.length ? fds.join(', ') : '—';
+      })()+'</td>'
       +'</tr>';
   }).join('');
   return '<div class="card" style="padding:14px 20px;margin-top:0">'
     +'<div class="card-title" style="margin-bottom:8px">🎫 Bonos de usos activos</div>'
     +'<div class="table-wrap"><table style="font-size:13px">'
-    +'<thead><tr><th>Alumno/a</th><th>Bono</th><th style="text-align:center">Restantes</th><th style="text-align:center">Estado</th><th>Acción</th></tr></thead>'
+    +'<thead><tr><th>Alumno/a</th><th>Bono</th><th style="text-align:center">Restantes</th><th style="text-align:center">Estado</th><th>Últimas 10 asistencias</th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'
     +'</table></div></div>';
 }
@@ -8920,6 +8929,47 @@ function portalFamilia() {
               </tbody>
             </table></div>
           </div>
+          ${(() => {
+            // ── BONOS DE USOS ─────────────────────────────────────────────
+            const bonos = [];
+            const alumnoIds2 = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
+            DB.inscripciones.filter(i=>alumnoIds2.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA').forEach(i=>{
+              const act = DB.actividades.find(a=>String(a.ID||'')===String(i.ID_ACTIVIDAD||''));
+              if (!act || !esBonoUsos(act.NOMBRE||'')) return;
+              const alu   = misAlumnos.find(a=>String(a.ID_ALUMNO||a.ID||'')===String(i.ID_ALUMNO||''));
+              const cap   = bonoCapacidad(act.NOMBRE);
+              const usos  = bonoUsosCont(i);
+              const rest  = cap - usos;
+              const pct   = cap>0?Math.round(usos/cap*100):0;
+              const bar   = rest<=2?'#ef4444':rest<=4?'#f59e0b':'#22c55e';
+              const fmtD  = d=>{const p=d.split('-');return p.length===3?p[2].replace(/^0/,'')+'/'+p[1].replace(/^0/,''):d;};
+              const fds   = bonoFechas(i).slice(-10).reverse();
+              const fdHtml= fds.length?fds.map(d=>`<span style="font-size:11px;background:var(--bg2);padding:2px 7px;border-radius:8px;border:1px solid var(--border2)">${fmtD(d)}</span>`).join(' '):'<span style="font-size:12px;color:var(--text3)">Sin asistencias registradas aún</span>';
+              const aluNom=(alu?alu.NOMBRE+' '+(alu.APELLIDOS||''):'').trim();
+              bonos.push(`<div style="padding:10px 0;border-bottom:1px solid var(--border2)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                  <div>
+                    <div style="font-weight:600;font-size:13px">${esc(act.NOMBRE)}</div>
+                    ${aluNom?`<div style="font-size:11px;color:var(--text3)">${esc(aluNom)}</div>`:''}
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-size:16px;font-weight:700;color:${bar}">${rest}</div>
+                    <div style="font-size:10px;color:var(--text3)">restante${rest===1?'':'s'} de ${cap}</div>
+                  </div>
+                </div>
+                <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px">
+                  <div style="width:${pct}%;height:100%;background:${bar};border-radius:3px"></div>
+                </div>
+                <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">Últimas asistencias</div>
+                <div style="display:flex;flex-wrap:wrap;gap:4px">${fdHtml}</div>
+              </div>`);
+            });
+            if (!bonos.length) return '';
+            return `<div class="card">
+              <div class="card-title">🎫 Mis bonos</div>
+              <div style="padding:0 4px">${bonos.join('')}</div>
+            </div>`;
+          })()}
           <div class="card">
             <div class="card-title">Pagos</div>
             <div class="table-wrap"><table>
