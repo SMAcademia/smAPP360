@@ -1115,6 +1115,19 @@ function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:
 // Entradas en FECHAS: "YYYY-MM-DD" (manual) o "YYYY-MM-DD:actId" (auto, para idempotencia por sesión)
 function bonoFechasRaw(insc){ const m=String(insc.OBSERVACIONES||'').match(/FECHAS:([^;]+)/i); return m?m[1].trim().split(',').map(d=>d.trim()).filter(Boolean):[]; }
 function bonoFechas(insc){ return bonoFechasRaw(insc).map(e=>e.split(':')[0]); } // solo la parte de fecha para mostrar
+// Fuente de verdad: contar desde asistenciasExtra. Fallback a OBSERVACIONES si no hay registros.
+function bonoUsosReales(aluId, actId) {
+  const sesiones = (DB.asistenciasExtra||[]).filter(s => String(s.ID_ACTIVIDAD||'') === String(actId));
+  return sesiones.filter(s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(String(aluId))).length;
+}
+function bonoFechasReales(aluId, actId, insc) {
+  const desdeSesiones = (DB.asistenciasExtra||[])
+    .filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) &&
+      String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(String(aluId)))
+    .map(s => String(s.FECHA||'')).filter(Boolean).sort();
+  // Si hay registros reales, usarlos; si no (aún no hay pase de lista), caer a OBSERVACIONES
+  return desdeSesiones.length ? desdeSesiones : bonoFechas(insc);
+}
 function bonoObsActualizada(insc, usoNuevo, fecha, actId){
   let obs = String(insc.OBSERVACIONES||'');
   const raw = bonoFechasRaw(insc);
@@ -1556,8 +1569,11 @@ function modalAlumno(a) {
       const act = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
       const esBono = act && esBonoUsos(act.NOMBRE||'', i);
       const cap    = esBono ? bonoCapacidad(act.NOMBRE) : 0;
-      const usos   = esBono ? bonoUsosCont(i) : 0;
-      const fechas = esBono ? bonoFechas(i) : [];
+      const aluIdStr = String(a.ID_ALUMNO||'');
+      const actIdStr = String(i.ID_ACTIVIDAD||'');
+      const usosRealesVal = esBono ? bonoUsosReales(aluIdStr, actIdStr) : 0;
+      const usos   = esBono ? (usosRealesVal || bonoUsosCont(i)) : 0;
+      const fechas = esBono ? bonoFechasReales(aluIdStr, actIdStr, i) : [];
       const inscId = String(i.ID_INSCRIPCION || i.ID || '');
 
       let bonoHtml = '';
@@ -3870,7 +3886,10 @@ function _renderBonosPanel() {
     const alu = DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(ins.ID_ALUMNO));
     const cli = alu ? DB.clientes.find(c=>String(c.ID_CLIENTE)===String(alu.ID_CLIENTE)) : null;
     const cap  = bonoCapacidad(act?.NOMBRE||'');
-    const usos = bonoUsosCont(ins);
+    const aluIdStr2 = String(ins.ID_ALUMNO||'');
+    const actIdStr2 = String(ins.ID_ACTIVIDAD||'');
+    const usosR = bonoUsosReales(aluIdStr2, actIdStr2);
+    const usos = usosR || bonoUsosCont(ins);
     const rest    = cap - usos;
     const agotado = rest <= 0;
     const alerta  = !agotado && rest <= 2;
@@ -8938,12 +8957,15 @@ function portalFamilia() {
               if (!act || !esBonoUsos(act.NOMBRE||'', i)) return;
               const alu   = misAlumnos.find(a=>String(a.ID_ALUMNO||a.ID||'')===String(i.ID_ALUMNO||''));
               const cap   = bonoCapacidad(act.NOMBRE);
-              const usos  = bonoUsosCont(i);
+              const aluIdP = String(i.ID_ALUMNO||'');
+              const actIdP = String(i.ID_ACTIVIDAD||'');
+              const usosR2 = bonoUsosReales(aluIdP, actIdP);
+              const usos  = usosR2 || bonoUsosCont(i);
               const rest  = cap - usos;
               const pct   = cap>0?Math.round(usos/cap*100):0;
               const bar   = rest<=2?'#ef4444':rest<=4?'#f59e0b':'#22c55e';
               const fmtD  = d=>{const p=d.split('-');return p.length===3?p[2].replace(/^0/,'')+'/'+p[1].replace(/^0/,''):d;};
-              const fds   = bonoFechas(i).slice(-10).reverse();
+              const fds   = bonoFechasReales(aluIdP, actIdP, i).slice(-10).reverse();
               const fdHtml= fds.length?fds.map(d=>`<span style="font-size:11px;background:var(--bg2);padding:2px 7px;border-radius:8px;border:1px solid var(--border2)">${fmtD(d)}</span>`).join(' '):'<span style="font-size:12px;color:var(--text3)">Sin asistencias registradas aún</span>';
               const aluNom=(alu?alu.NOMBRE+' '+(alu.APELLIDOS||''):'').trim();
               bonos.push(`<div style="padding:10px 0;border-bottom:1px solid var(--border2)">
