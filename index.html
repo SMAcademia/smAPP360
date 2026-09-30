@@ -3416,10 +3416,11 @@ function _comToggleAct(id) {
 }
 
 function _comFamiliasBonoRenovar() {
-  const bonoInscs = DB.inscripciones.filter(i =>
-    String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
-    esBonoUsos(DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD))?.NOMBRE||'', i)
-  );
+  const bonoInscs = DB.inscripciones.filter(i => {
+    if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+    const act = DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD));
+    return act && sinTildes(act.NOMBRE||'').includes('USOS');
+  });
   return bonoInscs.map(ins => {
     const act = DB.actividades.find(a=>String(a.ID)===String(ins.ID_ACTIVIDAD));
     const alu = DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(ins.ID_ALUMNO));
@@ -3914,6 +3915,14 @@ function _comMsgEjemplo() {
       +'⏰ Plazo: del 1 al 10 de cada mes.\n\n'
       +'¡Gracias! 🙏\nSM Academia · 📲 '+_COM_BIZUM;
   }
+  if (_comTipo === 'RENOVACION_BONO') {
+    return 'Hola [Nombre] 👋\n\n'
+      +'Te informamos de que el bono de *[Alumno/a]* para *Bono 10 Usos* está a punto de agotarse _(quedan *2 usos*)_ (*8/10 usos consumidos*).\n\n'
+      +'Para renovarlo, realiza el pago con los datos habituales:\n'
+      +'💳 Transferencia: '+_COM_IBAN+'\n'
+      +'📲 Bizum: '+_COM_BIZUM+'\n\n'
+      +'¡Gracias por confiar en SM Academia! 🙏\nSM Academia';
+  }
   return _comMsgWA({ nombre: '[Nombre]', importe: 0, concepto: '', mes: '', alumnos: [] });
 }
 
@@ -3944,10 +3953,11 @@ function _comAplicarMsgEditor() {
 function _comRestaurarMsg() { _comMsgCustom = null; _renderCom(); }
 
 function _renderBonosPanel() {
-  const bonoInscs = DB.inscripciones.filter(i =>
-    String(i.ESTADO||'').toUpperCase()==='ACTIVA' &&
-    esBonoUsos(DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD))?.NOMBRE||'')
-  );
+  const bonoInscs = DB.inscripciones.filter(i => {
+    if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+    const act = DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD));
+    return act && sinTildes(act.NOMBRE||'').includes('USOS');
+  });
   if (!bonoInscs.length) return '';
   const rows = bonoInscs.map(ins => {
     const act = DB.actividades.find(a=>String(a.ID)===String(ins.ID_ACTIVIDAD));
@@ -3982,17 +3992,18 @@ function _renderBonosPanel() {
         return fds.length ? fds.join(', ') : '—';
       })()+'</td>'
       +(() => {
-        if (!cli || (!agotado && !alerta)) return '<td></td>';
+        if (!cli) return '<td></td>';
         const tel  = String(cli['TELÉFONO']||cli.TELEFONO||'').replace(/\D/g,'');
         if (!tel) return '<td></td>';
         const nomAlu = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
         const tutor  = (cli.NOMBRE||'').split(' ')[0];
         const estado = rest <= 0
           ? 'está *agotado*'
-          : 'está a punto de agotarse _(quedan *'+rest+' usos*)_';
+          : rest <= 2
+            ? 'está a punto de agotarse _(quedan *'+rest+' usos*)_'
+            : 'lleva *'+usos+'/'+cap+' usos consumidos*';
         const msg = 'Hola '+tutor+' 👋\n\n'
-          +'Te informamos de que el bono de *'+nomAlu+'* para *'+(act?.NOMBRE||'bono')+'* '+estado
-          +' (*'+usos+'/'+cap+' usos consumidos*).\n\n'
+          +'Te avisamos de que el bono de *'+nomAlu+'* para *'+(act?.NOMBRE||'bono')+'* '+estado+'.\n\n'
           +'Para renovarlo, realiza el pago con los datos habituales:\n'
           +'💳 Transferencia: '+_COM_IBAN+'\n'
           +'📲 Bizum: '+_COM_BIZUM+'\n\n'
