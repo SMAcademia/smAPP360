@@ -1121,12 +1121,24 @@ function bonoUsosReales(aluId, actId) {
   return sesiones.filter(s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(String(aluId))).length;
 }
 function bonoFechasReales(aluId, actId, insc) {
+  const aluIdStr = String(aluId);
+  const enSesion = s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr);
+  // 1. Asistencias registradas bajo el mismo actId del bono
   const desdeSesiones = (DB.asistenciasExtra||[])
-    .filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) &&
-      String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(String(aluId)))
+    .filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s))
     .map(s => String(s.FECHA||'')).filter(Boolean).sort();
-  // Si hay registros reales, usarlos; si no (aún no hay pase de lista), caer a OBSERVACIONES
-  return desdeSesiones.length ? desdeSesiones : bonoFechas(insc);
+  if (desdeSesiones.length) return desdeSesiones;
+  // 2. OBSERVACIONES (campo FECHAS guardado manualmente)
+  const desdeObs = bonoFechas(insc);
+  if (desdeObs.length) return desdeObs;
+  // 3. Fallback: sesiones de recogida (TEMPRANA / TARDÍA) — para bonos de servicio reconvertidos
+  const actRecogidaIds = (DB.actividades||[])
+    .filter(x => sinTildes(x.NOMBRE||'').includes('RECOGIDA'))
+    .map(x => String(x.ID));
+  if (!actRecogidaIds.length) return [];
+  return (DB.asistenciasExtra||[])
+    .filter(s => actRecogidaIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s))
+    .map(s => String(s.FECHA||'')).filter(Boolean).sort();
 }
 function bonoObsActualizada(insc, usoNuevo, fecha, actId){
   let obs = String(insc.OBSERVACIONES||'');
@@ -3985,32 +3997,15 @@ function _renderBonosPanel() {
       +(agotado?'<span style="font-size:11px;background:var(--text3);color:#fff;padding:1px 8px;border-radius:10px">Agotado</span>'
                :alerta?'<span style="font-size:11px;background:var(--red);color:#fff;padding:1px 8px;border-radius:10px">⚠ Renovar</span>':'')
       +'</td>'
-      +'<td style="font-size:11px;color:var(--text3);max-width:180px">'+(() => {
-        const fds = bonoFechas(ins).slice(-10).map(d => {
+      +(() => {
+        const fds = bonoFechasReales(aluIdStr2, actIdStr2, ins).slice(-10).map(d => {
           const p = d.split('-'); return p.length===3 ? p[2].replace(/^0/,'')+'/'+p[1].replace(/^0/,'') : d;
         });
-        return fds.length ? fds.join(', ') : '—';
-      })()+'</td>'
-      +(() => {
-        if (!cli) return '<td></td>';
-        const tel  = String(cli['TELÉFONO']||cli.TELEFONO||'').replace(/\D/g,'');
-        if (!tel) return '<td></td>';
-        const nomAlu = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
-        const tutor  = (cli.NOMBRE||'').split(' ')[0];
-        const estado = rest <= 0
-          ? 'está *agotado*'
-          : rest <= 2
-            ? 'está a punto de agotarse _(quedan *'+rest+' usos*)_'
-            : 'lleva *'+usos+'/'+cap+' usos consumidos*';
-        const msg = 'Hola '+tutor+' 👋\n\n'
-          +'Te avisamos de que el bono de *'+nomAlu+'* para *'+(act?.NOMBRE||'bono')+'* '+estado+'.\n\n'
-          +'Para renovarlo, realiza el pago con los datos habituales:\n'
-          +'💳 Transferencia: '+_COM_IBAN+'\n'
-          +'📲 Bizum: '+_COM_BIZUM+'\n\n'
-          +'¡Gracias por confiar en SM Academia! 🙏\nSM Academia';
-        const wa = 'https://wa.me/'+(tel.length===9?'34'+tel:tel)+'?text='+encodeURIComponent(msg);
-        return '<td style="white-space:nowrap"><a href="'+wa+'" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;font-size:11px">📲 Avisar</a></td>';
+        return '<td style="font-size:11px;color:var(--text3);max-width:180px">'+(fds.length ? fds.join(', ') : '—')+'</td>';
       })()
+      +(cli && String(cli['TELÉFONO']||cli.TELEFONO||'').replace(/\D/g,'')
+        ? '<td style="white-space:nowrap"><button class="btn btn-sm" style="background:#25D366;color:#fff;font-size:11px" onclick="_bonoAvisarWA(\''+esc(String(ins.ID_INSCRIPCION||ins.ID||''))+'\')">📲 Avisar</button></td>'
+        : '<td></td>')
       +'</tr>';
   }).join('');
   return '<div class="card" style="padding:14px 20px;margin-top:0">'
@@ -4019,6 +4014,35 @@ function _renderBonosPanel() {
     +'<thead><tr><th>Alumno/a</th><th>Bono</th><th style="text-align:center">Restantes</th><th style="text-align:center">Estado</th><th>Últimas 10 asistencias</th><th></th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'
     +'</table></div></div>';
+}
+
+function _bonoAvisarWA(inscId) {
+  const ins = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID||'') === String(inscId));
+  if (!ins) return;
+  const act = DB.actividades.find(a => String(a.ID) === String(ins.ID_ACTIVIDAD));
+  const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(ins.ID_ALUMNO));
+  const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
+  if (!cli) return;
+  const tel = String(cli['TELÉFONO']||cli.TELEFONO||'').replace(/\D/g,'');
+  if (!tel) { showToast('Esta familia no tiene teléfono registrado','error'); return; }
+  const cap  = bonoCapacidad(act?.NOMBRE||'');
+  const usos = bonoUsosReales(String(ins.ID_ALUMNO), String(ins.ID_ACTIVIDAD)) || bonoUsosCont(ins);
+  const rest = cap - usos;
+  const nomAlu = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
+  const tutor  = (cli.NOMBRE||'').split(' ')[0];
+  const estado = rest <= 0
+    ? 'está agotado'
+    : rest <= 2
+      ? 'está a punto de agotarse (quedan ' + rest + ' usos)'
+      : 'lleva ' + usos + '/' + cap + ' usos consumidos';
+  const msg = 'Hola ' + tutor + ' \u{1F44B}\n\n'
+    + 'Te avisamos de que el bono de ' + nomAlu + ' para ' + (act?.NOMBRE||'bono') + ' ' + estado + '.\n\n'
+    + 'Para renovarlo, realiza el pago con los datos habituales:\n'
+    + '\u{1F4B3} Transferencia: ' + _COM_IBAN + '\n'
+    + '\u{1F4F2} Bizum: ' + _COM_BIZUM + '\n\n'
+    + 'Gracias por confiar en SM Academia!\nSM Academia';
+  const num = tel.length === 9 ? '34' + tel : tel;
+  window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(msg), '_blank');
 }
 
 async function _comRegistrarUsoBono(inscId, usoActual, capacidad) {
