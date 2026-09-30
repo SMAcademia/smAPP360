@@ -3129,13 +3129,14 @@ const _COM_IBAN      = 'ES69 0182 5036 7102 0163 5388';
 const _COM_IBAN_AMPA = 'ES43 0049 1306 0823 1023 0054'; // concepto: nombre+apellidos+curso del alumno
 
 const _COM_TIPOS = {
-  COBRO:         { label: 'Cobro mensual',              icon: '💶', needsMes: true,  needsFinanciero: true  },
-  CONFIRM_INSC:  { label: 'Confirmación inscripciones', icon: '✅', needsMes: false, needsFinanciero: false },
-  INICIO:        { label: 'Inicio de curso',            icon: '🎒', needsMes: false, needsFinanciero: false },
-  AREA_PRIVADA:  { label: 'Acceso área privada',        icon: '🔐', needsMes: false, needsFinanciero: false },
-  SUSPENSION:    { label: 'Suspensión de clases',       icon: '⚠️', needsMes: false, needsFinanciero: false },
-  CAMBIO:        { label: 'Aviso / Cambio',             icon: '📢', needsMes: false, needsFinanciero: false },
-  PRESENTACION:  { label: 'Presentación curso',         icon: '📋', needsMes: false, needsFinanciero: false },
+  COBRO:            { label: 'Cobro mensual',              icon: '💶', needsMes: true,  needsFinanciero: true  },
+  CONFIRM_INSC:     { label: 'Confirmación inscripciones', icon: '✅', needsMes: false, needsFinanciero: false },
+  INICIO:           { label: 'Inicio de curso',            icon: '🎒', needsMes: false, needsFinanciero: false },
+  AREA_PRIVADA:     { label: 'Acceso área privada',        icon: '🔐', needsMes: false, needsFinanciero: false },
+  SUSPENSION:       { label: 'Suspensión de clases',       icon: '⚠️', needsMes: false, needsFinanciero: false },
+  CAMBIO:           { label: 'Aviso / Cambio',             icon: '📢', needsMes: false, needsFinanciero: false },
+  PRESENTACION:     { label: 'Presentación curso',         icon: '📋', needsMes: false, needsFinanciero: false },
+  RENOVACION_BONO:  { label: 'Renovación de bono',         icon: '🎫', needsMes: false, needsFinanciero: false },
 };
 
 function _ampaCuota(acts) {
@@ -3267,7 +3268,9 @@ function _renderCom() {
     return '<button type="button" onclick="_comToggleAct(\''+a.ID+'\')" style="padding:5px 12px;border:1.5px solid '+(sel?'var(--green)':'var(--border2)')+';border-radius:20px;background:'+(sel?'#e8f5e9':'var(--bg2)')+';cursor:pointer;font-size:12px;transition:all .15s">'+esc(a.NOMBRE)+'</button>';
   }).join('');
 
-  const familias = cfg.needsMes ? _comFamilias() : _comTodasFamilias();
+  const familias = cfg.needsMes ? _comFamilias()
+    : _comTipo === 'RENOVACION_BONO' ? _comFamiliasBonoRenovar()
+    : _comTodasFamilias();
 
   const tipoOps = Object.entries(_COM_TIPOS).map(([k,v])=>'<option value="'+k+'"'+(k===_comTipo?' selected':'')+'>'+v.icon+' '+v.label+'</option>').join('');
 
@@ -3410,6 +3413,36 @@ function _comSetTipo(v)  { _comTipo = v; _comNota = ''; _comMsgCustom = null; _r
 function _comToggleAct(id) {
   if (_comFiltros.actIds.has(id)) _comFiltros.actIds.delete(id); else _comFiltros.actIds.add(id);
   _renderCom();
+}
+
+function _comFamiliasBonoRenovar() {
+  const bonoInscs = DB.inscripciones.filter(i =>
+    String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
+    esBonoUsos(DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD))?.NOMBRE||'', i)
+  );
+  return bonoInscs.map(ins => {
+    const act = DB.actividades.find(a=>String(a.ID)===String(ins.ID_ACTIVIDAD));
+    const alu = DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(ins.ID_ALUMNO));
+    if (!alu || !act) return null;
+    const cli = DB.clientes.find(c=>String(c.ID_CLIENTE)===String(alu.ID_CLIENTE));
+    if (!cli) return null;
+    const cap  = bonoCapacidad(act.NOMBRE||'');
+    const usos = bonoUsosReales(String(ins.ID_ALUMNO), String(ins.ID_ACTIVIDAD)) || bonoUsosCont(ins);
+    const rest = cap - usos;
+    return {
+      cliId: String(cli.ID_CLIENTE),
+      alumnos: [alu],
+      nombre:   (cli.NOMBRE+' '+(cli.APELLIDOS||'')).trim(),
+      email:    cli.EMAIL||'',
+      telefono: cli['TELÉFONO']||cli.TELEFONO||'',
+      importe: 0, concepto: '', mes: '', pagoParcial: false,
+      bonoAluNombre: (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim(),
+      bonoActNombre: act.NOMBRE,
+      bonoUsos: usos,
+      bonoCap:  cap,
+      bonoRestantes: rest,
+    };
+  }).filter(Boolean).sort((a,b)=>a.bonoRestantes - b.bonoRestantes);
 }
 
 function _comTodasFamilias() {
@@ -3829,6 +3862,24 @@ function _comMsgEmail(f) {
         +'Para cualquier consulta estamos disponibles en el '+_COM_BIZUM+'.\n\n'
         +'Un saludo,\nSM Academia';
     }
+    case 'RENOVACION_BONO': {
+      const nomAlu  = f.bonoAluNombre || (f.alumnos?.[0] ? (f.alumnos[0].NOMBRE+' '+(f.alumnos[0].APELLIDOS||'')).trim() : '');
+      const actNom  = f.bonoActNombre || 'bono de usos';
+      const usos    = f.bonoUsos ?? '?';
+      const cap     = f.bonoCap ?? 10;
+      const rest    = f.bonoRestantes ?? (cap - usos);
+      const estado  = rest <= 0
+        ? 'está *agotado*'
+        : 'está a punto de agotarse _(quedan *'+rest+' usos*)_';
+      const nota = (_comNota||'').trim();
+      return 'Hola '+tutor+' 👋\n\n'
+        +'Te informamos de que el bono de *'+nomAlu+'* para *'+actNom+'* '+estado+' (*'+usos+'/'+cap+' usos consumidos*).\n\n'
+        +'Para renovarlo, realiza el pago con los datos habituales:\n'
+        +'💳 Transferencia: '+_COM_IBAN+'\n'
+        +'📲 Bizum: '+_COM_BIZUM+'\n\n'
+        +(nota?'📢 '+nota+'\n\n':'')
+        +'¡Gracias por confiar en SM Academia! 🙏\nSM Academia';
+    }
     default:
       return _comMsgWA(f).replace(/\*([^*]+)\*/g,'$1').replace(/_([^_]+)_/g,'$1');
   }
@@ -3930,12 +3981,31 @@ function _renderBonosPanel() {
         });
         return fds.length ? fds.join(', ') : '—';
       })()+'</td>'
+      +(() => {
+        if (!cli || (!agotado && !alerta)) return '<td></td>';
+        const tel  = String(cli['TELÉFONO']||cli.TELEFONO||'').replace(/\D/g,'');
+        if (!tel) return '<td></td>';
+        const nomAlu = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
+        const tutor  = (cli.NOMBRE||'').split(' ')[0];
+        const estado = rest <= 0
+          ? 'está *agotado*'
+          : 'está a punto de agotarse _(quedan *'+rest+' usos*)_';
+        const msg = 'Hola '+tutor+' 👋\n\n'
+          +'Te informamos de que el bono de *'+nomAlu+'* para *'+(act?.NOMBRE||'bono')+'* '+estado
+          +' (*'+usos+'/'+cap+' usos consumidos*).\n\n'
+          +'Para renovarlo, realiza el pago con los datos habituales:\n'
+          +'💳 Transferencia: '+_COM_IBAN+'\n'
+          +'📲 Bizum: '+_COM_BIZUM+'\n\n'
+          +'¡Gracias por confiar en SM Academia! 🙏\nSM Academia';
+        const wa = 'https://wa.me/'+(tel.length===9?'34'+tel:tel)+'?text='+encodeURIComponent(msg);
+        return '<td style="white-space:nowrap"><a href="'+wa+'" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;font-size:11px">📲 Avisar</a></td>';
+      })()
       +'</tr>';
   }).join('');
   return '<div class="card" style="padding:14px 20px;margin-top:0">'
     +'<div class="card-title" style="margin-bottom:8px">🎫 Bonos de usos activos</div>'
     +'<div class="table-wrap"><table style="font-size:13px">'
-    +'<thead><tr><th>Alumno/a</th><th>Bono</th><th style="text-align:center">Restantes</th><th style="text-align:center">Estado</th><th>Últimas 10 asistencias</th></tr></thead>'
+    +'<thead><tr><th>Alumno/a</th><th>Bono</th><th style="text-align:center">Restantes</th><th style="text-align:center">Estado</th><th>Últimas 10 asistencias</th><th></th></tr></thead>'
     +'<tbody>'+rows+'</tbody>'
     +'</table></div></div>';
 }
