@@ -1109,7 +1109,7 @@ function _mesNorm(m) {
 }
 function esFutbol(l)       { const u=sinTildes(l); return u.includes('FUTBOL'); }
 function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
-function esBonoUsos(nombre){ const n=sinTildes(nombre||''); return n.includes('BONO') && n.includes('USO') && !n.includes('RECOGIDA'); }
+function esBonoUsos(nombre, insc){ const n=sinTildes(nombre||''); const porNombre = n.includes('BONO'); const porObs = insc && /USOS:\d+/i.test(String(insc.OBSERVACIONES||'')); return porNombre || porObs; }
 function bonoCapacidad(nombre){ const m=sinTildes(nombre||'').match(/(\d+)/); return m?parseInt(m[1]):10; }
 function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:(\d+)/i); return m?parseInt(m[1]):0; }
 // Entradas en FECHAS: "YYYY-MM-DD" (manual) o "YYYY-MM-DD:actId" (auto, para idempotencia por sesión)
@@ -1554,7 +1554,7 @@ function modalAlumno(a) {
     const canEditBono = ['ADMIN','COORDINADOR'].includes(currentUser?.rol);
     const filasInsc = inscsAlu.map(i => {
       const act = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
-      const esBono = act && esBonoUsos(act.NOMBRE||'');
+      const esBono = act && esBonoUsos(act.NOMBRE||'', i);
       const cap    = esBono ? bonoCapacidad(act.NOMBRE) : 0;
       const usos   = esBono ? bonoUsosCont(i) : 0;
       const fechas = esBono ? bonoFechas(i) : [];
@@ -8935,7 +8935,7 @@ function portalFamilia() {
             const alumnoIds2 = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
             DB.inscripciones.filter(i=>alumnoIds2.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA').forEach(i=>{
               const act = DB.actividades.find(a=>String(a.ID||'')===String(i.ID_ACTIVIDAD||''));
-              if (!act || !esBonoUsos(act.NOMBRE||'')) return;
+              if (!act || !esBonoUsos(act.NOMBRE||'', i)) return;
               const alu   = misAlumnos.find(a=>String(a.ID_ALUMNO||a.ID||'')===String(i.ID_ALUMNO||''));
               const cap   = bonoCapacidad(act.NOMBRE);
               const usos  = bonoUsosCont(i);
