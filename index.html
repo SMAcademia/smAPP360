@@ -1587,6 +1587,22 @@ function modalAlumno(a) {
           ? ultimas10.map(d => `<span style="font-size:11px;background:var(--bg3,#e5e7eb);padding:2px 7px;border-radius:8px;font-variant-numeric:tabular-nums">${fmtDia(d)}</span>`).join(' ')
           : '<span style="font-size:11px;color:var(--text3)">Sin fechas registradas</span>';
         const totalFechas = fechas.length;
+        // Conteo real de sesiones de recogida (TEMPRANA + TARDÍA) para este alumno
+        const actRecogidaIds = (DB.actividades||[])
+          .filter(x => sinTildes(x.NOMBRE||'').includes('RECOGIDA'))
+          .map(x => String(x.ID));
+        const sesionesRecogida = actRecogidaIds.length
+          ? (DB.asistenciasExtra||[]).filter(s =>
+              actRecogidaIds.includes(String(s.ID_ACTIVIDAD||'')) &&
+              String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr)
+            ).length
+          : null;
+        const recogidaHtml = sesionesRecogida !== null
+          ? `<div style="margin-top:6px;padding:5px 8px;background:rgba(99,102,241,.1);border-radius:4px;font-size:11px;display:flex;align-items:center;gap:4px">
+               <span style="color:var(--text3)">Sesiones de recogida registradas:</span>
+               <strong>${sesionesRecogida}</strong>
+               <span style="color:var(--text3)">(referencia para "Corregir usos")</span>
+             </div>` : '';
         const btnCorr = canEditBono
           ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px">
                <span style="font-size:11px;color:var(--text3)">Corregir usos:</span>
@@ -1607,6 +1623,7 @@ function modalAlumno(a) {
             Últimas ${Math.min(10,totalFechas)} asistencias${totalFechas>10?' (de '+totalFechas+' totales)':''}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">${fechaItems}</div>
+          ${recogidaHtml}
           ${btnCorr}
         </div>`;
       }
