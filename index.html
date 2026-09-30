@@ -1974,6 +1974,11 @@ function modalActividad(a) {
           <option value="2" ${Number(a.NUM_GRUPOS)===2?'selected':''}>Grupo 2</option>
           <option value="3" ${Number(a.NUM_GRUPOS)===3?'selected':''}>Grupo 3</option>
         </select></div>
+      <div class="field"><label>Monitor asignado</label>
+        <select id="ac-monitor">
+          <option value="">— Sin asignar —</option>
+          ${(DB.personal||[]).filter(p=>['MONITOR','ENTRENADOR','COORDINADOR'].includes(String(p.ROL||'').toUpperCase())).map(p=>`<option value="${p.ID_MONITOR}" ${String(a.ID_MONITOR||'')===String(p.ID_MONITOR)?'selected':''}>${esc((p.NOMBRE+' '+(p.APELLIDOS||'')).trim())}</option>`).join('')}
+        </select></div>
       <div class="field span2"><label>Descripción</label>
         <textarea id="ac-desc">${esc(a.DESCRIPCION||'')}</textarea></div>
     </div>`,
@@ -1997,6 +2002,7 @@ function guardarActividad(id) {
     SUBVENCIONADA:document.getElementById('ac-subv').value,
     ACTIVA:       document.getElementById('ac-activa').value,
     DESCRIPCION:  document.getElementById('ac-desc').value.trim(),
+    ID_MONITOR:   document.getElementById('ac-monitor').value,
   };
   writeToSheet('ACTIVIDADES', row, id)
     .then(() => { showToast(id ? 'Actividad actualizada' : 'Actividad creada'); closeModal(); loadAllData().then(actividadesCatalogo); })
@@ -6769,8 +6775,11 @@ function asistenciasExtra() {
   const today = new Date().toISOString().slice(0,10);
 
   // Actividades de la línea extraescolares activas
+  // Los monitores solo ven su actividad asignada; admin/coordinador ven todas
+  const esMonitor = currentUser?.rol === 'MONITOR';
   const actividades = DB.actividades.filter(a =>
-    esExtraescolar(a.LINEA) && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+    esExtraescolar(a.LINEA) && String(a.ACTIVA||'').toUpperCase().startsWith('S') &&
+    (!esMonitor || String(a.ID_MONITOR||'') === String(currentUser?.id||''))
   );
 
   // Historial de asistencias registradas hoy (para mostrar las ya completadas)
