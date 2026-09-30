@@ -1977,7 +1977,7 @@ function modalActividad(a) {
       <div class="field"><label>Monitor asignado</label>
         <select id="ac-monitor">
           <option value="">— Sin asignar —</option>
-          ${(DB.personal||[]).filter(p=>['MONITOR','ENTRENADOR','COORDINADOR'].includes(String(p.ROL||'').toUpperCase())).map(p=>`<option value="${p.ID_MONITOR}" ${String(a.ID_MONITOR||'')===String(p.ID_MONITOR)?'selected':''}>${esc((p.NOMBRE+' '+(p.APELLIDOS||'')).trim())}</option>`).join('')}
+          ${(DB.personal||[]).filter(p=>['MONITOR','ENTRENADOR','ADMIN'].includes(String(p.ROL||'').toUpperCase())).map(p=>`<option value="${p.ID_MONITOR}" ${String(a.ID_MONITOR||'')===String(p.ID_MONITOR)?'selected':''}>${esc((p.NOMBRE+' '+(p.APELLIDOS||'')).trim())}</option>`).join('')}
         </select></div>
       <div class="field span2"><label>Descripción</label>
         <textarea id="ac-desc">${esc(a.DESCRIPCION||'')}</textarea></div>
