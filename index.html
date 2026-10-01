@@ -4619,6 +4619,43 @@ function modalPago(p) {
         <label>Total esperado (€)</label>
         <input id="p-neto" type="number" step="0.01" readonly value="${esc(p.TOTAL_ESPERADO||p.IMPORTE||'')}" style="font-weight:700">
       </div>
+      ${isNew ? `
+      <div class="field span2" style="margin-top:2px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="p-segundo-toggle" onchange="toggleSegundoPago()">
+          Añadir segundo alumno (hermano/a con pago compartido)
+        </label>
+      </div>
+      <div id="p-segundo-wrap" class="span2" style="display:none;border-top:1px dashed var(--border2);padding-top:12px">
+        <div class="form-grid" style="padding:0">
+          <div class="field span2">
+            <label>2º Alumno</label>
+            <select id="p-alu2" onchange="actualizarInscPago2()">
+              <option value="">— Selecciona —</option>${opsAlu}
+            </select>
+          </div>
+          <div class="field span2">
+            <label>Inscripción / Concepto</label>
+            <select id="p-insc2" onchange="autorellenarPago2()">
+              <option value="">— Selecciona primero un alumno —</option>
+            </select>
+          </div>
+          <div class="field" style="display:none"><input id="p-linea2" readonly></div>
+          <div class="field" style="display:none"><input id="p-serv2" readonly></div>
+          <div class="field">
+            <label>Importe base (€)</label>
+            <input id="p-fact2" type="number" step="0.01" oninput="calcNeto2()">
+          </div>
+          <div class="field">
+            <label>Descuento (€)</label>
+            <input id="p-desc2" type="number" step="0.01" min="0" value="0" oninput="calcNeto2()">
+          </div>
+          <div class="field span2">
+            <label>Total 2º alumno (€)</label>
+            <input id="p-neto2" type="number" step="0.01" readonly style="font-weight:700">
+          </div>
+        </div>
+      </div>` : ''}
     </div>
 
     <div class="form-grid" id="p-seccion-externo" style="display:${modoInicial==='externo'?'grid':'none'}">
@@ -4720,6 +4757,43 @@ function calcNetoExterno() {
   if (el) el.value = neto.toFixed(2);
 }
 
+function toggleSegundoPago() {
+  const show = document.getElementById('p-segundo-toggle')?.checked;
+  const wrap = document.getElementById('p-segundo-wrap');
+  if (wrap) wrap.style.display = show ? '' : 'none';
+}
+
+function actualizarInscPago2() {
+  const aluId = document.getElementById('p-alu2')?.value || '';
+  const sel   = document.getElementById('p-insc2');
+  if (!sel) return;
+  sel.innerHTML = aluId
+    ? '<option value="">— Selecciona —</option>' + _opcionesInscPago(aluId, '', '')
+    : '<option value="">— Selecciona primero un alumno —</option>';
+  // reset campos
+  ['p-linea2','p-serv2','p-fact2','p-desc2','p-neto2'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = id==='p-desc2'?'0':'';
+  });
+}
+
+function autorellenarPago2() {
+  const inscId = document.getElementById('p-insc2')?.value;
+  if (!inscId || inscId === 'CUOTA_SOCIO') return;
+  const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID||'') === inscId);
+  if (!insc) return;
+  const act  = DB.actividades.find(a => String(a.ID||'') === String(insc.ID_ACTIVIDAD||''));
+  const lin  = document.getElementById('p-linea2'); if (lin) lin.value = act?.LINEA||insc.LINEA||'';
+  const srv  = document.getElementById('p-serv2');  if (srv) srv.value = act?.NOMBRE||'';
+  const fct  = document.getElementById('p-fact2');  if (fct) { fct.value = insc.IMPORTE||''; calcNeto2(); }
+}
+
+function calcNeto2() {
+  const imp  = parseFloat(document.getElementById('p-fact2')?.value||0)||0;
+  const desc = parseFloat(document.getElementById('p-desc2')?.value||0)||0;
+  const el   = document.getElementById('p-neto2');
+  if (el) el.value = Math.max(0, parseFloat((imp - desc).toFixed(2))).toFixed(2);
+}
+
 function guardarPago(id) {
   const modo = document.getElementById('p-modo')?.value || 'alumno';
   const btn  = event?.target;
@@ -4770,10 +4844,38 @@ function guardarPago(id) {
   }
 
   if (!id) row.FECHA_REGISTRO = new Date().toISOString().slice(0,10);
+
+  // Segundo alumno (solo en pagos nuevos)
+  const alu2Id = !id ? (document.getElementById('p-alu2')?.value || '') : '';
+  const insc2Sel = alu2Id ? (document.getElementById('p-insc2')?.value || '') : '';
+  let row2 = null;
+  if (alu2Id && insc2Sel) {
+    const alu2 = DB.alumnos.find(a => String(a.ID_ALUMNO||'') === alu2Id);
+    row2 = {
+      ID_ALUMNO:      alu2Id,
+      ID_CLIENTE:     alu2 ? String(alu2.ID_CLIENTE||'') : '',
+      ID_INSCRIPCION: insc2Sel !== 'CUOTA_SOCIO' ? insc2Sel : '',
+      LINEA:          document.getElementById('p-linea2')?.value || '',
+      SERVICIO:       document.getElementById('p-serv2')?.value || '',
+      MES:            document.getElementById('p-mes')?.value.trim() || '',
+      IMPORTE:        document.getElementById('p-fact2')?.value || '',
+      DESC_EUR:       document.getElementById('p-desc2')?.value || '0',
+      TOTAL_ESPERADO: document.getElementById('p-neto2')?.value || '',
+      TOTAL_RECIBIDO: '',
+      MÉTODO:         document.getElementById('p-metodo')?.value || '',
+      ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
+      FECHA:          document.getElementById('p-fecha')?.value || '',
+      NOTAS:          document.getElementById('p-notas')?.value.trim() || '',
+      FECHA_REGISTRO: row.FECHA_REGISTRO,
+    };
+  }
+
   const esConfirmado = String(row.ESTADO||'').toUpperCase() === 'PAGADO' && !!row.ID_ALUMNO;
-  writeToSheet('PAGOS', row, id)
+  const saves = [writeToSheet('PAGOS', row, id)];
+  if (row2) saves.push(writeToSheet('PAGOS', row2, null));
+  Promise.all(saves)
     .then(() => {
-      showToast(id ? 'Pago actualizado' : 'Pago registrado');
+      showToast(id ? 'Pago actualizado' : (row2 ? 'Pagos registrados (2 alumnos)' : 'Pago registrado'));
       closeModal();
       loadAllData().then(() => { pagos(); if (esConfirmado) _ofrecerWAConfirmPago(row); });
     })
@@ -9310,7 +9412,7 @@ function portalFamilia() {
                 ${misAlumnos.map(a=>`<tr>
                   <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
                   <td>${fmtFecha(a.FECHA_NAC)}</td>
-                  <td>${esc(a.CURSO_ESCOLAR||'—')}</td>
+                  <td>${esc(a.CURSO_ESCOLAR||a.CURSO||'—')}</td>
                 </tr>`).join('')||'<tr><td colspan="3" class="text-muted" style="text-align:center;padding:12px">Sin alumnos</td></tr>'}
               </tbody>
             </table></div>
@@ -9321,54 +9423,23 @@ function portalFamilia() {
               <thead><tr><th>Alumno</th><th>Actividad</th><th>Estado</th></tr></thead>
               <tbody>
                 ${(() => {
-                  // Separar por alumno: actividades principales vs recogida (add-on)
                   const rows = [];
                   misAlumnos.forEach(alum => {
-                    const aluId   = String(alum.ID_ALUMNO||alum.ID||'');
-                    const aluNom  = (alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim();
-                    const aluInscs = DB.inscripciones.filter(i => String(i.ID_ALUMNO||'') === aluId);
-
-                    // Separar en principales y recogidas
-                    const principales = [], recogidas = [];
-                    aluInscs.forEach(i => {
-                      const act = DB.actividades.find(a => String(a.ID||'') === String(i.ID_ACTIVIDAD||''));
-                      if (act && sinTildes(act.NOMBRE||'').includes('RECOGIDA'))
-                        recogidas.push({ i, act });
-                      else
-                        principales.push({ i, act });
-                    });
-
-                    // Badge de recogida (combina tipo + bono)
-                    let recogidaBadge = '';
-                    if (recogidas.length) {
-                      const tieneBono = recogidas.some(({act}) => act && sinTildes(act.NOMBRE||'').includes('BONO'));
-                      const tipo = recogidas.find(({act}) => act && !sinTildes(act.NOMBRE||'').includes('BONO'));
-                      const tipoNom = tipo?.act?.NOMBRE || '';
-                      const tipoLabel = sinTildes(tipoNom).includes('TEMPRANA') ? 'temprana'
-                        : sinTildes(tipoNom).includes('TARD') ? 'tardía' : 'recogida';
-                      recogidaBadge = `<span style="margin-left:6px;font-size:11px;padding:1px 7px;border-radius:10px;
-                        background:var(--amber);color:#fff;font-weight:600;white-space:nowrap">
-                        🚗 ${tipoLabel}${tieneBono?' · bono':''}</span>`;
-                    }
-
-                    // Generar filas solo para actividades principales
-                    if (!principales.length && recogidas.length) {
-                      // Sólo recogida, sin actividad principal — mostrar como fila informativa
-                      rows.push(`<tr>
-                        <td>${esc(aluNom)}</td>
-                        <td><em style="color:var(--text3)">Solo recogida</em> ${recogidaBadge}</td>
-                        <td>—</td>
-                      </tr>`);
-                    } else {
-                      principales.forEach(({i, act}) => {
+                    const aluId  = String(alum.ID_ALUMNO||alum.ID||'');
+                    const aluNom = (alum.NOMBRE+' '+(alum.APELLIDOS||'')).trim();
+                    DB.inscripciones
+                      .filter(i => String(i.ID_ALUMNO||'') === aluId)
+                      .forEach(i => {
+                        const act = DB.actividades.find(a => String(a.ID||'') === String(i.ID_ACTIVIDAD||''));
+                        const nom = act ? act.NOMBRE : (i.ID_ACTIVIDAD||'—');
                         const est = String(i.ESTADO||'').toUpperCase();
+                        const estTxt = est === 'ACTIVA' ? 'Activa' : est === 'BAJA' ? 'Baja' : est || '—';
                         rows.push(`<tr>
                           <td>${esc(aluNom)}</td>
-                          <td>${esc(act?act.NOMBRE:i.ID_ACTIVIDAD||'—')} ${recogidaBadge}</td>
-                          <td><span class="badge ${est==='ACTIVA'?'badge-green':est==='BAJA'?'badge-red':'badge-amber'}">${esc(est||'—')}</span></td>
+                          <td>${esc(nom)}</td>
+                          <td>${estTxt}</td>
                         </tr>`);
                       });
-                    }
                   });
                   return rows.join('') || '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:12px">Sin inscripciones</td></tr>';
                 })()}
@@ -9381,7 +9452,7 @@ function portalFamilia() {
             const alumnoIds2 = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
             DB.inscripciones.filter(i=>alumnoIds2.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA').forEach(i=>{
               const act = DB.actividades.find(a=>String(a.ID||'')===String(i.ID_ACTIVIDAD||''));
-              if (!act || !esBonoUsos(act.NOMBRE||'', i)) return;
+              if (!act || !sinTildes(act.NOMBRE||'').toUpperCase().includes('USOS')) return;
               const alu   = misAlumnos.find(a=>String(a.ID_ALUMNO||a.ID||'')===String(i.ID_ALUMNO||''));
               const cap   = bonoCapacidad(act.NOMBRE);
               const aluIdP = String(i.ID_ALUMNO||'');
