@@ -9290,7 +9290,7 @@ function portalFamilia() {
       const a = Math.floor((new Date()-d)/(365.25*24*3600*1000));
       if (!isNaN(a)&&a>0) edad = `${a} años`;
     }
-    const curso = alumno.CURSO_ESCOLAR||'';
+    const curso = alumno.CURSO||alumno.CURSO_ESCOLAR||'';
     const tieneHoy = futHoy.length > 0 || extraHoy.length > 0;
     const tieneFutbol = inscs.some(i => {
       const a = DB.actividades.find(x => String(x.ID||'') === String(i.ID_ACTIVIDAD||''));
@@ -9412,7 +9412,7 @@ function portalFamilia() {
                 ${misAlumnos.map(a=>`<tr>
                   <td><strong>${esc(a.NOMBRE||'')} ${esc(a.APELLIDOS||'')}</strong></td>
                   <td>${fmtFecha(a.FECHA_NAC)}</td>
-                  <td>${esc(a.CURSO_ESCOLAR||a.CURSO||'—')}</td>
+                  <td>${esc(a.CURSO||a.CURSO_ESCOLAR||'—')}</td>
                 </tr>`).join('')||'<tr><td colspan="3" class="text-muted" style="text-align:center;padding:12px">Sin alumnos</td></tr>'}
               </tbody>
             </table></div>
