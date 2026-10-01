@@ -882,7 +882,7 @@ function applyRoleVisibility() {
     });
     ['preinscripciones','clientes','alumnos','actividades','inscripciones',
      'pagos','analisis-ingresos','banco','facturas','comunicacion','solicitudes',
-     'dashboard','cuadrante','extra-resumen']
+     'dashboard','cuadrante','extra-resumen','listados']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
