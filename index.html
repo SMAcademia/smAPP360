@@ -2035,9 +2035,52 @@ function guardarActividad(id) {
     DESCRIPCION:  document.getElementById('ac-desc').value.trim(),
     ID_MONITOR:   document.getElementById('ac-monitor').value,
   };
-  writeToSheet('ACTIVIDADES', row, id)
-    .then(() => { showToast(id ? 'Actividad actualizada' : 'Actividad creada'); closeModal(); loadAllData().then(actividadesCatalogo); })
-    .catch(err => showToast('Error: ' + err.message,'error'));
+
+  const seDesactiva = id && !String(row.ACTIVA||'').toUpperCase().startsWith('S');
+  const inscsActivas = seDesactiva
+    ? DB.inscripciones.filter(i =>
+        String(i.ID_ACTIVIDAD||'') === String(id) &&
+        String(i.ESTADO||'').toUpperCase() === 'ACTIVA')
+    : [];
+
+  const _doGuardar = () => {
+    const hoy = new Date().toISOString().slice(0,10);
+    writeToSheet('ACTIVIDADES', row, id)
+      .then(() => {
+        if (!inscsActivas.length) return Promise.resolve();
+        return inscsActivas.reduce((p, i) =>
+          p.then(() => writeToSheet('INSCRIPCIONES', { ESTADO: 'BAJA', FECHA_BAJA: hoy }, i.ID_INSCRIPCION||i.ID)),
+          Promise.resolve()
+        );
+      })
+      .then(() => {
+        const msg = inscsActivas.length
+          ? `Actividad desactivada — ${inscsActivas.length} inscripción${inscsActivas.length>1?'es':''} dada${inscsActivas.length>1?'s':''} de baja`
+          : (id ? 'Actividad actualizada' : 'Actividad creada');
+        showToast(msg);
+        closeModal();
+        loadAllData().then(actividadesCatalogo);
+      })
+      .catch(err => showToast('Error: ' + err.message,'error'));
+  };
+
+  if (inscsActivas.length) {
+    const noms = inscsActivas.slice(0,5).map(i => {
+      const a = DB.alumnos.find(x => String(x.ID_ALUMNO||'') === String(i.ID_ALUMNO||''));
+      return a ? (a.NOMBRE+' '+(a.APELLIDOS||'')).trim() : 'Alumno';
+    });
+    const extra = inscsActivas.length > 5 ? ` y ${inscsActivas.length-5} más…` : '';
+    openModal('¿Dar de baja las inscripciones?',
+      `<p style="margin:0 0 12px">Al desactivar <strong>${esc(nombre)}</strong> se darán de baja <strong>${inscsActivas.length} inscripción${inscsActivas.length>1?'es':''} activa${inscsActivas.length>1?'s':''}</strong>:</p>
+       <ul style="font-size:13px;margin:0 0 12px;padding-left:18px;color:var(--text2)">${noms.map(n=>`<li>${esc(n)}</li>`).join('')}${extra?`<li><em>${extra}</em></li>`:''}</ul>
+       <p style="font-size:12px;color:var(--text3);margin:0">Esta acción no se puede deshacer desde aquí.</p>`,
+      `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+       <button class="btn btn-danger" onclick="closeModal();guardarActividadConfirmado_()">Desactivar y dar de baja</button>`
+    );
+    window.guardarActividadConfirmado_ = _doGuardar;
+  } else {
+    _doGuardar();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
