@@ -784,7 +784,9 @@ function loginUser(p) {
 
   applyRoleVisibility();
   _arStart();
-  navigate(currentUser.rol === 'FAMILIA' ? 'portal-familia' : 'dashboard');
+  if (currentUser.rol === 'FAMILIA') navigate('portal-familia');
+  else if (['MONITOR','ENTRENADOR'].includes(currentUser.rol)) navigate('asistencias-extra');
+  else navigate('dashboard');
 }
 
 function doLogin() {
@@ -844,7 +846,7 @@ function applyRoleVisibility() {
     'nav-general':      rol !== 'FAMILIA',
     'nav-futbol':       futbolLike,
     'nav-extra':        extraLike || ampaRole,
-    'nav-personal':     adminLike,
+    'nav-personal':     adminLike || ['MONITOR','ENTRENADOR'].includes(rol),
     'nav-contabilidad': adminLike,
     'nav-ampa':         ampaLike,
     'nav-familia':      rol === 'FAMILIA',
@@ -865,6 +867,28 @@ function applyRoleVisibility() {
 
   // Para COORDINADOR: dentro de nav-personal solo mostrar registro-horario
   if (rol === 'COORDINADOR') {
+    ['personal','ausencias','nominas'].forEach(page => {
+      const el = document.querySelector(`[data-page="${page}"]`);
+      if (el) el.style.display = 'none';
+    });
+  }
+
+  // Para MONITOR: solo registro-horario en nav-personal; ocultar gestión en nav-general
+  if (rol === 'MONITOR') {
+    ['personal','ausencias','nominas'].forEach(page => {
+      const el = document.querySelector(`[data-page="${page}"]`);
+      if (el) el.style.display = 'none';
+    });
+    ['preinscripciones','clientes','alumnos','actividades','inscripciones',
+     'pagos','analisis-ingresos','banco','facturas','comunicacion','solicitudes','dashboard']
+      .forEach(page => {
+        const el = document.querySelector(`[data-page="${page}"]`);
+        if (el) el.style.display = 'none';
+      });
+  }
+
+  // Para ENTRENADOR: solo registro-horario en nav-personal
+  if (rol === 'ENTRENADOR') {
     ['personal','ausencias','nominas'].forEach(page => {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
@@ -9711,8 +9735,11 @@ function _gasLoaded(raw) {
       String(x.ACTIVO || '').toUpperCase().startsWith('S')
     );
     if (!activo) { logout(); return; }
-    // Navegar a dashboard al cargar (currentPage puede ser 'dashboard' sin datos aún)
-    navigate(currentUser.rol === 'FAMILIA' ? 'portal-familia' : (currentPage || 'dashboard'));
+    // Navegar a la página de inicio según rol (currentPage puede ser 'dashboard' sin datos aún)
+    const _defPage = currentUser.rol === 'FAMILIA' ? 'portal-familia'
+      : ['MONITOR','ENTRENADOR'].includes(currentUser.rol) ? 'asistencias-extra'
+      : 'dashboard';
+    navigate(currentPage && currentPage !== 'dashboard' ? currentPage : _defPage);
     return;
   }
 
