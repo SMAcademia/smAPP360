@@ -304,6 +304,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('analisis-ingresos')" data-page="analisis-ingresos">
           <span class="nav-icon">📊</span><span>Análisis</span>
         </div>
+        <div class="nav-item" onclick="navigate('banco')" data-page="banco">
+          <span class="nav-icon">🏦</span><span>Banco</span>
+        </div>
         <div class="nav-item" onclick="navigate('facturas')" data-page="facturas">
           <span class="nav-icon">🧾</span><span>Facturas</span>
         </div>
@@ -853,7 +856,7 @@ function applyRoleVisibility() {
 
   // Para FAMILIA: dentro de nav-general ocultar páginas de gestión
   if (rol === 'FAMILIA') {
-    ['preinscripciones','clientes','alumnos','actividades','facturas','inscripciones','pagos','cuadrante','comunicacion','analisis-ingresos']
+    ['preinscripciones','clientes','alumnos','actividades','facturas','inscripciones','pagos','cuadrante','comunicacion','analisis-ingresos','banco']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
@@ -899,6 +902,7 @@ const PAGE_META = {
   'inscripciones':      { title: 'Inscripciones',        sub: 'Matrículas activas y bajas' },
   'pagos':              { title: 'Pagos',                sub: 'Control de cobros' },
   'analisis-ingresos':  { title: 'Análisis de ingresos', sub: 'Evolución y proyección de cobros' },
+  'banco':              { title: 'Importar extracto bancario', sub: 'BBVA — conciliación de pagos' },
   'facturas':           { title: 'Facturas',             sub: 'Registro VeriFactu' },
   'sesiones':           { title: 'Sesiones',             sub: 'SM Tecnificación Fútbol' },
   'asistencias-futbol': { title: 'Ranking',               sub: 'Clasificación y estadísticas fútbol' },
@@ -930,6 +934,7 @@ const MODULES = {
   'inscripciones':      inscripciones,
   'pagos':              pagos,
   'analisis-ingresos':  analisisIngresos,
+  'banco':              bancoConciliacion,
   'facturas':           facturas,
   'sesiones':           sesiones,
   'asistencias-futbol': asistenciasFutbol,
@@ -4752,6 +4757,208 @@ function guardarPago(id) {
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: ANÁLISIS DE INGRESOS
 // ══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: BANCO — CONCILIACIÓN BBVA
+// ══════════════════════════════════════════════════════════════════════════
+let _bancoMovs    = [];   // movimientos parseados del Excel
+let _bancoMatches = {};   // { movIdx: pagoId } confirmaciones pendientes
+
+function bancoConciliacion() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Solo administradores</h2></div>'); return; }
+  document.getElementById('topbar-actions').innerHTML = '';
+  _bancoRender();
+}
+
+function _bancoRender() {
+  const tieneMovs = _bancoMovs.length > 0;
+  render(`
+    <div style="display:grid;gap:16px">
+      <div class="card" style="padding:16px 20px">
+        <div class="card-title" style="margin-bottom:12px">1. Cargar extracto BBVA (.xlsx)</div>
+        <div id="banco-dropzone" style="border:2px dashed var(--border2);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:background .2s"
+          onclick="document.getElementById('banco-file').click()"
+          ondragover="event.preventDefault();this.style.background='var(--bg3)'"
+          ondragleave="this.style.background=''"
+          ondrop="_bancoDrop(event)">
+          <div style="font-size:32px;margin-bottom:8px">📂</div>
+          <div style="font-size:14px;font-weight:600">Arrastra el Excel de BBVA aquí</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">o haz clic para seleccionar — formato .xlsx / .xls</div>
+        </div>
+        <input type="file" id="banco-file" accept=".xlsx,.xls" style="display:none" onchange="_bancoCargar(this.files[0])">
+        ${tieneMovs ? `<div style="margin-top:10px;font-size:12px;color:var(--text3)">${_bancoMovs.length} movimientos cargados — <button class="btn btn-sm btn-secondary" onclick="_bancoMovs=[];_bancoMatches={};_bancoRender()">Limpiar</button></div>` : ''}
+      </div>
+      ${tieneMovs ? _bancoTabla() : ''}
+    </div>
+  `);
+  // Cargar SheetJS si no está disponible
+  if (!window.XLSX) {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    document.head.appendChild(s);
+  }
+}
+
+function _bancoDrop(e) {
+  e.preventDefault();
+  document.getElementById('banco-dropzone').style.background = '';
+  const f = e.dataTransfer?.files?.[0];
+  if (f) _bancoCargar(f);
+}
+
+function _bancoCargar(file) {
+  if (!file) return;
+  if (!window.XLSX) { showToast('Cargando librería, inténtalo de nuevo en 2 s','error'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      _bancoMovs    = _parseBBVA(rows);
+      _bancoMatches = {};
+      if (!_bancoMovs.length) { showToast('No se encontraron movimientos en el archivo','error'); return; }
+      _bancoAutoMatch();
+      _bancoRender();
+    } catch(err) { showToast('Error al leer el archivo: ' + err.message, 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function _parseBBVA(rows) {
+  // Detectar la fila de cabecera buscando "Fecha" e "Importe"
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const r = rows[i].map(c => String(c||'').toLowerCase());
+    if (r.some(c => c.includes('fecha')) && r.some(c => c.includes('importe'))) {
+      headerIdx = i; break;
+    }
+  }
+  if (headerIdx < 0) return [];
+
+  const headers = rows[headerIdx].map(c => String(c||'').toLowerCase().trim());
+  const iFecha  = headers.findIndex(h => h.includes('f.') && h.includes('oper') || h === 'fecha operación' || h === 'fecha' || h.includes('f. operaci'));
+  const iDesc   = headers.findIndex(h => h.includes('concepto') || h.includes('descripci') || h.includes('movimiento'));
+  const iImporte= headers.findIndex(h => h.includes('importe') && !h.includes('saldo') && !h.includes('disponib'));
+
+  if (iImporte < 0) return [];
+
+  const movs = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.every(c => c === '' || c === null)) continue;
+    const raw = r[iImporte];
+    let importe = typeof raw === 'number' ? raw : parseFloat(String(raw||'').replace(/\./g,'').replace(',','.'));
+    if (isNaN(importe)) continue;
+    let fecha = '';
+    if (iFecha >= 0) {
+      const fd = r[iFecha];
+      if (fd instanceof Date) {
+        fecha = fd.toISOString().slice(0,10);
+      } else {
+        const fs = String(fd||'').trim();
+        // dd/mm/yyyy → yyyy-mm-dd
+        const m = fs.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+        fecha = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : fs;
+      }
+    }
+    const concepto = iDesc >= 0 ? String(r[iDesc]||'').trim() : '';
+    movs.push({ fecha, concepto, importe });
+  }
+  // Solo ingresos (positivos) son relevantes para conciliar
+  return movs;
+}
+
+function _bancoAutoMatch() {
+  const pendientes = DB.pagos.filter(p => String(p.ESTADO||'').toUpperCase() === 'PENDIENTE');
+  _bancoMovs.forEach((mov, idx) => {
+    if (mov.importe <= 0) return; // solo ingresos
+    // Buscar pago pendiente con importe esperado igual (±0.05€)
+    const match = pendientes.find(p => {
+      const esp = parseFloat(p.TOTAL_ESPERADO || p.IMPORTE || 0);
+      return Math.abs(esp - mov.importe) <= 0.05 && !Object.values(_bancoMatches).includes(String(p.ID_PAGO||p.ID||''));
+    });
+    if (match) _bancoMatches[idx] = String(match.ID_PAGO || match.ID || '');
+  });
+}
+
+function _bancoTabla() {
+  const pendientes = DB.pagos.filter(p => String(p.ESTADO||'').toUpperCase() === 'PENDIENTE');
+  const confirmados = Object.keys(_bancoMatches).filter(k => _bancoMatches[k]).length;
+
+  const filas = _bancoMovs.map((mov, idx) => {
+    const esIngreso = mov.importe > 0;
+    const pagoIdSel = _bancoMatches[idx] || '';
+    const colorImp  = esIngreso ? 'var(--green)' : 'var(--red)';
+
+    // Selector de pago pendiente (solo para ingresos)
+    const selector = esIngreso ? `
+      <select style="font-size:11px;max-width:220px;padding:2px 4px" onchange="_bancoSetMatch(${idx},this.value)">
+        <option value="">— Sin asignar —</option>
+        ${pendientes.map(p => {
+          const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+          const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
+          const nom = cli ? (cli.NOMBRE + ' ' + (cli.APELLIDOS||'')).trim() : (p.SERVICIO||p.NOTAS||'—');
+          const esp = parseFloat(p.TOTAL_ESPERADO || p.IMPORTE || 0);
+          return `<option value="${p.ID_PAGO||p.ID||''}" ${pagoIdSel===(p.ID_PAGO||p.ID||'')?'selected':''}>${esc(nom)} — ${fmtEur(esp)} (${p.MES||'—'})</option>`;
+        }).join('')}
+      </select>` : '<span style="font-size:11px;color:var(--text3)">—</span>';
+
+    return `<tr style="${!esIngreso?'opacity:.45':''}">
+      <td style="font-size:12px;white-space:nowrap">${mov.fecha}</td>
+      <td style="font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(mov.concepto)}">${esc(mov.concepto||'—')}</td>
+      <td style="text-align:right;font-weight:700;color:${colorImp};white-space:nowrap">${mov.importe>0?'+':''}${fmtEur(mov.importe)}</td>
+      <td>${selector}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="card" style="padding:14px 20px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div class="card-title" style="margin:0">2. Revisar y confirmar coincidencias</div>
+      <span style="font-size:12px;color:var(--text3)">${confirmados} asignado${confirmados===1?'':'s'}</span>
+      <button class="btn btn-sm btn-secondary" onclick="_bancoAutoMatch();_bancoRender()" style="margin-left:auto">🔄 Re-autocruzar</button>
+      ${confirmados > 0 ? `<button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="_bancoConfirmar()">✓ Confirmar ${confirmados} pago${confirmados===1?'':'s'}</button>` : ''}
+    </div>
+    <div class="table-wrap">
+      <table style="font-size:13px">
+        <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Asignar a pago pendiente</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function _bancoSetMatch(idx, pagoId) {
+  _bancoMatches[idx] = pagoId;
+  _bancoRender();
+}
+
+async function _bancoConfirmar() {
+  const entradas = Object.entries(_bancoMatches).filter(([,pid]) => pid);
+  if (!entradas.length) return;
+  let ok = 0, err = 0;
+  for (const [idxStr, pagoId] of entradas) {
+    const mov  = _bancoMovs[parseInt(idxStr)];
+    const pago = DB.pagos.find(p => String(p.ID_PAGO||p.ID||'') === pagoId);
+    if (!pago) continue;
+    try {
+      await writeToSheet('PAGOS', {
+        ESTADO:         'PAGADO',
+        FECHA:          mov.fecha || new Date().toISOString().slice(0,10),
+        TOTAL_RECIBIDO: mov.importe,
+        MÉTODO:         pago.MÉTODO || 'TRANSFERENCIA',
+        NOTAS:          (pago.NOTAS ? pago.NOTAS + '\n' : '') + 'Importado extracto BBVA ' + mov.fecha,
+      }, pagoId);
+      pago.ESTADO         = 'PAGADO';
+      pago.FECHA          = mov.fecha;
+      pago.TOTAL_RECIBIDO = mov.importe;
+      ok++;
+    } catch(e) { err++; }
+  }
+  showToast(`${ok} pago${ok===1?'':'s'} marcado${ok===1?'':'s'} como cobrado${ok===1?'':'s'}` + (err ? ` · ${err} error${err>1?'es':''}` : ''), err ? 'error' : 'success');
+  _bancoMatches = {};
+  _bancoRender();
+}
+
 function analisisIngresos() {
   const hoy    = new Date();
   const anoAct = hoy.getFullYear();
