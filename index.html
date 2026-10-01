@@ -4824,8 +4824,13 @@ function _bancoCargar(file) {
   reader.readAsArrayBuffer(file);
 }
 
+const _BANCO_CATS = [
+  { id: 'EMPRESA',   label: 'Gasto empresa',  color: '#ef4444' },
+  { id: 'PERSONAL',  label: 'Gasto personal', color: '#f59e0b' },
+  { id: 'OTRO',      label: 'Otro',           color: '#6b7280' },
+];
+
 function _parseBBVA(rows) {
-  // Detectar la fila de cabecera buscando "Fecha" e "Importe"
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const r = rows[i].map(c => String(c||'').toLowerCase());
@@ -4856,23 +4861,31 @@ function _parseBBVA(rows) {
         fecha = fd.toISOString().slice(0,10);
       } else {
         const fs = String(fd||'').trim();
-        // dd/mm/yyyy → yyyy-mm-dd
         const m = fs.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
         fecha = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : fs;
       }
     }
     const concepto = iDesc >= 0 ? String(r[iDesc]||'').trim() : '';
-    movs.push({ fecha, concepto, importe });
+    // Categoría por defecto para gastos
+    const cat = importe < 0 ? _bancoCatAuto(concepto) : 'INGRESO';
+    movs.push({ fecha, concepto, importe, cat });
   }
-  // Solo ingresos (positivos) son relevantes para conciliar
   return movs;
+}
+
+function _bancoCatAuto(concepto) {
+  const c = concepto.toLowerCase();
+  if (/nomina|salario|sueldo|seguridad social|ss\b|irpf|hacienda|impuest|alquiler|suministr|electric|agua\b|gas\b|telf|internet|seguro|proveedor|material|mantenimiento/.test(c))
+    return 'EMPRESA';
+  if (/persona|familiar|propio|propieta|titular/.test(c))
+    return 'PERSONAL';
+  return 'EMPRESA'; // defecto: empresa (lo más común en una cuenta de negocio)
 }
 
 function _bancoAutoMatch() {
   const pendientes = DB.pagos.filter(p => String(p.ESTADO||'').toUpperCase() === 'PENDIENTE');
   _bancoMovs.forEach((mov, idx) => {
-    if (mov.importe <= 0) return; // solo ingresos
-    // Buscar pago pendiente con importe esperado igual (±0.05€)
+    if (mov.importe <= 0) return;
     const match = pendientes.find(p => {
       const esp = parseFloat(p.TOTAL_ESPERADO || p.IMPORTE || 0);
       return Math.abs(esp - mov.importe) <= 0.05 && !Object.values(_bancoMatches).includes(String(p.ID_PAGO||p.ID||''));
@@ -4885,50 +4898,100 @@ function _bancoTabla() {
   const pendientes = DB.pagos.filter(p => String(p.ESTADO||'').toUpperCase() === 'PENDIENTE');
   const confirmados = Object.keys(_bancoMatches).filter(k => _bancoMatches[k]).length;
 
+  // Totales contables
+  const totalIngresos  = _bancoMovs.filter(m => m.importe > 0).reduce((s,m) => s + m.importe, 0);
+  const totalEmpresa   = _bancoMovs.filter(m => m.cat === 'EMPRESA').reduce((s,m) => s + m.importe, 0);
+  const totalPersonal  = _bancoMovs.filter(m => m.cat === 'PERSONAL').reduce((s,m) => s + m.importe, 0);
+  const totalOtro      = _bancoMovs.filter(m => m.cat === 'OTRO').reduce((s,m) => s + m.importe, 0);
+  const resultadoNeto  = totalIngresos + totalEmpresa; // gastos empresa son negativos
+
+  const catOps = _BANCO_CATS.map(c => `<option value="${c.id}">{VAL}</option>`);
+
   const filas = _bancoMovs.map((mov, idx) => {
     const esIngreso = mov.importe > 0;
     const pagoIdSel = _bancoMatches[idx] || '';
-    const colorImp  = esIngreso ? 'var(--green)' : 'var(--red)';
+    const colorImp  = esIngreso ? 'var(--green)' : (mov.cat === 'PERSONAL' ? 'var(--amber)' : 'var(--red)');
 
-    // Selector de pago pendiente (solo para ingresos)
-    const selector = esIngreso ? `
-      <select style="font-size:11px;max-width:220px;padding:2px 4px" onchange="_bancoSetMatch(${idx},this.value)">
-        <option value="">— Sin asignar —</option>
-        ${pendientes.map(p => {
-          const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
-          const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
-          const nom = cli ? (cli.NOMBRE + ' ' + (cli.APELLIDOS||'')).trim() : (p.SERVICIO||p.NOTAS||'—');
-          const esp = parseFloat(p.TOTAL_ESPERADO || p.IMPORTE || 0);
-          return `<option value="${p.ID_PAGO||p.ID||''}" ${pagoIdSel===(p.ID_PAGO||p.ID||'')?'selected':''}>${esc(nom)} — ${fmtEur(esp)} (${p.MES||'—'})</option>`;
-        }).join('')}
-      </select>` : '<span style="font-size:11px;color:var(--text3)">—</span>';
+    const colDerecha = esIngreso
+      ? `<td>
+          <select style="font-size:11px;max-width:220px;padding:2px 4px" onchange="_bancoSetMatch(${idx},this.value)">
+            <option value="">— Sin asignar —</option>
+            ${pendientes.map(p => {
+              const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+              const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
+              const nom = cli ? (cli.NOMBRE+' '+(cli.APELLIDOS||'')).trim() : (p.SERVICIO||p.NOTAS||'—');
+              const esp = parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0);
+              return `<option value="${p.ID_PAGO||p.ID||''}" ${pagoIdSel===(p.ID_PAGO||p.ID||'')?'selected':''}>${esc(nom)} — ${fmtEur(esp)} (${p.MES||'—'})</option>`;
+            }).join('')}
+          </select>
+         </td>
+         <td></td>`
+      : `<td></td>
+         <td>
+           <select style="font-size:11px;padding:2px 4px;border-left:3px solid ${_BANCO_CATS.find(c=>c.id===mov.cat)?.color||'#ccc'}" onchange="_bancoCatSet(${idx},this.value)">
+             ${_BANCO_CATS.map(c => `<option value="${c.id}" ${mov.cat===c.id?'selected':''}>${c.label}</option>`).join('')}
+           </select>
+         </td>`;
 
-    return `<tr style="${!esIngreso?'opacity:.45':''}">
-      <td style="font-size:12px;white-space:nowrap">${mov.fecha}</td>
-      <td style="font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(mov.concepto)}">${esc(mov.concepto||'—')}</td>
-      <td style="text-align:right;font-weight:700;color:${colorImp};white-space:nowrap">${mov.importe>0?'+':''}${fmtEur(mov.importe)}</td>
-      <td>${selector}</td>
+    return `<tr>
+      <td style="font-size:12px;white-space:nowrap;color:var(--text3)">${mov.fecha}</td>
+      <td style="font-size:11px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(mov.concepto)}">${esc(mov.concepto||'—')}</td>
+      <td style="text-align:right;font-weight:700;color:${colorImp};white-space:nowrap;font-variant-numeric:tabular-nums">${mov.importe>0?'+':''}${fmtEur(mov.importe)}</td>
+      ${colDerecha}
     </tr>`;
   }).join('');
 
+  const resumen = `<div class="card" style="padding:14px 20px">
+    <div class="card-title" style="margin-bottom:12px">3. Resumen contable del extracto</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+      <div style="padding:12px 16px;background:rgba(34,197,94,.08);border-radius:8px;border-left:3px solid var(--green)">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Ingresos</div>
+        <div style="font-size:22px;font-weight:700;color:var(--green);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalIngresos)}</div>
+      </div>
+      <div style="padding:12px 16px;background:rgba(239,68,68,.08);border-radius:8px;border-left:3px solid #ef4444">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Gastos empresa</div>
+        <div style="font-size:22px;font-weight:700;color:#ef4444;margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalEmpresa)}</div>
+      </div>
+      <div style="padding:12px 16px;background:rgba(245,158,11,.08);border-radius:8px;border-left:3px solid var(--amber)">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Gastos personales</div>
+        <div style="font-size:22px;font-weight:700;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalPersonal)}</div>
+      </div>
+      ${Math.abs(totalOtro) > 0.01 ? `<div style="padding:12px 16px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--border2)">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Otros</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text2);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalOtro)}</div>
+      </div>` : ''}
+      <div style="padding:12px 16px;background:${resultadoNeto>=0?'rgba(34,197,94,.12)':'rgba(239,68,68,.12)'};border-radius:8px;border-left:3px solid ${resultadoNeto>=0?'var(--green)':'#ef4444'}">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Resultado neto empresa</div>
+        <div style="font-size:22px;font-weight:700;color:${resultadoNeto>=0?'var(--green)':'#ef4444'};margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(resultadoNeto)}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">ingresos − gastos empresa</div>
+      </div>
+    </div>
+  </div>`;
+
   return `<div class="card" style="padding:14px 20px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-      <div class="card-title" style="margin:0">2. Revisar y confirmar coincidencias</div>
-      <span style="font-size:12px;color:var(--text3)">${confirmados} asignado${confirmados===1?'':'s'}</span>
+      <div class="card-title" style="margin:0">2. Movimientos — clasificar y asignar</div>
+      <span style="font-size:12px;color:var(--text3)">${confirmados} ingreso${confirmados===1?'':'s'} asignado${confirmados===1?'':'s'}</span>
       <button class="btn btn-sm btn-secondary" onclick="_bancoAutoMatch();_bancoRender()" style="margin-left:auto">🔄 Re-autocruzar</button>
-      ${confirmados > 0 ? `<button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="_bancoConfirmar()">✓ Confirmar ${confirmados} pago${confirmados===1?'':'s'}</button>` : ''}
+      ${confirmados > 0 ? `<button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="_bancoConfirmar()">✓ Confirmar ${confirmados} cobro${confirmados===1?'':'s'}</button>` : ''}
     </div>
     <div class="table-wrap">
       <table style="font-size:13px">
-        <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Asignar a pago pendiente</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Asignar pago</th><th>Categoría gasto</th></tr></thead>
         <tbody>${filas}</tbody>
       </table>
     </div>
-  </div>`;
+  </div>
+  ${resumen}`;
 }
 
 function _bancoSetMatch(idx, pagoId) {
   _bancoMatches[idx] = pagoId;
+  _bancoRender();
+}
+
+function _bancoCatSet(idx, cat) {
+  _bancoMovs[idx].cat = cat;
   _bancoRender();
 }
 
