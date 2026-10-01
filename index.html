@@ -785,7 +785,8 @@ function loginUser(p) {
   applyRoleVisibility();
   _arStart();
   if (currentUser.rol === 'FAMILIA') navigate('portal-familia');
-  else if (['MONITOR','ENTRENADOR'].includes(currentUser.rol)) navigate('asistencias-extra');
+  else if (currentUser.rol === 'MONITOR') navigate('registro-horario');
+  else if (currentUser.rol === 'ENTRENADOR') navigate('asistencias-extra');
   else navigate('dashboard');
 }
 
@@ -880,7 +881,8 @@ function applyRoleVisibility() {
       if (el) el.style.display = 'none';
     });
     ['preinscripciones','clientes','alumnos','actividades','inscripciones',
-     'pagos','analisis-ingresos','banco','facturas','comunicacion','solicitudes','dashboard']
+     'pagos','analisis-ingresos','banco','facturas','comunicacion','solicitudes',
+     'dashboard','cuadrante','extra-resumen']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
@@ -9737,7 +9739,8 @@ function _gasLoaded(raw) {
     if (!activo) { logout(); return; }
     // Navegar a la página de inicio según rol (currentPage puede ser 'dashboard' sin datos aún)
     const _defPage = currentUser.rol === 'FAMILIA' ? 'portal-familia'
-      : ['MONITOR','ENTRENADOR'].includes(currentUser.rol) ? 'asistencias-extra'
+      : currentUser.rol === 'MONITOR' ? 'registro-horario'
+      : currentUser.rol === 'ENTRENADOR' ? 'asistencias-extra'
       : 'dashboard';
     navigate(currentPage && currentPage !== 'dashboard' ? currentPage : _defPage);
     return;
