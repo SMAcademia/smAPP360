@@ -2528,7 +2528,7 @@ function modalInscripcion(i) {
   const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
     .map(a => `<option value="${a.ID_ALUMNO}" ${String(i.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`).join('');
   const dtoVal = i.DESCUENTO||'0';
-  const dtoSel = (!dtoVal||dtoVal==='0') ? '0' : dtoVal==='10' ? '10' : 'custom';
+  const dtoSel = (!dtoVal||dtoVal==='0') ? '0' : dtoVal==='10' ? '10' : dtoVal==='15' ? '15' : 'custom';
 
   openModal(isNew ? 'Nueva inscripción' : 'Editar inscripción', `
     <div class="form-grid" style="margin-bottom:12px">
@@ -2542,6 +2542,7 @@ function modalInscripcion(i) {
         <select id="i-dto-sel" onchange="toggleDescuentoIns()">
           <option value="0"      ${dtoSel==='0'?'selected':''}>Sin descuento</option>
           <option value="10"     ${dtoSel==='10'?'selected':''}>10% — 2.º hermano/a</option>
+          <option value="15"     ${dtoSel==='15'?'selected':''}>15% — Jugador SM Fútbol Club</option>
           <option value="custom" ${dtoSel==='custom'?'selected':''}>Personalizado</option>
         </select>
         <div id="wrap-dto-custom" style="${dtoSel==='custom'?'':'display:none'};margin-top:6px">
@@ -2933,7 +2934,7 @@ function modalRegistroCompleto() {
     + '<div style="font-size:13px;font-weight:700;margin-bottom:10px">💳 Condiciones de pago</div>'
     + '<div class="form-grid">'
     + '<div class="field"><label>Descuento</label><select id="rc-dto-sel" onchange="toggleDescuentoRc()">'
-    + '<option value="0">Sin descuento</option><option value="10">10% — 2.º hermano/a</option><option value="custom">Personalizado</option>'
+    + '<option value="0">Sin descuento</option><option value="10">10% — 2.º hermano/a</option><option value="15">15% — Jugador SM Fútbol Club</option><option value="custom">Personalizado</option>'
     + '</select><div id="rc-dto-custom-wrap" style="display:none;margin-top:6px"><input id="rc-dto" type="number" min="0" max="100" step="1" placeholder="% descuento"></div></div>'
     + '<div class="field"><label>Forma de pago</label><select id="rc-fpago"><option value="">—</option>'
     + ['BIZUM','TRANSFERENCIA','TARJETA'].map(f => '<option value="' + f + '">' + f + '</option>').join('')
