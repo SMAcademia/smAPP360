@@ -666,6 +666,7 @@ function normalizarDB(raw) {
   DB.ampaSocios              = raw.ampaSocios              || [];
   DB.solicitudes             = raw.solicitudes             || [];
   DB.encuestasSatisfaccion   = raw.encuestasSatisfaccion   || [];
+  DB.bancoHistorico          = raw.bancoHistorico          || [];
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
   try {
@@ -7050,10 +7051,12 @@ function registroHorario() {
       </div>
     </div>`);
 
-  // Reloj en tiempo real
-  setInterval(() => {
+  // Reloj en tiempo real (clearInterval previo para evitar acumulación)
+  if (window._relojHorarioTimer) clearInterval(window._relojHorarioTimer);
+  window._relojHorarioTimer = setInterval(() => {
     const el = document.getElementById('reloj-live');
     if (el) el.textContent = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    else { clearInterval(window._relojHorarioTimer); window._relojHorarioTimer = null; }
   }, 30000);
 }
 
@@ -7085,17 +7088,33 @@ function resumenSemanaHorario(monitorId) {
 }
 
 function ficharEntrada() {
-  const hora = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  const hora  = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   const fecha = new Date().toISOString().slice(0,10);
+  const myId  = String(currentUser?.id||'');
   writeToSheet('REGISTRO_HORARIO', {
-    ID_MONITOR:  currentUser.id,
+    ID_MONITOR:  myId,
     FECHA:       fecha,
     HORA_ENTRADA:hora,
     TIPO:        'NORMAL',
     ACTIVO:      'SÍ',
   })
-  .then(()=>{ showToast('Entrada fichada: '+hora); loadAllData().then(registroHorario); })
-  .catch(err=>showToast('Error: '+err.message,'error'));
+  .then(res => {
+    // Actualización inmediata en memoria — no esperar a loadAllData()
+    DB.registroHorario.push({
+      ID: res?.id || ('RH-' + Date.now()),
+      ID_MONITOR:      myId,
+      FECHA:           fecha,
+      HORA_ENTRADA:    hora,
+      HORA_SALIDA:     '',
+      HORAS_TRABAJADAS:'',
+      TIPO:            'NORMAL',
+      ACTIVO:          'SÍ',
+    });
+    showToast('Entrada fichada: ' + hora, 'success');
+    registroHorario();
+    loadAllData().then(registroHorario).catch(()=>{});
+  })
+  .catch(err => showToast('Error al fichar: ' + err.message, 'error'));
 }
 
 function ficharSalida() {
@@ -7108,15 +7127,24 @@ function ficharSalida() {
   if (!entrada) { showToast('No hay entrada fichada hoy','error'); return; }
 
   const hora = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-  // Calcular horas trabajadas
   const [he,me] = (entrada.HORA_ENTRADA||'00:00').split(':').map(Number);
   const [hs,ms] = hora.split(':').map(Number);
-  const mins = (hs*60+ms) - (he*60+me);
-  const horas = (mins/60).toFixed(2);
+  const mins  = (hs*60+ms) - (he*60+me);
+  const horas = (mins > 0 ? mins/60 : 0).toFixed(2);
+  const idReg = entrada.ID || entrada.ID_REGISTRO || '';
 
-  writeToSheet('REGISTRO_HORARIO', { HORA_SALIDA: hora, HORAS_TRABAJADAS: horas }, entrada.ID)
-  .then(()=>{ showToast(`Salida fichada: ${hora} — ${horas} h trabajadas`); loadAllData().then(registroHorario); })
-  .catch(err=>showToast('Error: '+err.message,'error'));
+  if (!idReg) { showToast('Error: registro sin ID — contacta con admin', 'error'); return; }
+
+  writeToSheet('REGISTRO_HORARIO', { HORA_SALIDA: hora, HORAS_TRABAJADAS: horas }, idReg)
+  .then(() => {
+    // Actualización inmediata en memoria
+    entrada.HORA_SALIDA      = hora;
+    entrada.HORAS_TRABAJADAS = horas;
+    showToast(`Salida fichada: ${hora} — ${horas} h trabajadas`, 'success');
+    registroHorario();
+    loadAllData().then(registroHorario).catch(()=>{});
+  })
+  .catch(err => showToast('Error al fichar salida: ' + err.message, 'error'));
 }
 
 function corregirFichaje(id) {
