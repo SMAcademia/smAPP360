@@ -125,6 +125,7 @@ function getAllData() {
     ampaAlumnos:             sheetToJSON(book, 'AMPA_ALUMNOS'),
     encuestasSatisfaccion:   sheetToJSON(book, 'ENCUESTAS_SATISFACCION'),
     solicitudes:             sheetToJSON(book, 'SOLICITUDES'),
+    bancoHistorico:          sheetToJSON(book, 'BANCO_HISTORICO'),
   };
 }
 

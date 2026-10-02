@@ -4944,8 +4944,23 @@ function bancoConciliacion() {
 
 function _bancoRender() {
   const tieneMovs = _bancoMovs.length > 0;
+  const tabBar = `<div style="display:flex;gap:0;border-bottom:2px solid var(--border2);margin-bottom:16px">
+    <button onclick="_bancoTab='importar';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='importar'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='importar'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
+      📂 Importar extracto
+    </button>
+    <button onclick="_bancoTab='historico';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='historico'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='historico'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
+      📚 Histórico
+    </button>
+  </div>`;
+
+  if (_bancoTab === 'historico') {
+    render(`<div style="display:grid;gap:16px">${tabBar}${_bancoHistoricoView()}</div>`);
+    return;
+  }
+
   render(`
     <div style="display:grid;gap:16px">
+      ${tabBar}
       <div class="card" style="padding:16px 20px">
         <div class="card-title" style="margin-bottom:12px">1. Cargar extracto BBVA (.xlsx)</div>
         <div id="banco-dropzone" style="border:2px dashed var(--border2);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:background .2s"
@@ -4963,7 +4978,6 @@ function _bancoRender() {
       ${tieneMovs ? _bancoTabla() : ''}
     </div>
   `);
-  // Cargar SheetJS si no está disponible
   if (!window.XLSX) {
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
@@ -4998,10 +5012,34 @@ function _bancoCargar(file) {
 }
 
 const _BANCO_CATS = [
-  { id: 'EMPRESA',   label: 'Gasto empresa',  color: '#ef4444' },
-  { id: 'PERSONAL',  label: 'Gasto personal', color: '#f59e0b' },
-  { id: 'OTRO',      label: 'Otro',           color: '#6b7280' },
+  // Ingresos
+  { id:'CUOTAS',        label:'Cuotas y actividades',  tipo:'I', color:'#22c55e' },
+  { id:'MATRICULAS',    label:'Matrículas',             tipo:'I', color:'#16a34a' },
+  { id:'SUBVENCIONES',  label:'Subvenciones / ayudas',  tipo:'I', color:'#4ade80' },
+  { id:'ING_OTROS',     label:'Otros ingresos',         tipo:'I', color:'#86efac' },
+  // Gastos empresa
+  { id:'NOMINAS',       label:'Nóminas',                tipo:'G', color:'#ef4444' },
+  { id:'SS',            label:'Seguridad Social',       tipo:'G', color:'#dc2626' },
+  { id:'ALQUILER',      label:'Alquiler',               tipo:'G', color:'#f97316' },
+  { id:'SUMINISTROS',   label:'Suministros (luz/agua/gas)', tipo:'G', color:'#fb923c' },
+  { id:'TELEFONIA',     label:'Telefonía / internet',   tipo:'G', color:'#fbbf24' },
+  { id:'MATERIAL',      label:'Material deportivo',     tipo:'G', color:'#84cc16' },
+  { id:'SEGUROS',       label:'Seguros',                tipo:'G', color:'#38bdf8' },
+  { id:'SERVICIOS',     label:'Servicios externos',     tipo:'G', color:'#818cf8' },
+  { id:'COMISIONES',    label:'Comisiones bancarias',   tipo:'G', color:'#94a3b8' },
+  { id:'IMPUESTOS',     label:'Impuestos / IRPF',       tipo:'G', color:'#f43f5e' },
+  { id:'GASTO_OTROS',   label:'Otros gastos empresa',   tipo:'G', color:'#9ca3af' },
+  // Personal / propietario
+  { id:'PERSONAL',      label:'Retirada / autónomo',    tipo:'P', color:'#f59e0b' },
+  // Otras
+  { id:'TRANSFERENCIA', label:'Transferencia interna',  tipo:'O', color:'#64748b' },
+  { id:'SIN_CLASE',     label:'Sin clasificar',         tipo:'O', color:'#cbd5e1' },
 ];
+const _BANCO_CATS_I = _BANCO_CATS.filter(c => c.tipo === 'I');
+const _BANCO_CATS_G = _BANCO_CATS.filter(c => c.tipo !== 'I');
+let _bancoTab       = 'importar'; // 'importar' | 'historico'
+let _bancoHistMesSel  = '';
+let _bancoHistFiltro  = 'TODOS';
 
 function _parseBBVA(rows) {
   let headerIdx = -1;
@@ -5039,20 +5077,32 @@ function _parseBBVA(rows) {
       }
     }
     const concepto = iDesc >= 0 ? String(r[iDesc]||'').trim() : '';
-    // Categoría por defecto para gastos
-    const cat = importe < 0 ? _bancoCatAuto(concepto) : 'INGRESO';
+    const cat = _bancoCatAuto(concepto, importe > 0);
     movs.push({ fecha, concepto, importe, cat });
   }
   return movs;
 }
 
-function _bancoCatAuto(concepto) {
+function _bancoCatAuto(concepto, esIngreso) {
   const c = concepto.toLowerCase();
-  if (/nomina|salario|sueldo|seguridad social|ss\b|irpf|hacienda|impuest|alquiler|suministr|electric|agua\b|gas\b|telf|internet|seguro|proveedor|material|mantenimiento/.test(c))
-    return 'EMPRESA';
-  if (/persona|familiar|propio|propieta|titular/.test(c))
-    return 'PERSONAL';
-  return 'EMPRESA'; // defecto: empresa (lo más común en una cuenta de negocio)
+  if (esIngreso) {
+    if (/matricula|matr[íi]cula|inscripci/.test(c)) return 'MATRICULAS';
+    if (/subvenci|ayuda|beca|donaci/.test(c)) return 'SUBVENCIONES';
+    return 'CUOTAS';
+  }
+  if (/n[oó]mina|salario|sueldo/.test(c)) return 'NOMINAS';
+  if (/seguridad social|s\.s\.|cuentas cotizaci/.test(c)) return 'SS';
+  if (/alquiler|arrendamiento/.test(c)) return 'ALQUILER';
+  if (/endesa|iberdrola|naturgy|enel|electric|agua\b|gas\b|suministr/.test(c)) return 'SUMINISTROS';
+  if (/tel[eé]f|movistar|vodafone|orange|jazztel|internet|fibra/.test(c)) return 'TELEFONIA';
+  if (/material|deport|equipamiento|bal[oó]n/.test(c)) return 'MATERIAL';
+  if (/seguro|p[oó]liza|mutua/.test(c)) return 'SEGUROS';
+  if (/comisi[oó]n\b|asesor[íi]a|gestor[íi]a/.test(c)) return 'SERVICIOS';
+  if (/gasto.?banco|cuota.?manten|mantenimiento.?cuenta/.test(c)) return 'COMISIONES';
+  if (/irpf|hacienda|agencia tributaria|impuesto|aeat|retenci/.test(c)) return 'IMPUESTOS';
+  if (/persona|familiar|propio|propietari|aut[oó]n/.test(c)) return 'PERSONAL';
+  if (/transfer|trasp/.test(c)) return 'TRANSFERENCIA';
+  return 'GASTO_OTROS';
 }
 
 function _bancoAutoMatch() {
@@ -5072,65 +5122,69 @@ function _bancoTabla() {
   const confirmados = Object.keys(_bancoMatches).filter(k => _bancoMatches[k]).length;
 
   // Totales contables
-  const totalIngresos  = _bancoMovs.filter(m => m.importe > 0).reduce((s,m) => s + m.importe, 0);
-  const totalEmpresa   = _bancoMovs.filter(m => m.cat === 'EMPRESA').reduce((s,m) => s + m.importe, 0);
-  const totalPersonal  = _bancoMovs.filter(m => m.cat === 'PERSONAL').reduce((s,m) => s + m.importe, 0);
-  const totalOtro      = _bancoMovs.filter(m => m.cat === 'OTRO').reduce((s,m) => s + m.importe, 0);
-  const resultadoNeto  = totalIngresos + totalEmpresa; // gastos empresa son negativos
-
-  const catOps = _BANCO_CATS.map(c => `<option value="${c.id}">{VAL}</option>`);
+  const totalIngresos = _bancoMovs.filter(m => m.importe > 0).reduce((s,m) => s + m.importe, 0);
+  const totalGastoEmp = _bancoMovs.filter(m => {
+    const cat = _BANCO_CATS.find(c => c.id === m.cat);
+    return m.importe < 0 && cat && cat.tipo === 'G';
+  }).reduce((s,m) => s + m.importe, 0);
+  const totalPersonal = _bancoMovs.filter(m => {
+    const cat = _BANCO_CATS.find(c => c.id === m.cat);
+    return m.importe < 0 && cat && cat.tipo === 'P';
+  }).reduce((s,m) => s + m.importe, 0);
+  const totalOtro = _bancoMovs.filter(m => {
+    const cat = _BANCO_CATS.find(c => c.id === m.cat);
+    return m.importe < 0 && cat && cat.tipo === 'O';
+  }).reduce((s,m) => s + m.importe, 0);
+  const resultadoNeto = totalIngresos + totalGastoEmp;
 
   const filas = _bancoMovs.map((mov, idx) => {
     const esIngreso = mov.importe > 0;
     const pagoIdSel = _bancoMatches[idx] || '';
-    const colorImp  = esIngreso ? 'var(--green)' : (mov.cat === 'PERSONAL' ? 'var(--amber)' : 'var(--red)');
+    const catObj    = _BANCO_CATS.find(c => c.id === mov.cat);
+    const colorImp  = esIngreso ? 'var(--green)' : (catObj?.tipo === 'P' ? 'var(--amber)' : (catObj?.tipo === 'O' ? 'var(--text3)' : 'var(--red)'));
+    const catsCols  = esIngreso ? _BANCO_CATS_I : _BANCO_CATS_G;
 
-    const colDerecha = esIngreso
-      ? `<td>
-          <select style="font-size:11px;max-width:220px;padding:2px 4px" onchange="_bancoSetMatch(${idx},this.value)">
-            <option value="">— Sin asignar —</option>
-            ${pendientes.map(p => {
-              const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
-              const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
-              const nom = cli ? (cli.NOMBRE+' '+(cli.APELLIDOS||'')).trim() : (p.SERVICIO||p.NOTAS||'—');
-              const esp = parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0);
-              return `<option value="${p.ID_PAGO||p.ID||''}" ${pagoIdSel===(p.ID_PAGO||p.ID||'')?'selected':''}>${esc(nom)} — ${fmtEur(esp)} (${p.MES||'—'})</option>`;
-            }).join('')}
-          </select>
-         </td>
-         <td></td>`
-      : `<td></td>
-         <td>
-           <select style="font-size:11px;padding:2px 4px;border-left:3px solid ${_BANCO_CATS.find(c=>c.id===mov.cat)?.color||'#ccc'}" onchange="_bancoCatSet(${idx},this.value)">
-             ${_BANCO_CATS.map(c => `<option value="${c.id}" ${mov.cat===c.id?'selected':''}>${c.label}</option>`).join('')}
-           </select>
-         </td>`;
+    const catSel = `<select style="font-size:11px;padding:2px 4px;border-left:3px solid ${catObj?.color||'#ccc'}" onchange="_bancoCatSet(${idx},this.value)">
+      ${catsCols.map(c => `<option value="${c.id}" ${mov.cat===c.id?'selected':''}>${c.label}</option>`).join('')}
+    </select>`;
+
+    const pagoSel = esIngreso ? `<select style="font-size:11px;max-width:200px;padding:2px 4px" onchange="_bancoSetMatch(${idx},this.value)">
+      <option value="">— Sin asignar —</option>
+      ${pendientes.map(p => {
+        const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+        const cli = alu ? DB.clientes.find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE)) : null;
+        const nom = cli ? (cli.NOMBRE+' '+(cli.APELLIDOS||'')).trim() : (p.SERVICIO||p.NOTAS||'—');
+        const esp = parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0);
+        return `<option value="${p.ID_PAGO||p.ID||''}" ${pagoIdSel===(p.ID_PAGO||p.ID||'')?'selected':''}>${esc(nom)} — ${fmtEur(esp)} (${p.MES||'—'})</option>`;
+      }).join('')}
+    </select>` : '';
 
     return `<tr>
       <td style="font-size:12px;white-space:nowrap;color:var(--text3)">${mov.fecha}</td>
-      <td style="font-size:11px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(mov.concepto)}">${esc(mov.concepto||'—')}</td>
+      <td style="font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(mov.concepto)}">${esc(mov.concepto||'—')}</td>
       <td style="text-align:right;font-weight:700;color:${colorImp};white-space:nowrap;font-variant-numeric:tabular-nums">${mov.importe>0?'+':''}${fmtEur(mov.importe)}</td>
-      ${colDerecha}
+      <td>${catSel}</td>
+      <td>${pagoSel}</td>
     </tr>`;
   }).join('');
 
   const resumen = `<div class="card" style="padding:14px 20px">
     <div class="card-title" style="margin-bottom:12px">3. Resumen contable del extracto</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
       <div style="padding:12px 16px;background:rgba(34,197,94,.08);border-radius:8px;border-left:3px solid var(--green)">
         <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Ingresos</div>
         <div style="font-size:22px;font-weight:700;color:var(--green);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalIngresos)}</div>
       </div>
       <div style="padding:12px 16px;background:rgba(239,68,68,.08);border-radius:8px;border-left:3px solid #ef4444">
         <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Gastos empresa</div>
-        <div style="font-size:22px;font-weight:700;color:#ef4444;margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalEmpresa)}</div>
+        <div style="font-size:22px;font-weight:700;color:#ef4444;margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalGastoEmp)}</div>
       </div>
       <div style="padding:12px 16px;background:rgba(245,158,11,.08);border-radius:8px;border-left:3px solid var(--amber)">
         <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Gastos personales</div>
         <div style="font-size:22px;font-weight:700;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalPersonal)}</div>
       </div>
       ${Math.abs(totalOtro) > 0.01 ? `<div style="padding:12px 16px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--border2)">
-        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Otros</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Otros / internos</div>
         <div style="font-size:22px;font-weight:700;color:var(--text2);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(totalOtro)}</div>
       </div>` : ''}
       <div style="padding:12px 16px;background:${resultadoNeto>=0?'rgba(34,197,94,.12)':'rgba(239,68,68,.12)'};border-radius:8px;border-left:3px solid ${resultadoNeto>=0?'var(--green)':'#ef4444'}">
@@ -5141,16 +5195,25 @@ function _bancoTabla() {
     </div>
   </div>`;
 
+  const hoy = new Date();
+  const mesDef = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+
   return `<div class="card" style="padding:14px 20px">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-      <div class="card-title" style="margin:0">2. Movimientos — clasificar y asignar</div>
-      <span style="font-size:12px;color:var(--text3)">${confirmados} ingreso${confirmados===1?'':'s'} asignado${confirmados===1?'':'s'}</span>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div class="card-title" style="margin:0">2. Movimientos — clasificar</div>
+      <span style="font-size:12px;color:var(--text3)">${confirmados} cobro${confirmados===1?'':'s'} asignado${confirmados===1?'':'s'}</span>
       <button class="btn btn-sm btn-secondary" onclick="_bancoAutoMatch();_bancoRender()" style="margin-left:auto">🔄 Re-autocruzar</button>
       ${confirmados > 0 ? `<button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="_bancoConfirmar()">✓ Confirmar ${confirmados} cobro${confirmados===1?'':'s'}</button>` : ''}
     </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 14px;background:var(--bg3);border-radius:8px;flex-wrap:wrap">
+      <label style="font-size:12px;font-weight:600;color:var(--text2)">Mes del extracto:</label>
+      <input type="month" id="banco-mes-input" value="${mesDef}" style="font-size:13px;padding:4px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+      <button class="btn btn-sm" style="background:#3b82f6;color:#fff" onclick="_bancoGuardarHistorico()">💾 Guardar en histórico</button>
+      <span style="font-size:11px;color:var(--text3)">${_bancoMovs.length} movimientos</span>
+    </div>
     <div class="table-wrap">
       <table style="font-size:13px">
-        <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Asignar pago</th><th>Categoría gasto</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Categoría</th><th>Asignar cobro</th></tr></thead>
         <tbody>${filas}</tbody>
       </table>
     </div>
@@ -5193,6 +5256,168 @@ async function _bancoConfirmar() {
   showToast(`${ok} pago${ok===1?'':'s'} marcado${ok===1?'':'s'} como cobrado${ok===1?'':'s'}` + (err ? ` · ${err} error${err>1?'es':''}` : ''), err ? 'error' : 'success');
   _bancoMatches = {};
   _bancoRender();
+}
+
+async function _bancoGuardarHistorico() {
+  if (!_bancoMovs.length) { showToast('No hay movimientos cargados','error'); return; }
+  const mesInput = document.getElementById('banco-mes-input');
+  const mes = mesInput ? mesInput.value : '';
+  if (!mes) { showToast('Selecciona el mes del extracto antes de guardar','error'); return; }
+
+  // Verificar si ya existe ese mes en histórico
+  const yaExiste = DB.bancoHistorico && DB.bancoHistorico.some(r => String(r.MES||'') === mes);
+  if (yaExiste) {
+    const conf = await new Promise(res => openModal(
+      `¿Reemplazar histórico de ${mes}?`,
+      `Ya existe un extracto guardado para <strong>${mes}</strong>. Si continúas, los registros anteriores de ese mes no se borran automáticamente — se añadirán nuevos registros encima.`,
+      [{ label:'Continuar', cls:'btn', action: () => res(true) }, { label:'Cancelar', cls:'btn btn-secondary', action: () => res(false) }]
+    ));
+    if (!conf) return;
+  }
+
+  let ok = 0, err = 0;
+  for (const mov of _bancoMovs) {
+    const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
+    try {
+      await writeToSheet('BANCO_HISTORICO', {
+        MES:       mes,
+        FECHA:     mov.fecha,
+        CONCEPTO:  mov.concepto,
+        IMPORTE:   mov.importe,
+        CATEGORIA: mov.cat,
+        TIPO:      catObj ? catObj.tipo : 'O',
+        LABEL_CAT: catObj ? catObj.label : mov.cat,
+      }, null);
+      ok++;
+    } catch(e) { err++; }
+  }
+
+  if (ok) {
+    showToast(`${ok} movimiento${ok===1?'':'s'} guardado${ok===1?'':'s'} en histórico ${mes}` + (err ? ` · ${err} error${err>1?'es':''}` : ''), err ? 'error' : 'success');
+    // Actualizar DB en memoria para que el tab histórico refleje el cambio
+    if (!DB.bancoHistorico) DB.bancoHistorico = [];
+    for (const mov of _bancoMovs) {
+      const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
+      DB.bancoHistorico.push({ MES: mes, FECHA: mov.fecha, CONCEPTO: mov.concepto, IMPORTE: mov.importe, CATEGORIA: mov.cat, TIPO: catObj?.tipo||'O', LABEL_CAT: catObj?.label||mov.cat });
+    }
+  } else {
+    showToast('Error al guardar en histórico', 'error');
+  }
+}
+
+function _bancoHistoricoView() {
+  const hist = DB.bancoHistorico || [];
+  if (!hist.length) {
+    return `<div class="card" style="padding:32px;text-align:center">
+      <div style="font-size:36px;margin-bottom:12px">📭</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text2)">Sin histórico guardado</div>
+      <div style="font-size:13px;color:var(--text3);margin-top:6px">Importa un extracto BBVA y usa "Guardar en histórico" para registrar los movimientos.</div>
+    </div>`;
+  }
+
+  // Opciones de mes únicas ordenadas
+  const meses = [...new Set(hist.map(r => r.MES||''))].filter(Boolean).sort().reverse();
+  const selId = 'banco-hist-mes';
+  const filId = 'banco-hist-filtro';
+  let mesSel = _bancoHistMesSel || (meses[0] || '');
+  let filtro  = _bancoHistFiltro || 'TODOS';
+
+  const filasMes = hist.filter(r => (r.MES||'') === mesSel);
+
+  // KPIs
+  const kpiIngresos = filasMes.filter(r => parseFloat(r.IMPORTE||0) > 0).reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
+  const kpiGastoEmp = filasMes.filter(r => r.TIPO === 'G').reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
+  const kpiPersonal = filasMes.filter(r => r.TIPO === 'P').reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
+  const kpiNeto     = kpiIngresos + kpiGastoEmp;
+
+  const filasVis = filtro === 'TODOS' ? filasMes : filasMes.filter(r => r.TIPO === filtro);
+
+  const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  function labMes(k) {
+    if (!k) return k;
+    const [y,m] = k.split('-');
+    return (MESES_ES[parseInt(m,10)-1]||m) + ' ' + y;
+  }
+
+  const filas = filasVis.map(r => {
+    const imp    = parseFloat(r.IMPORTE||0);
+    const catObj = _BANCO_CATS.find(c => c.id === r.CATEGORIA);
+    const color  = imp > 0 ? 'var(--green)' : (r.TIPO === 'P' ? 'var(--amber)' : (r.TIPO === 'O' ? 'var(--text3)' : 'var(--red)'));
+    return `<tr>
+      <td style="font-size:12px;white-space:nowrap;color:var(--text3)">${r.FECHA||'—'}</td>
+      <td style="font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.CONCEPTO||'')}">${esc(r.CONCEPTO||'—')}</td>
+      <td style="text-align:right;font-weight:700;color:${color};white-space:nowrap;font-variant-numeric:tabular-nums">${imp>0?'+':''}${fmtEur(imp)}</td>
+      <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${catObj?.color||'#ccc'}22;color:${catObj?.color||'#888'};border:1px solid ${catObj?.color||'#ccc'}44">${catObj?.label||r.LABEL_CAT||r.CATEGORIA||'—'}</span></td>
+    </tr>`;
+  }).join('');
+
+  const resumenCats = [];
+  _BANCO_CATS.forEach(cat => {
+    const tot = filasMes.filter(r => r.CATEGORIA === cat.id).reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
+    if (Math.abs(tot) > 0.01) resumenCats.push({ cat, tot });
+  });
+  resumenCats.sort((a,b) => Math.abs(b.tot) - Math.abs(a.tot));
+
+  const catTable = resumenCats.map(({cat, tot}) => `
+    <tr>
+      <td style="font-size:12px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${cat.color};margin-right:6px"></span>${cat.label}</td>
+      <td style="text-align:right;font-size:12px;font-weight:600;color:${tot>=0?'var(--green)':'var(--red)'};font-variant-numeric:tabular-nums">${tot>0?'+':''}${fmtEur(tot)}</td>
+    </tr>`).join('');
+
+  return `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px">
+      <label style="font-size:13px;font-weight:600">Mes:</label>
+      <select id="${selId}" style="font-size:13px;padding:5px 10px;border:1px solid var(--border2);border-radius:7px;background:var(--bg1);color:var(--text1)"
+        onchange="_bancoHistMesSel=this.value;_bancoRender()">
+        ${meses.map(m => `<option value="${m}" ${m===mesSel?'selected':''}>${labMes(m)}</option>`).join('')}
+      </select>
+      <label style="font-size:13px;font-weight:600;margin-left:8px">Filtro:</label>
+      <select id="${filId}" style="font-size:13px;padding:5px 10px;border:1px solid var(--border2);border-radius:7px;background:var(--bg1);color:var(--text1)"
+        onchange="_bancoHistFiltro=this.value;_bancoRender()">
+        <option value="TODOS" ${filtro==='TODOS'?'selected':''}>Todos</option>
+        <option value="I" ${filtro==='I'?'selected':''}>Solo ingresos</option>
+        <option value="G" ${filtro==='G'?'selected':''}>Gastos empresa</option>
+        <option value="P" ${filtro==='P'?'selected':''}>Gastos personales</option>
+        <option value="O" ${filtro==='O'?'selected':''}>Otros / internos</option>
+      </select>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:12px">
+      <div style="padding:12px 16px;background:rgba(34,197,94,.08);border-radius:8px;border-left:3px solid var(--green)">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Ingresos</div>
+        <div style="font-size:20px;font-weight:700;color:var(--green);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(kpiIngresos)}</div>
+      </div>
+      <div style="padding:12px 16px;background:rgba(239,68,68,.08);border-radius:8px;border-left:3px solid #ef4444">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Gastos empresa</div>
+        <div style="font-size:20px;font-weight:700;color:#ef4444;margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(kpiGastoEmp)}</div>
+      </div>
+      <div style="padding:12px 16px;background:rgba(245,158,11,.08);border-radius:8px;border-left:3px solid var(--amber)">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Gastos personales</div>
+        <div style="font-size:20px;font-weight:700;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(kpiPersonal)}</div>
+      </div>
+      <div style="padding:12px 16px;background:${kpiNeto>=0?'rgba(34,197,94,.12)':'rgba(239,68,68,.12)'};border-radius:8px;border-left:3px solid ${kpiNeto>=0?'var(--green)':'#ef4444'}">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Neto empresa</div>
+        <div style="font-size:20px;font-weight:700;color:${kpiNeto>=0?'var(--green)':'#ef4444'};margin-top:4px;font-variant-numeric:tabular-nums">${fmtEur(kpiNeto)}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr auto;gap:16px;margin-top:16px;align-items:start">
+      <div class="card" style="padding:14px 20px">
+        <div class="card-title" style="margin-bottom:10px">Movimientos — ${labMes(mesSel)} ${filtro!=='TODOS'?'(filtrado)':''}</div>
+        <div class="table-wrap">
+          <table style="font-size:13px">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Importe</th><th>Categoría</th></tr></thead>
+            <tbody>${filas||'<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">Sin movimientos para este filtro</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="padding:14px 20px;min-width:220px">
+        <div class="card-title" style="margin-bottom:10px">Por categoría</div>
+        <table style="font-size:12px;width:100%">
+          <tbody>${catTable||'<tr><td colspan="2" style="color:var(--text3)">Sin datos</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function analisisIngresos() {
