@@ -4259,8 +4259,11 @@ function _gmPreview() {
     perAlu.forEach(({aluId,billable,raw,post},idx) => {
       const hermPct  = idx > 0 ? 0.10 : 0;
       const final    = post*(1-hermPct);
+      if (!final || final <= 0) return;
       const descEur  = raw-final;
-      const servicios= billable.map(x=>x.act.NOMBRE).join(' + ');
+      const subvIds  = new Set((DB.actividades||[]).filter(a=>String(a.SUBVENCIONADA||'').toUpperCase().startsWith('S')).map(a=>String(a.ID||'')));
+      const visActs  = billable.filter(x => !subvIds.has(String(x.act.ID||'')));
+      const servicios= (visActs.length ? visActs : billable).map(x=>x.act.NOMBRE).join(' + ');
       const insId    = billable[0]?.ins?.ID_INSCRIPCION||billable[0]?.ins?.ID||'';
       const linea    = billable[0]?.act?.LINEA||'';
       const alu      = DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId);
@@ -4467,6 +4470,19 @@ function autorellenarPago(mantenerImportes) {
 
 const LINEAS_EXT = ['AMPA','CLUB','ENTRENADOR','EXTERNO'];
 let _pgFiltro = 'TODOS';
+let _pgSort   = { col: 'FECHA', dir: -1 };
+
+function _servicioVisible(servicio) {
+  if (!servicio) return '—';
+  const subvSet = new Set(
+    (DB.actividades||[])
+      .filter(a => String(a.SUBVENCIONADA||'').toUpperCase().startsWith('S'))
+      .map(a => sinTildes(a.NOMBRE||'').trim().toUpperCase())
+  );
+  const partes = String(servicio).split('+').map(s => s.trim()).filter(Boolean);
+  const vis = partes.filter(s => !subvSet.has(sinTildes(s).toUpperCase()));
+  return vis.length ? vis.join(' + ') : partes.join(' + ') || '—';
+}
 
 function pagos(filtro) {
   _pgFiltro = filtro || _pgFiltro || 'TODOS';
@@ -4498,7 +4514,27 @@ function pagos(filtro) {
       ${t.label} <span style="opacity:.65;font-weight:400">${t.n}</span></button>`).join('')}
   </div>`;
 
-  const rows = pagosFiltrados.map(p => { try {
+  const _pgSortVal = p => {
+    if (_pgSort.col === 'MES')      return String(p.MES||'');
+    if (_pgSort.col === 'PAGADOR') { const a = DB.alumnos.find(x=>String(x.ID_ALUMNO)===String(p.ID_ALUMNO)); return a ? (a.NOMBRE+' '+(a.APELLIDOS||'')).trim() : String(p.ID_ALUMNO||''); }
+    if (_pgSort.col === 'SERVICIO') return String(p.SERVICIO||'');
+    if (_pgSort.col === 'ESPERADO') return parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0);
+    if (_pgSort.col === 'ESTADO')   return String(p.ESTADO||'');
+    if (_pgSort.col === 'FECHA')    return String(p.FECHA||p.MES||'');
+    return '';
+  };
+  const sortedPagos = [...pagosFiltrados].sort((a,b) => {
+    const va = _pgSortVal(a), vb = _pgSortVal(b);
+    const r  = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'es');
+    return r * _pgSort.dir;
+  });
+  const _thSort = (col, label) => {
+    const active = _pgSort.col === col;
+    const arrow  = active ? (_pgSort.dir === 1 ? ' ↑' : ' ↓') : '';
+    return `<th style="cursor:pointer;user-select:none${active?';color:var(--g1)':''}" onclick="_pgSort={col:'${col}',dir:${active?-_pgSort.dir:1}};pagos()">${label}${arrow}</th>`;
+  };
+
+  const rows = sortedPagos.map(p => { try {
     const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
     const pendiente = String(p.ESTADO||'').toUpperCase() === 'PENDIENTE';
     const pagado    = String(p.ESTADO||'').toUpperCase() === 'PAGADO';
@@ -4516,7 +4552,7 @@ function pagos(filtro) {
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
       <td>${esc(p.MES||'—')}</td>
       <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : (p.LINEA==='EXTERNO' ? '<em style="color:var(--text3);font-size:11px">'+(esc((p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,''))||'Pagador externo')+'</em>' : esc(p.ID_ALUMNO||'—'))}</td>
-      <td>${lineaBadge}${esc(p.SERVICIO||'—')}</td>
+      <td>${lineaBadge}${esc(_servicioVisible(p.SERVICIO))}</td>
       <td class="mono">${fmtEur(p.IMPORTE)}</td>
       <td class="mono">${p.DESC_EUR&&parseFloat(p.DESC_EUR)>0?'−'+fmtEur(p.DESC_EUR):'—'}</td>
       <td class="mono"><strong>${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</strong></td>
@@ -4561,7 +4597,7 @@ function pagos(filtro) {
       </div>
       <div class="table-wrap">
         <table id="tbl-pag">
-          <thead><tr><th>ID</th><th>Mes</th><th>Pagador</th><th>Servicio</th><th class="mono">Importe</th><th class="mono">Dto.</th><th class="mono">Esperado</th><th class="mono">Recibido</th><th>Método</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th>${_thSort('MES','Mes')}${_thSort('PAGADOR','Pagador')}${_thSort('SERVICIO','Servicio')}<th class="mono">Importe</th><th class="mono">Dto.</th>${_thSort('ESPERADO','Esperado')}<th class="mono">Recibido</th><th>Método</th>${_thSort('ESTADO','Estado')}${_thSort('FECHA','Fecha ↕')}<th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -4910,6 +4946,13 @@ function guardarPago(id) {
       FECHA:          document.getElementById('p-fecha')?.value || '',
       NOTAS:          document.getElementById('p-notas')?.value.trim() || '',
     };
+  }
+
+  const _netoVal = parseFloat(row.TOTAL_ESPERADO || 0);
+  if (!id && _netoVal <= 0) {
+    showToast('El importe no puede ser 0 €', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
   }
 
   if (!id) row.FECHA_REGISTRO = new Date().toISOString().slice(0,10);
