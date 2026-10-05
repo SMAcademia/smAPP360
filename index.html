@@ -1283,6 +1283,7 @@ function badgeEstado(v) {
   const s = String(v||'').toUpperCase();
   if (s === 'ACTIVA' || s === 'PAGADO' || s === 'PAGADA' || s === 'CONFIRMADA') return `<span class="badge badge-green">${esc(v)}</span>`;
   if (s === 'BAJA'   || s === 'RECHAZADA')                 return `<span class="badge badge-red">${esc(v)}</span>`;
+  if (s === 'ANULADO' || s === 'ANULADA')                  return `<span class="badge badge-gray" style="text-decoration:line-through;opacity:.75">${esc(v)}</span>`;
   if (s === 'PENDIENTE' || s === 'PARCIAL' || s === 'RECIBIDA') return `<span class="badge badge-amber">${esc(v)}</span>`;
   return `<span class="badge badge-gray">${esc(v)}</span>`;
 }
@@ -4237,7 +4238,8 @@ function _gmPreview() {
     const mesFiltroNorm = _mesNorm(_gmMes);
     const yaTiene = DB.pagos.some(p => {
       const esCli = String(p.ID_CLIENTE)===cliId || aluIds.includes(String(p.ID_ALUMNO));
-      return esCli && _mesNorm(p.MES)===mesFiltroNorm;
+      const noAnulado = !['ANULADO','ANULADA'].includes(String(p.ESTADO||'').toUpperCase());
+      return esCli && _mesNorm(p.MES)===mesFiltroNorm && noAnulado;
     });
     if (yaTiene) continue;
     const perAlu = aluIds.map(aluId => {
@@ -4564,6 +4566,7 @@ function pagos(filtro) {
         ${btnFac}
         ${btnWA}
         ${btnWAconf}
+        ${(pendiente || String(p.ESTADO||'').toUpperCase()==='PARCIAL') ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;opacity:.85" onclick='anularPago("${esc(String(p.ID_PAGO||p.ID||''))}",${pJson})' title="Anular pago">✕ Anular</button>` : ''}
       </td>
     </tr>`;
   } catch(e) { console.error('Error en fila pago', p, e); return `<tr><td colspan="11" style="color:var(--red);font-size:11px;padding:4px 8px">Error al renderizar pago ${esc(String(p.ID_PAGO||p.ID||''))} — ${esc(e.message)}</td></tr>`; }
@@ -4816,6 +4819,7 @@ function modalPago(p) {
           <option value="PENDIENTE" ${(p.ESTADO||'PENDIENTE')==='PENDIENTE'?'selected':''}>Pendiente</option>
           <option value="PAGADO"    ${p.ESTADO==='PAGADO'?'selected':''}>Pagado</option>
           <option value="PARCIAL"   ${p.ESTADO==='PARCIAL'?'selected':''}>Parcial</option>
+          <option value="ANULADO"   ${p.ESTADO==='ANULADO'?'selected':''}>Anulado</option>
         </select>
       </div>
       <div class="field">
@@ -4897,6 +4901,40 @@ function calcNeto2() {
   const desc = parseFloat(document.getElementById('p-desc2')?.value||0)||0;
   const el   = document.getElementById('p-neto2');
   if (el) el.value = Math.max(0, parseFloat((imp - desc).toFixed(2))).toFixed(2);
+}
+
+async function anularPago(pagoId, pJson) {
+  const p = pJson ? JSON.parse(pJson) : DB.pagos.find(x => String(x.ID_PAGO||x.ID||'') === String(pagoId));
+  if (!p) { showToast('Pago no encontrado', 'error'); return; }
+  const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+  const nombre = alu ? (alu.NOMBRE + ' ' + (alu.APELLIDOS||'')).trim() : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'') || '—';
+  const conf = await new Promise(res => {
+    openModal(
+      'Anular pago',
+      `<p style="margin-bottom:12px">¿Anular el pago de <strong>${esc(nombre)}</strong>?</p>
+       <div style="background:var(--bg3);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.7">
+         <div><strong>Mes:</strong> ${esc(p.MES||'—')}</div>
+         <div><strong>Servicio:</strong> ${esc(_servicioVisible(p.SERVICIO))}</div>
+         <div><strong>Importe:</strong> ${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</div>
+       </div>
+       <p style="margin-top:12px;font-size:12px;color:var(--text3)">El pago quedará marcado como <strong>Anulado</strong> y no contará en los totales pendientes. La inscripción no se modifica.</p>`,
+      `<button class="btn btn-secondary" onclick="closeModal();window._anuConf(false)">Cancelar</button>
+       <button class="btn" style="background:#ef4444;color:#fff" onclick="closeModal();window._anuConf(true)">Anular pago</button>`
+    );
+    window._anuConf = res;
+  });
+  delete window._anuConf;
+  if (!conf) return;
+  const pid = String(p.ID_PAGO || p.ID || '');
+  try {
+    await writeToSheet('PAGOS', { ESTADO: 'ANULADO' }, pid);
+    const idx = DB.pagos.findIndex(x => String(x.ID_PAGO||x.ID||'') === pid);
+    if (idx !== -1) DB.pagos[idx].ESTADO = 'ANULADO';
+    showToast('Pago anulado correctamente', 'success');
+    pagos();
+  } catch(e) {
+    showToast('Error al anular: ' + (e.message||e), 'error');
+  }
 }
 
 function guardarPago(id) {
