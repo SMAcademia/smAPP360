@@ -2746,20 +2746,30 @@ function modalCambioActividad(aluId, inscId) {
       </div>
       <div class="field">
         <label>Precio mensual (€)</label>
-        <input id="ca-precio" type="number" min="0" step="0.01" value="${precioInit}">
+        <input id="ca-precio" type="number" min="0" step="0.01" value="${precioInit}" oninput="_caActualizarNeto()">
+      </div>
+      <div class="field">
+        <label>Descuento (%)</label>
+        <input id="ca-dto" type="number" min="0" max="100" step="1" value="${dtoInit}" oninput="_caActualizarNeto()">
       </div>
       <div class="field">
         <label>Grupo (opcional)</label>
         <input id="ca-grupo" type="text" placeholder="Ej: A, 1, Tarde…" value="${esc(grupoInit)}">
       </div>
+      <div class="field">
+        <label>Forma de pago</label>
+        <select id="ca-fpago">
+          ${['DOMICILIACIÓN','BIZUM','TRANSFERENCIA','EFECTIVO','OTROS'].map(m=>`<option value="${m}" ${m===fpagoInit?'selected':''}>${m}</option>`).join('')}
+        </select>
+      </div>
     </div>
-    <div style="font-size:12px;color:var(--text3);background:var(--bg2);border-radius:6px;padding:8px 12px;margin-top:4px">
-      Se mantienen de la inscripción original: <strong>descuento ${dtoInit}%</strong> · <strong>forma de pago: ${esc(fpagoInit)}</strong><br>
+    <div id="ca-resumen" style="font-size:12px;color:var(--text3);background:var(--bg2);border-radius:6px;padding:8px 12px;margin-top:4px">
       La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button id="ca-btn" class="btn btn-primary" onclick="guardarCambioActividad()">Confirmar cambio</button>`
   );
+  setTimeout(_caActualizarNeto, 50);
 }
 
 function _caOnInscChange() {
@@ -2768,11 +2778,23 @@ function _caOnInscChange() {
   const o = sel.options[sel.selectedIndex];
   const elP = document.getElementById('ca-precio');
   const elG = document.getElementById('ca-grupo');
+  const elD = document.getElementById('ca-dto');
+  const elF = document.getElementById('ca-fpago');
   if (elP) elP.value = o.dataset.precio || '0.00';
   if (elG) elG.value = o.dataset.grupo  || '';
-  // Actualizar texto del resumen descuento/fpago
-  const info = document.querySelector('#modal-body [style*="Se mantienen"]');
-  if (info) info.innerHTML = `Se mantienen de la inscripción original: <strong>descuento ${esc(o.dataset.dto||'0')}%</strong> · <strong>forma de pago: ${esc(o.dataset.fpago||'—')}</strong><br>La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).`;
+  if (elD) elD.value = o.dataset.dto    || '0';
+  if (elF) elF.value = o.dataset.fpago  || 'BIZUM';
+  _caActualizarNeto();
+}
+
+function _caActualizarNeto() {
+  const precio = parseFloat(document.getElementById('ca-precio')?.value || 0);
+  const dto    = parseFloat(document.getElementById('ca-dto')?.value    || 0);
+  const neto   = Math.round(precio * (1 - dto/100) * 100) / 100;
+  const res    = document.getElementById('ca-resumen');
+  if (res) res.innerHTML = dto > 0
+    ? `Neto a cobrar: <strong>${neto.toFixed(2)} €</strong> (${precio.toFixed(2)} € − ${dto}% dto)<br>La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).`
+    : `La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).`;
 }
 
 function _caActualizarPrecio() {
@@ -2811,10 +2833,8 @@ async function guardarCambioActividad() {
   const t   = sinTildes(actNueva.TIPO||'');
 
   // Capturar descuento y forma de pago ANTES de cerrar el modal
-  const selInsc = document.getElementById('ca-insc-id');
-  const oInsc   = selInsc?.options[selInsc?.selectedIndex];
-  const descPct = parseFloat(oInsc?.dataset?.dto ?? oldInsc.DESCUENTO ?? '0') || 0;
-  const fPago   = oInsc?.dataset?.fpago ?? oldInsc.FORMA_PAGO ?? '';
+  const descPct = parseFloat(document.getElementById('ca-dto')?.value ?? oldInsc.DESCUENTO ?? '0') || 0;
+  const fPago   = document.getElementById('ca-fpago')?.value || oldInsc.FORMA_PAGO || '';
   const descEur = Math.round(precio * descPct / 100 * 100) / 100;
   const neto    = Math.round((precio - descEur) * 100) / 100;
 
