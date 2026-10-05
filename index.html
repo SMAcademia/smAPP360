@@ -5365,6 +5365,8 @@ function _bancoCatSelectHtml(selId, valActual, soloGasto) {
   ).join('');
 }
 let _bancoTab         = 'importar'; // 'importar' | 'historico'
+// Mes real de un registro histórico: usa FECHA (fuente de verdad) con MES como fallback
+function _bancoMesDe(r) { return String(r.FECHA||r.MES||'').slice(0,7); }
 let _bancoHistMesSel  = '';
 let _bancoHistFiltro  = 'TODOS';
 let _bancoConcilVis   = false;
@@ -5625,7 +5627,7 @@ async function _bancoGuardarHistorico() {
   if (!mes) { showToast('Selecciona el mes del extracto antes de guardar','error'); return; }
 
   // Verificar si ya existe ese mes en histórico
-  const yaExiste = DB.bancoHistorico && DB.bancoHistorico.some(r => String(r.MES||'') === mes);
+  const yaExiste = DB.bancoHistorico && DB.bancoHistorico.some(r => _bancoMesDe(r) === mes);
   if (yaExiste) {
     const conf = await new Promise(res => {
       openModal(
@@ -5687,7 +5689,7 @@ async function _bancoGuardarTodosMeses() {
     const movs = grupos[mes];
     const ingresos = movs.filter(m => m.importe > 0).reduce((s,m) => s + m.importe, 0);
     const gastos   = movs.filter(m => m.importe < 0).reduce((s,m) => s + m.importe, 0);
-    const yaExiste = (DB.bancoHistorico||[]).some(r => String(r.MES||'') === mes);
+    const yaExiste = (DB.bancoHistorico||[]).some(r => _bancoMesDe(r) === mes);
     return `<tr>
       <td style="font-weight:600">${mes}</td>
       <td style="text-align:right">${movs.length}</td>
@@ -5697,7 +5699,7 @@ async function _bancoGuardarTodosMeses() {
     </tr>`;
   }).join('');
 
-  const yaExisteAlguno = meses.some(mes => (DB.bancoHistorico||[]).some(r => String(r.MES||'') === mes));
+  const yaExisteAlguno = meses.some(mes => (DB.bancoHistorico||[]).some(r => _bancoMesDe(r) === mes));
   const advertencia = yaExisteAlguno
     ? `<p style="color:#f59e0b;font-size:12px;margin-top:8px">⚠️ Los meses marcados como "Ya guardado" añadirán registros duplicados. Los anteriores no se borran.</p>`
     : '';
@@ -5762,7 +5764,7 @@ async function _bancoGuardarTodosMeses() {
 }
 
 function _bancoCargarMesParaEditar(mes) {
-  const filas = (DB.bancoHistorico || []).filter(r => (r.MES||'') === mes);
+  const filas = (DB.bancoHistorico || []).filter(r => _bancoMesDe(r) === mes);
   if (!filas.length) { showToast('No hay registros para ese mes', 'error'); return; }
   // Convertir filas del histórico a formato de _bancoMovs
   _bancoMovs = filas.map(r => ({
@@ -5784,7 +5786,7 @@ function _bancoCargarMesParaEditar(mes) {
 }
 
 async function _bancoEliminarMes(mes) {
-  const filas = (DB.bancoHistorico || []).filter(r => (r.MES||'') === mes);
+  const filas = (DB.bancoHistorico || []).filter(r => _bancoMesDe(r) === mes);
   if (!filas.length) { showToast('No hay registros para ese mes', 'error'); return; }
   const conf = await new Promise(res => {
     openModal(
@@ -5828,7 +5830,7 @@ async function _bancoEliminarMes(mes) {
   }
 
   // Actualizar memoria
-  DB.bancoHistorico = (DB.bancoHistorico||[]).filter(r => (r.MES||'') !== mes);
+  DB.bancoHistorico = (DB.bancoHistorico||[]).filter(r => _bancoMesDe(r) !== mes);
 
   if (btn) { btn.disabled = false; btn.innerHTML = '🗑️ Eliminar mes'; }
   showToast(`${ok} registro${ok===1?'':'s'} eliminado${ok===1?'':'s'} de ${mes}` + (err ? ` · ${err} error${err>1?'es':''}` : ''), err ? 'error' : 'success');
@@ -5859,13 +5861,14 @@ function _bancoHistoricoView() {
   }
 
   // Opciones de mes únicas ordenadas
-  const meses = [...new Set(hist.map(r => r.MES||''))].filter(Boolean).sort().reverse();
+  // Agrupar por mes real de FECHA (fuente de verdad), no por campo MES
+  const meses = [...new Set(hist.map(_bancoMesDe))].filter(Boolean).sort().reverse();
   const selId = 'banco-hist-mes';
   const filId = 'banco-hist-filtro';
   let mesSel = _bancoHistMesSel || (meses[0] || '');
   let filtro  = _bancoHistFiltro || 'TODOS';
 
-  const filasMes = hist.filter(r => (r.MES||'') === mesSel);
+  const filasMes = hist.filter(r => _bancoMesDe(r) === mesSel);
 
   // KPIs
   const kpiIngresos = filasMes.filter(r => parseFloat(r.IMPORTE||0) > 0).reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
@@ -6006,7 +6009,7 @@ function _bancoConcilGetPagos(mes) {
 }
 
 function _bancoConcilAutoMatch(mes) {
-  const movIngr   = (DB.bancoHistorico||[]).filter(r => r.MES===mes && parseFloat(r.IMPORTE||0)>0);
+  const movIngr   = (DB.bancoHistorico||[]).filter(r => _bancoMesDe(r)===mes && parseFloat(r.IMPORTE||0)>0);
   const pagosPend = _bancoConcilGetPagos(mes);
   const usados    = new Set();
   movIngr.forEach(mov => {
@@ -6046,7 +6049,7 @@ function _bancoConcilPanelHtml(mes) {
   const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const labMes   = k => { const [y,m]=k.split('-'); return (MESES_ES[parseInt(m,10)-1]||m)+' '+y; };
 
-  const movIngr   = (DB.bancoHistorico||[]).filter(r => r.MES===mes && parseFloat(r.IMPORTE||0)>0);
+  const movIngr   = (DB.bancoHistorico||[]).filter(r => _bancoMesDe(r)===mes && parseFloat(r.IMPORTE||0)>0);
   const pagosPend = _bancoConcilGetPagos(mes);
 
   const pagOpt = pid => pagosPend.map(p => {
@@ -6166,7 +6169,7 @@ function _bancoConcilPanelHtml(mes) {
 
 async function _bancoConcilConfirmar() {
   const mes     = _bancoConcilMes;
-  const movIngr = (DB.bancoHistorico||[]).filter(r => r.MES===mes && parseFloat(r.IMPORTE||0)>0);
+  const movIngr = (DB.bancoHistorico||[]).filter(r => _bancoMesDe(r)===mes && parseFloat(r.IMPORTE||0)>0);
   const pagPend = _bancoConcilGetPagos(mes);
 
   const updates = [];
@@ -6419,7 +6422,7 @@ function analisisIngresos() {
     ${(DB.bancoHistorico||[]).length > 0 ? (() => {
       const byBanco = {};
       for (const r of DB.bancoHistorico) {
-        const k = r.MES || ''; if (!k) continue;
+        const k = _bancoMesDe(r); if (!k) continue;
         if (!byBanco[k]) byBanco[k] = { ingresos: 0, gastos: 0 };
         const imp = parseFloat(r.IMPORTE||0);
         if (imp > 0) byBanco[k].ingresos += imp;
@@ -7389,7 +7392,7 @@ function gastos() {
 
   // ── Gastos del banco (TIPO G=empresa, P=personal) ──
   const bancoGastosAll = (DB.bancoHistorico||[]).filter(r => r.TIPO==='G' || r.TIPO==='P');
-  const bancoGastosMes = bancoGastosAll.filter(r => (r.MES||'') === mesActual);
+  const bancoGastosMes = bancoGastosAll.filter(r => _bancoMesDe(r) === mesActual);
   const totalBancoMes  = bancoGastosMes.reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
   const totalBanco     = bancoGastosAll.reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
 
@@ -7600,7 +7603,7 @@ function fiscal() {
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
 
   const anyo = new Date().getFullYear();
-  const hasBanco = (DB.bancoHistorico||[]).some(r => String(r.MES||'').startsWith(String(anyo)));
+  const hasBanco = (DB.bancoHistorico||[]).some(r => _bancoMesDe(r).startsWith(String(anyo)));
 
   // ── Ingresos: banco (TIPO=I) + pagos en efectivo (no bancarios) ──
   // Los pagos bancarios ya están en banco histórico → solo sumamos efectivo para no duplicar
@@ -7615,7 +7618,7 @@ function fiscal() {
     const bancoT = (DB.bancoHistorico||[])
       .filter(r => {
         if (r.TIPO !== 'I') return false;
-        const [y,m] = String(r.MES||'').split('-');
+        const [y,m] = _bancoMesDe(r).split('-');
         return parseInt(y) === anyo && mesesTrim.includes(parseInt(m));
       })
       .reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
@@ -7635,7 +7638,7 @@ function fiscal() {
   // ── Gastos: banco (TIPO=G empresa) + gastos manuales ──
   // No sumamos TIPO=P (personal) al resultado empresarial
   const gastosDesdeB = (DB.bancoHistorico||[])
-    .filter(r => r.TIPO === 'G' && String(r.MES||'').startsWith(String(anyo)))
+    .filter(r => r.TIPO === 'G' && _bancoMesDe(r).startsWith(String(anyo)))
     .reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0); // negativo
   const gastosManual = DB.gastos.reduce((s,g) => s + (parseFloat(g.TOTAL)||0), 0);
   // Si hay banco, usamos banco+manual; si no, solo manual (como antes)
