@@ -4983,11 +4983,17 @@ function _bancoRender() {
           ondrop="_bancoDrop(event)">
           <div style="font-size:32px;margin-bottom:8px">📂</div>
           <div style="font-size:14px;font-weight:600">Toca aquí para seleccionar el archivo</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px">.xlsx / .xls / .csv · también puedes arrastrar</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">.xlsx / .xls / .csv</div>
         </label>
         <input type="file" id="banco-file" accept="*/*"
           style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden"
           onchange="_bancoCargar(this.files[0])">
+
+        <!-- Aviso Drive -->
+        <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.6">
+          <strong>¿El archivo está en Google Drive?</strong><br>
+          En la app Drive → toca ⋮ junto al archivo → <em>Descargar</em> → vuelve aquí y toca el botón de arriba (aparecerá en Descargas).
+        </div>
 
         <!-- Opciones alternativas en una fila -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
