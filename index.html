@@ -4970,10 +4970,12 @@ function _bancoRender() {
           ondragleave="this.style.background=''"
           ondrop="_bancoDrop(event)">
           <div style="font-size:32px;margin-bottom:8px">📂</div>
-          <div style="font-size:14px;font-weight:600">Arrastra el Excel de BBVA aquí</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px">o haz clic para seleccionar — formato .xlsx / .xls</div>
+          <div style="font-size:14px;font-weight:600">Arrastra el extracto de BBVA aquí</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">o haz clic para seleccionar — <strong>.xlsx / .xls</strong> (Excel) o <strong>.csv</strong> (recomendado en móvil)</div>
         </div>
-        <input type="file" id="banco-file" accept=".xlsx,.xls" style="display:none" onchange="_bancoCargar(this.files[0])">
+        <input type="file" id="banco-file"
+          accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain"
+          style="display:none" onchange="_bancoCargar(this.files[0])">
         ${tieneMovs ? `<div style="margin-top:10px;font-size:12px;color:var(--text3)">${_bancoMovs.length} movimientos cargados — <button class="btn btn-sm btn-secondary" onclick="_bancoMovs=[];_bancoMatches={};_bancoRender()">Limpiar</button></div>` : ''}
       </div>
       ${tieneMovs ? _bancoTabla() : ''}
@@ -4996,20 +4998,40 @@ function _bancoDrop(e) {
 function _bancoCargar(file) {
   if (!file) return;
   if (!window.XLSX) { showToast('Cargando librería, inténtalo de nuevo en 2 s','error'); return; }
+
+  const esCSV = /\.csv$/i.test(file.name) || file.type === 'text/csv' || file.type === 'text/plain';
   const reader = new FileReader();
+
   reader.onload = e => {
     try {
-      const wb   = XLSX.read(e.target.result, { type: 'array', cellDates: true });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      let rows;
+      if (esCSV) {
+        // CSV: leer como texto, SheetJS lo parsea directamente
+        const wb = XLSX.read(e.target.result, { type: 'string', cellDates: true, raw: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      } else {
+        // XLS / XLSX: leer como ArrayBuffer
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      }
       _bancoMovs    = _parseBBVA(rows);
       _bancoMatches = {};
-      if (!_bancoMovs.length) { showToast('No se encontraron movimientos en el archivo','error'); return; }
+      if (!_bancoMovs.length) {
+        showToast('No se encontraron movimientos. Revisa que el archivo sea un extracto BBVA con columnas Fecha e Importe', 'error');
+        return;
+      }
       _bancoAutoMatch();
       _bancoRender();
     } catch(err) { showToast('Error al leer el archivo: ' + err.message, 'error'); }
   };
-  reader.readAsArrayBuffer(file);
+
+  if (esCSV) {
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    reader.readAsArrayBuffer(file);
+  }
 }
 
 const _BANCO_CATS = [
