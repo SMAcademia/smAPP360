@@ -5364,9 +5364,12 @@ function _bancoCatSelectHtml(selId, valActual, soloGasto) {
     ).join('')}</optgroup>`
   ).join('');
 }
-let _bancoTab       = 'importar'; // 'importar' | 'historico'
+let _bancoTab         = 'importar'; // 'importar' | 'historico'
 let _bancoHistMesSel  = '';
 let _bancoHistFiltro  = 'TODOS';
+let _bancoConcilVis   = false;
+let _bancoConcilMes   = '';
+let _bancoConcilMap   = {};   // movKey → [pagoId, ...]
 
 function _parseBBVA(rows) {
   let headerIdx = -1;
@@ -5795,6 +5798,9 @@ function _bancoHistoricoView() {
       <button class="btn btn-sm btn-secondary" style="margin-left:auto;font-size:12px" onclick="_bancoCargarMesParaEditar('${mesSel}')">
         ✏️ Editar mes
       </button>
+      <button class="btn btn-sm" style="font-size:12px;background:${_bancoConcilVis&&_bancoConcilMes===mesSel?'var(--g1)':'var(--bg3)'};color:${_bancoConcilVis&&_bancoConcilMes===mesSel?'#fff':'var(--text1)'}${_bancoConcilVis&&_bancoConcilMes===mesSel?'':';border:1.5px solid var(--border2)'}" onclick="_bancoConcilToggle('${mesSel}')">
+        🔗 Conciliar
+      </button>
       <button class="btn btn-sm" style="font-size:12px;background:#ef4444;color:#fff" onclick="_bancoEliminarMes('${mesSel}')">
         🗑️ Eliminar mes
       </button>
@@ -5835,7 +5841,235 @@ function _bancoHistoricoView() {
           <tbody>${catTable||'<tr><td colspan="2" style="color:var(--text3)">Sin datos</td></tr>'}</tbody>
         </table>
       </div>
-    </div>`;
+    </div>
+    <div id="banco-concil-wrap">${_bancoConcilVis && _bancoConcilMes === mesSel ? _bancoConcilPanelHtml(mesSel) : ''}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: CONCILIACIÓN BANCO ↔ PAGOS
+// ══════════════════════════════════════════════════════════════════════════
+function _bcKey(mov) {
+  return mov.ID || ('m_' + mov.FECHA + '_' + mov.IMPORTE + '_' + (mov.CONCEPTO||'').replace(/\s+/g,'_').slice(0,20));
+}
+
+function _bancoConcilToggle(mes) {
+  if (_bancoConcilVis && _bancoConcilMes === mes) {
+    _bancoConcilVis = false; _bancoConcilMes = ''; _bancoConcilMap = {};
+  } else {
+    _bancoConcilVis = true; _bancoConcilMes = mes; _bancoConcilMap = {};
+    _bancoConcilAutoMatch(mes);
+  }
+  _bancoRender();
+}
+
+function _bancoConcilGetPagos(mes) {
+  const [y,m] = mes.split('-').map(Number);
+  const mM = `${m===1?y-1:y}-${String(m===1?12:m-1).padStart(2,'0')}`;
+  const mP = `${m===12?y+1:y}-${String(m===12?1:m+1).padStart(2,'0')}`;
+  return (DB.pagos||[]).filter(p => {
+    const est  = String(p.ESTADO||'').toUpperCase();
+    const mesP = _mesNorm(p.MES);
+    return (est==='PENDIENTE'||est==='PARCIAL') && (mesP===mes||mesP===mM||mesP===mP);
+  });
+}
+
+function _bancoConcilAutoMatch(mes) {
+  const movIngr   = (DB.bancoHistorico||[]).filter(r => r.MES===mes && parseFloat(r.IMPORTE||0)>0);
+  const pagosPend = _bancoConcilGetPagos(mes);
+  const usados    = new Set();
+  movIngr.forEach(mov => {
+    const key = _bcKey(mov);
+    const imp = parseFloat(mov.IMPORTE||0);
+    const match = pagosPend.find(p => {
+      const pid = String(p.ID_PAGO||p.ID||'');
+      if (usados.has(pid)) return false;
+      return Math.abs(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0) - imp) <= 0.05;
+    });
+    if (match) {
+      const pid = String(match.ID_PAGO||match.ID||'');
+      _bancoConcilMap[key] = [pid];
+      usados.add(pid);
+    } else {
+      _bancoConcilMap[key] = [];
+    }
+  });
+}
+
+function _bancoConcilAsignar(key, slot, pagoId) {
+  if (!_bancoConcilMap[key]) _bancoConcilMap[key] = [];
+  if (!pagoId) _bancoConcilMap[key].splice(slot, 1);
+  else         _bancoConcilMap[key][slot] = pagoId;
+  const wrap = document.getElementById('banco-concil-wrap');
+  if (wrap) wrap.innerHTML = _bancoConcilPanelHtml(_bancoConcilMes);
+}
+
+function _bancoConcilAddSlot(key) {
+  if (!_bancoConcilMap[key]) _bancoConcilMap[key] = [];
+  _bancoConcilMap[key].push('');
+  const wrap = document.getElementById('banco-concil-wrap');
+  if (wrap) wrap.innerHTML = _bancoConcilPanelHtml(_bancoConcilMes);
+}
+
+function _bancoConcilPanelHtml(mes) {
+  const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const labMes   = k => { const [y,m]=k.split('-'); return (MESES_ES[parseInt(m,10)-1]||m)+' '+y; };
+
+  const movIngr   = (DB.bancoHistorico||[]).filter(r => r.MES===mes && parseFloat(r.IMPORTE||0)>0);
+  const pagosPend = _bancoConcilGetPagos(mes);
+
+  const pagOpt = pid => pagosPend.map(p => {
+    const p2 = String(p.ID_PAGO||p.ID||'');
+    const alu = DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(p.ID_ALUMNO));
+    const nm  = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim()
+                    : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'') || '—';
+    return `<option value="${esc(p2)}" ${p2===pid?'selected':''}>[${p.MES||''}] ${esc(nm)} — ${esc(_servicioVisible(p.SERVICIO||''))} (${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)})</option>`;
+  }).join('');
+
+  let totalBanco = 0, conciliados = 0;
+  const pidEnMap = new Set(Object.values(_bancoConcilMap).flat().filter(Boolean));
+
+  const rows = movIngr.map(mov => {
+    const key  = _bcKey(mov);
+    const imp  = parseFloat(mov.IMPORTE||0);
+    totalBanco += imp;
+    const asig = (_bancoConcilMap[key]||[]);
+    const totAsig = asig.reduce((s,pid) => {
+      const p = pagosPend.find(x=>String(x.ID_PAGO||x.ID||'')===pid);
+      return s + (p ? parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0) : 0);
+    }, 0);
+    const ok   = asig.filter(Boolean).length>0 && Math.abs(imp-totAsig)<=0.05;
+    const warn = asig.filter(Boolean).length>0 && Math.abs(imp-totAsig)>0.05;
+    if (ok) conciliados++;
+
+    const slots = asig.length === 0 ? [''] : asig;
+    const sels  = slots.map((pid, si) => `
+      <div style="display:flex;gap:4px;margin-bottom:2px">
+        <select style="font-size:11px;flex:1;min-width:0"
+          onchange="_bancoConcilAsignar('${esc(key)}',${si},this.value)">
+          <option value="">— Sin asignar —</option>
+          ${pagOpt(pid)}
+        </select>
+        ${asig.length>1?`<button onclick="_bancoConcilAsignar('${esc(key)}',${si},'')" style="font-size:10px;padding:2px 5px;border:1px solid var(--border2);border-radius:4px;background:none;cursor:pointer;color:#ef4444" title="Quitar">✕</button>`:''}
+      </div>`).join('');
+
+    const diffTag = warn ? `<span style="font-size:10px;color:var(--amber);margin-left:4px">Δ${fmtEur(Math.abs(imp-totAsig))}</span>` : '';
+
+    return `<tr style="vertical-align:top;background:${ok?'rgba(34,197,94,.04)':warn?'rgba(245,158,11,.04)':''}">
+      <td style="font-size:11px;color:var(--text3);white-space:nowrap;padding:6px 8px">${mov.FECHA||'—'}</td>
+      <td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 8px" title="${esc(mov.CONCEPTO||'')}">${esc(mov.CONCEPTO||'—')}</td>
+      <td style="text-align:right;font-weight:700;color:var(--green);white-space:nowrap;padding:6px 8px;font-variant-numeric:tabular-nums">+${fmtEur(imp)}</td>
+      <td style="padding:4px 8px;min-width:220px">
+        ${sels}
+        <button onclick="_bancoConcilAddSlot('${esc(key)}')" style="font-size:10px;padding:1px 6px;border:1px dashed var(--border2);border-radius:4px;background:none;cursor:pointer;color:var(--text3);margin-top:2px">+ otro pago</button>
+        ${diffTag}
+      </td>
+      <td style="text-align:center;font-size:14px;padding:6px 8px">${ok?'✅':warn?'⚠️':''}</td>
+    </tr>`;
+  }).join('');
+
+  const pagosSinMov = pagosPend.filter(p => !pidEnMap.has(String(p.ID_PAGO||p.ID||'')));
+  const sinMovRows  = pagosSinMov.map(p => {
+    const alu = DB.alumnos.find(a=>String(a.ID_ALUMNO)===String(p.ID_ALUMNO));
+    const nm  = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim()
+                    : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'') || '—';
+    return `<tr>
+      <td style="font-size:11px;color:var(--text3);padding:4px 8px">${p.MES||'—'}</td>
+      <td style="font-size:11px;padding:4px 8px">${esc(nm)}</td>
+      <td style="font-size:11px;color:var(--text3);padding:4px 8px">${esc(_servicioVisible(p.SERVICIO||''))}</td>
+      <td style="font-size:11px;color:var(--amber);text-align:right;padding:4px 8px;font-variant-numeric:tabular-nums">${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</td>
+    </tr>`;
+  }).join('');
+
+  const nConfirmar = Object.values(_bancoConcilMap).flat().filter(Boolean).length;
+  const totalPend  = pagosPend.reduce((s,p)=>s+parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0),0);
+
+  return `
+  <div style="margin-top:16px">
+    <div class="card" style="padding:16px 20px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700">🔗 Conciliación — ${labMes(mes)}</div>
+        <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-secondary" onclick="_bancoConcilToggle('${mes}')">← Cerrar</button>
+          <button id="banco-concil-confirm-btn" class="btn btn-sm" style="background:var(--g1);color:#fff"
+            onclick="_bancoConcilConfirmar()" ${nConfirmar===0?'disabled':''}>
+            ✅ Marcar ${nConfirmar} pago${nConfirmar===1?'':'s'} como PAGADO
+          </button>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="padding:8px 14px;background:rgba(34,197,94,.08);border-radius:7px;border-left:3px solid var(--green)">
+          <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Ingresos banco</div>
+          <div style="font-size:17px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums">${fmtEur(totalBanco)}</div>
+        </div>
+        <div style="padding:8px 14px;background:rgba(245,158,11,.08);border-radius:7px;border-left:3px solid var(--amber)">
+          <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Pagos pendientes</div>
+          <div style="font-size:17px;font-weight:700;color:var(--amber);font-variant-numeric:tabular-nums">${fmtEur(totalPend)}</div>
+        </div>
+        <div style="padding:8px 14px;background:rgba(99,102,241,.08);border-radius:7px;border-left:3px solid #6366f1">
+          <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Conciliados</div>
+          <div style="font-size:17px;font-weight:700;color:#6366f1">${conciliados} / ${movIngr.length}</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table style="font-size:12px">
+          <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Pago(s) asociado(s)</th><th></th></tr></thead>
+          <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Sin ingresos en banco para este mes</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">✅ importe cuadra exacto · ⚠️ diferencia entre banco y pago esperado · <em>+ otro pago</em> para dividir un movimiento entre varios pagos</div>
+    </div>
+    ${pagosSinMov.length ? `
+    <div class="card" style="padding:14px 20px;margin-top:12px">
+      <div class="card-title" style="color:var(--amber);margin-bottom:8px">⚠️ Pagos pendientes sin movimiento bancario (${pagosSinMov.length}) — total ${fmtEur(pagosSinMov.reduce((s,p)=>s+parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0),0))}</div>
+      <div class="table-wrap">
+        <table style="font-size:12px">
+          <thead><tr><th>Mes</th><th>Cliente</th><th>Servicio</th><th style="text-align:right">Esperado</th></tr></thead>
+          <tbody>${sinMovRows}</tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Puede que paguen en efectivo, estén retrasados, o hayan pagado en otro mes.</div>
+    </div>` : `<div style="margin-top:12px;padding:10px 14px;background:rgba(34,197,94,.08);border-radius:8px;font-size:13px;color:var(--green)">✅ Todos los pagos pendientes tienen movimiento bancario asignado</div>`}
+  </div>`;
+}
+
+async function _bancoConcilConfirmar() {
+  const mes     = _bancoConcilMes;
+  const movIngr = (DB.bancoHistorico||[]).filter(r => r.MES===mes && parseFloat(r.IMPORTE||0)>0);
+  const pagPend = _bancoConcilGetPagos(mes);
+
+  const updates = [];
+  for (const mov of movIngr) {
+    const key  = _bcKey(mov);
+    const pids = (_bancoConcilMap[key]||[]).filter(Boolean);
+    for (const pid of pids) {
+      const p = pagPend.find(x => String(x.ID_PAGO||x.ID||'')===pid);
+      if (p) updates.push({ pid, mov, imp: parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0), p });
+    }
+  }
+  if (!updates.length) { showToast('No hay matches para confirmar','error'); return; }
+
+  const btn = document.getElementById('banco-concil-confirm-btn');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Guardando…'; }
+
+  let ok=0, err=0;
+  for (const {pid, mov, imp, p} of updates) {
+    try {
+      await writeToSheet('PAGOS', {
+        ESTADO: 'PAGADO', TOTAL_RECIBIDO: imp.toFixed(2),
+        'MÉTODO': mov.CONCEPTO || 'Banco',
+        FECHA: mov.FECHA || '',
+        NOTAS: ((p.NOTAS||'').trim() ? p.NOTAS+'\n' : '') + `Conciliado banco ${mes}`,
+      }, pid);
+      const idx = (DB.pagos||[]).findIndex(x=>String(x.ID_PAGO||x.ID||'')===pid);
+      if (idx!==-1) {
+        DB.pagos[idx].ESTADO='PAGADO'; DB.pagos[idx].TOTAL_RECIBIDO=imp.toFixed(2);
+        DB.pagos[idx]['MÉTODO']=mov.CONCEPTO||'Banco'; DB.pagos[idx].FECHA=mov.FECHA||'';
+      }
+      ok++;
+    } catch(e) { err++; }
+  }
+  showToast(`${ok} pago${ok===1?'':'s'} marcado${ok===1?'':'s'} como PAGADO`+(err?` · ${err} error${err>1?'es':''}` : ''), err?'error':'success');
+  _bancoConcilVis=false; _bancoConcilMap={}; _bancoRender();
 }
 
 function analisisIngresos() {
@@ -6050,6 +6284,55 @@ function analisisIngresos() {
         </table>
       </div>
     </div>
+    ${(DB.bancoHistorico||[]).length > 0 ? (() => {
+      const byBanco = {};
+      for (const r of DB.bancoHistorico) {
+        const k = r.MES || ''; if (!k) continue;
+        if (!byBanco[k]) byBanco[k] = { ingresos: 0, gastos: 0 };
+        const imp = parseFloat(r.IMPORTE||0);
+        if (imp > 0) byBanco[k].ingresos += imp;
+        else byBanco[k].gastos += imp;
+      }
+      const mesesBanco = Object.keys(byBanco).sort().reverse().slice(0,12);
+      if (!mesesBanco.length) return '';
+      const bRows = mesesBanco.map(k => {
+        const banco   = byBanco[k]?.ingresos || 0;
+        const cobrado = byMes[k]?.cobrado || 0;
+        const efect   = Math.max(0, cobrado - banco);
+        const gasto   = byBanco[k]?.gastos || 0;
+        const neto    = banco + gasto;
+        const diff    = banco - cobrado;
+        const diffColor = Math.abs(diff) < 1 ? 'var(--green)' : diff > 0 ? 'var(--amber)' : '#ef4444';
+        return `<tr>
+          <td style="padding:5px 8px;font-size:12px">${labelMesLargo(k)}</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--green);font-variant-numeric:tabular-nums;font-size:12px">${fmtEur(banco)}</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--green);font-variant-numeric:tabular-nums;font-size:12px">${fmtEur(cobrado)}</td>
+          <td style="padding:5px 8px;text-align:right;font-size:12px;color:${efect>0?'var(--text2)':'var(--text3)'};font-variant-numeric:tabular-nums">${efect>0.01?fmtEur(efect):'—'}</td>
+          <td style="padding:5px 8px;text-align:right;color:#ef4444;font-variant-numeric:tabular-nums;font-size:12px">${fmtEur(gasto)}</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:700;color:${neto>=0?'var(--green)':'#ef4444'};font-variant-numeric:tabular-nums;font-size:12px">${fmtEur(neto)}</td>
+          <td style="padding:5px 8px;text-align:right;font-size:11px;color:${diffColor};font-variant-numeric:tabular-nums">${Math.abs(diff)<0.5?'✅':(diff>0?'+':'')+fmtEur(diff)}</td>
+        </tr>`;
+      }).join('');
+      return `<div class="card" style="padding:18px 20px;margin-top:16px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏦 Banco vs Pagos — fuente de verdad</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Ingresos reales del extracto bancario comparados con los pagos registrados. La diferencia positiva indica ingresos sin pago asociado aún (conciliar); negativa indica pagos cobrados en efectivo.</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="border-bottom:2px solid var(--border)">
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:left">Mes</th>
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:right">🏦 Banco</th>
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:right">💳 Cobrado</th>
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:right">💵 Efectivo</th>
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:right">📉 Gastos</th>
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:right">✅ Neto</th>
+              <th style="padding:5px 8px;font-size:11px;color:var(--text3);font-weight:600;text-align:right">Δ banco/pagos</th>
+            </tr></thead>
+            <tbody>${bRows}</tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px">Usa <strong>🔗 Conciliar</strong> en la sección Banco → Histórico para vincular movimientos con pagos y reducir la diferencia Δ a ✅.</div>
+      </div>`;
+    })() : ''}
     <style>.analisis-grid{grid-template-columns:1fr 1fr}@media(max-width:600px){.analisis-grid{grid-template-columns:1fr}}</style>
   `);
 }
