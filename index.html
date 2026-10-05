@@ -5533,6 +5533,36 @@ function _bancoTabla() {
   const hoy = new Date();
   const mesDef = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
 
+  // Detectar meses presentes en los movimientos
+  const _mesesDetect = [...new Set(
+    _bancoMovs.map(m => m.fecha ? m.fecha.slice(0,7) : '').filter(Boolean)
+  )].sort();
+  const _multiMes = _mesesDetect.length > 1;
+  const _unMes    = _mesesDetect.length === 1 ? _mesesDetect[0] : mesDef;
+
+  const saveBar = _multiMes ? `
+    <div style="padding:10px 14px;background:var(--bg3);border-radius:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:600;color:var(--text2)">📅 ${_mesesDetect.length} meses detectados:</span>
+        <span style="font-size:12px;color:var(--text3)">${_mesesDetect.join(' · ')}</span>
+        <button id="btn-guardar-todos-meses" class="btn btn-sm" style="background:#3b82f6;color:#fff;margin-left:auto" onclick="_bancoGuardarTodosMeses()">
+          💾 Guardar todos los meses (${_bancoMovs.length} movimientos)
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">El mes de cada movimiento se toma de su fecha. También puedes guardar solo un mes usando el selector de abajo.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 14px;background:var(--bg2);border-radius:8px;flex-wrap:wrap">
+      <label style="font-size:12px;color:var(--text3)">O guardar un mes concreto:</label>
+      <input type="month" id="banco-mes-input" value="${_unMes}" style="font-size:13px;padding:4px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+      <button class="btn btn-sm btn-secondary" onclick="_bancoGuardarHistorico()" style="font-size:12px">💾 Guardar mes seleccionado</button>
+    </div>` : `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 14px;background:var(--bg3);border-radius:8px;flex-wrap:wrap">
+      <label style="font-size:12px;font-weight:600;color:var(--text2)">Mes del extracto:</label>
+      <input type="month" id="banco-mes-input" value="${_unMes}" style="font-size:13px;padding:4px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+      <button class="btn btn-sm" style="background:#3b82f6;color:#fff" onclick="_bancoGuardarHistorico()">💾 Guardar en histórico</button>
+      <span style="font-size:11px;color:var(--text3)">${_bancoMovs.length} movimientos</span>
+    </div>`;
+
   return `<div class="card" style="padding:14px 20px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       <div class="card-title" style="margin:0">2. Movimientos — clasificar</div>
@@ -5540,12 +5570,7 @@ function _bancoTabla() {
       <button class="btn btn-sm btn-secondary" onclick="_bancoAutoMatch();_bancoRender()" style="margin-left:auto">🔄 Re-autocruzar</button>
       ${confirmados > 0 ? `<button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="_bancoConfirmar()">✓ Confirmar ${confirmados} cobro${confirmados===1?'':'s'}</button>` : ''}
     </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 14px;background:var(--bg3);border-radius:8px;flex-wrap:wrap">
-      <label style="font-size:12px;font-weight:600;color:var(--text2)">Mes del extracto:</label>
-      <input type="month" id="banco-mes-input" value="${mesDef}" style="font-size:13px;padding:4px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
-      <button class="btn btn-sm" style="background:#3b82f6;color:#fff" onclick="_bancoGuardarHistorico()">💾 Guardar en histórico</button>
-      <span style="font-size:11px;color:var(--text3)">${_bancoMovs.length} movimientos</span>
-    </div>
+    ${saveBar}
     <div class="table-wrap">
       <table style="font-size:13px">
         <thead><tr><th>Fecha</th><th>Concepto banco</th><th style="text-align:right">Importe</th><th>Categoría</th><th>Asignar cobro</th></tr></thead>
@@ -5642,6 +5667,97 @@ async function _bancoGuardarHistorico() {
     showToast('Error al guardar: ' + (e.message || e), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '💾 Guardar en histórico'; }
+  }
+}
+
+async function _bancoGuardarTodosMeses() {
+  if (!_bancoMovs.length) { showToast('No hay movimientos cargados','error'); return; }
+  const grupos = {};
+  for (const mov of _bancoMovs) {
+    const mes = mov.fecha ? mov.fecha.slice(0,7) : '';
+    if (!mes) continue;
+    if (!grupos[mes]) grupos[mes] = [];
+    grupos[mes].push(mov);
+  }
+  const meses = Object.keys(grupos).sort();
+  if (!meses.length) { showToast('No se pudo detectar el mes de ningún movimiento','error'); return; }
+
+  // Construir preview para el modal
+  const filasPrev = meses.map(mes => {
+    const movs = grupos[mes];
+    const ingresos = movs.filter(m => m.importe > 0).reduce((s,m) => s + m.importe, 0);
+    const gastos   = movs.filter(m => m.importe < 0).reduce((s,m) => s + m.importe, 0);
+    const yaExiste = (DB.bancoHistorico||[]).some(r => String(r.MES||'') === mes);
+    return `<tr>
+      <td style="font-weight:600">${mes}</td>
+      <td style="text-align:right">${movs.length}</td>
+      <td style="text-align:right;color:var(--green)">+${ingresos.toFixed(2)} €</td>
+      <td style="text-align:right;color:#ef4444">${gastos.toFixed(2)} €</td>
+      <td>${yaExiste ? '<span style="color:#f59e0b;font-size:11px">⚠️ Ya guardado</span>' : '<span style="color:var(--green);font-size:11px">Nuevo</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const yaExisteAlguno = meses.some(mes => (DB.bancoHistorico||[]).some(r => String(r.MES||'') === mes));
+  const advertencia = yaExisteAlguno
+    ? `<p style="color:#f59e0b;font-size:12px;margin-top:8px">⚠️ Los meses marcados como "Ya guardado" añadirán registros duplicados. Los anteriores no se borran.</p>`
+    : '';
+
+  const conf = await new Promise(res => {
+    openModal(
+      `Guardar ${meses.length} meses en histórico`,
+      `<div style="overflow-x:auto">
+        <table style="width:100%;font-size:13px;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--border2)">
+            <th style="text-align:left;padding:4px 8px">Mes</th>
+            <th style="text-align:right;padding:4px 8px">Movs</th>
+            <th style="text-align:right;padding:4px 8px">Ingresos</th>
+            <th style="text-align:right;padding:4px 8px">Gastos</th>
+            <th style="padding:4px 8px">Estado</th>
+          </tr></thead>
+          <tbody>${filasPrev}</tbody>
+        </table>
+      </div>
+      <p style="font-size:12px;color:var(--text3);margin-top:10px">Total: <strong>${_bancoMovs.length} movimientos</strong> en ${meses.length} mes${meses.length===1?'':'es'}.</p>
+      ${advertencia}`,
+      `<button class="btn btn-secondary" onclick="closeModal();window._btmConf(false)">Cancelar</button>
+       <button class="btn btn-primary" onclick="closeModal();window._btmConf(true)">💾 Guardar todo</button>`
+    );
+    window._btmConf = res;
+  });
+  delete window._btmConf;
+  if (!conf) return;
+
+  const btn = document.getElementById('btn-guardar-todos-meses');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Guardando…'; }
+
+  const allRows = _bancoMovs.map(mov => {
+    const mes    = mov.fecha ? mov.fecha.slice(0,7) : '';
+    const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
+    return {
+      MES:        mes,
+      FECHA:      mov.fecha,
+      CONCEPTO:   mov.concepto,
+      IMPORTE:    mov.importe,
+      'CATEGORÍA': mov.cat,
+      TIPO:       catObj ? catObj.tipo : 'O',
+      LABEL_CAT:  catObj ? catObj.label : mov.cat,
+    };
+  }).filter(r => r.MES);
+
+  try {
+    const res = await writeBatchToSheet('BANCO_HISTORICO', allRows);
+    const ok = res.count || allRows.length;
+    showToast(`✅ ${ok} movimientos guardados en ${meses.length} mes${meses.length===1?'':'es'}`, 'success');
+    if (!DB.bancoHistorico) DB.bancoHistorico = [];
+    allRows.forEach(r => DB.bancoHistorico.push(r));
+    // Mostrar el último mes en histórico
+    const ultimoMes = meses[meses.length - 1];
+    _bancoTab = 'historico';
+    _bancoHistMesSel = ultimoMes;
+    _bancoRender();
+  } catch(e) {
+    showToast('Error al guardar: ' + (e.message || e), 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = `💾 Guardar todos los meses (${_bancoMovs.length} movimientos)`; }
   }
 }
 
