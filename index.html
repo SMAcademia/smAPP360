@@ -4973,8 +4973,7 @@ function _bancoRender() {
           <div style="font-size:14px;font-weight:600">Arrastra el extracto de BBVA aquí</div>
           <div style="font-size:12px;color:var(--text3);margin-top:4px">o haz clic para seleccionar — <strong>.xlsx / .xls</strong> (Excel) o <strong>.csv</strong> (recomendado en móvil)</div>
         </div>
-        <input type="file" id="banco-file"
-          accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain"
+        <input type="file" id="banco-file" accept="*/*"
           style="display:none" onchange="_bancoCargar(this.files[0])">
         ${tieneMovs ? `<div style="margin-top:10px;font-size:12px;color:var(--text3)">${_bancoMovs.length} movimientos cargados — <button class="btn btn-sm btn-secondary" onclick="_bancoMovs=[];_bancoMatches={};_bancoRender()">Limpiar</button></div>` : ''}
       </div>
@@ -4999,19 +4998,31 @@ function _bancoCargar(file) {
   if (!file) return;
   if (!window.XLSX) { showToast('Cargando librería, inténtalo de nuevo en 2 s','error'); return; }
 
-  const esCSV = /\.csv$/i.test(file.name) || file.type === 'text/csv' || file.type === 'text/plain';
+  const nombre = (file.name || '').toLowerCase();
+  // Detectar CSV por extensión o MIME type (no depender del MIME en Android)
+  const esCSV = /\.csv$/.test(nombre) ||
+                file.type === 'text/csv' ||
+                file.type === 'text/plain';
+  // Rechazar solo formatos claramente incorrectos (PDF, imagen, etc.)
+  const esInvalido = /\.(pdf|jpg|jpeg|png|gif|mp4|docx?|pptx?)$/.test(nombre) &&
+                     !/(xlsx?|csv)$/.test(nombre);
+  if (esInvalido) {
+    showToast('Formato no compatible. Usa el extracto Excel (.xls/.xlsx) o CSV de BBVA', 'error');
+    return;
+  }
+
   const reader = new FileReader();
+  reader.onerror = () => showToast('Error al leer el archivo', 'error');
 
   reader.onload = e => {
     try {
       let rows;
       if (esCSV) {
-        // CSV: leer como texto, SheetJS lo parsea directamente
         const wb = XLSX.read(e.target.result, { type: 'string', cellDates: true, raw: false });
         const ws = wb.Sheets[wb.SheetNames[0]];
         rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
       } else {
-        // XLS / XLSX: leer como ArrayBuffer
+        // XLS / XLSX — intentar leer como binario
         const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -5019,12 +5030,19 @@ function _bancoCargar(file) {
       _bancoMovs    = _parseBBVA(rows);
       _bancoMatches = {};
       if (!_bancoMovs.length) {
-        showToast('No se encontraron movimientos. Revisa que el archivo sea un extracto BBVA con columnas Fecha e Importe', 'error');
+        showToast('No se detectaron movimientos. Asegúrate de que el archivo tenga columnas Fecha e Importe', 'error');
         return;
       }
       _bancoAutoMatch();
       _bancoRender();
-    } catch(err) { showToast('Error al leer el archivo: ' + err.message, 'error'); }
+    } catch(err) {
+      // Si falla como binario y no era CSV, intentar como texto (algunos XLS de BBVA son texto tab-separado)
+      if (!esCSV) {
+        _bancoCargarComoTexto(file);
+      } else {
+        showToast('Error al leer: ' + err.message, 'error');
+      }
+    }
   };
 
   if (esCSV) {
@@ -5032,6 +5050,27 @@ function _bancoCargar(file) {
   } else {
     reader.readAsArrayBuffer(file);
   }
+}
+
+function _bancoCargarComoTexto(file) {
+  const r2 = new FileReader();
+  r2.onerror = () => showToast('No se pudo leer el archivo', 'error');
+  r2.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'string', cellDates: true, raw: false });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      _bancoMovs    = _parseBBVA(rows);
+      _bancoMatches = {};
+      if (!_bancoMovs.length) {
+        showToast('No se detectaron movimientos en el archivo', 'error');
+        return;
+      }
+      _bancoAutoMatch();
+      _bancoRender();
+    } catch(e2) { showToast('Error al procesar el archivo: ' + e2.message, 'error'); }
+  };
+  r2.readAsText(file, 'UTF-8');
 }
 
 const _BANCO_CATS = [
