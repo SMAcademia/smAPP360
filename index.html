@@ -848,7 +848,7 @@ function applyRoleVisibility() {
     'nav-futbol':       futbolLike,
     'nav-extra':        extraLike || ampaRole,
     'nav-personal':     adminLike || ['MONITOR','ENTRENADOR'].includes(rol),
-    'nav-contabilidad': adminLike || ampaRole,
+    'nav-contabilidad': adminLike,
     'nav-ampa':         ampaLike,
     'nav-familia':      rol === 'FAMILIA',
   };
@@ -904,8 +904,7 @@ function applyRoleVisibility() {
 
   // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
-    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard',
-     'gastos','fiscal','presupuesto']
+    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
@@ -4941,24 +4940,17 @@ let _bancoMovs    = [];   // movimientos parseados del Excel
 let _bancoMatches = {};   // { movIdx: pagoId } confirmaciones pendientes
 
 function bancoConciliacion() {
-  const rol = currentUser?.rol;
-  if (!isAdmin() && rol !== 'AMPA') {
-    render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>');
-    return;
-  }
-  // AMPA solo puede ver el histórico, no importar
-  if (rol === 'AMPA') _bancoTab = 'historico';
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Solo administradores</h2></div>'); return; }
   document.getElementById('topbar-actions').innerHTML = '';
   _bancoRender();
 }
 
 function _bancoRender() {
   const tieneMovs = _bancoMovs.length > 0;
-  const soloHistorico = currentUser?.rol === 'AMPA';
   const tabBar = `<div style="display:flex;gap:0;border-bottom:2px solid var(--border2);margin-bottom:16px">
-    ${!soloHistorico ? `<button onclick="_bancoTab='importar';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='importar'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='importar'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
+    <button onclick="_bancoTab='importar';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='importar'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='importar'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
       📂 Importar extracto
-    </button>` : ''}
+    </button>
     <button onclick="_bancoTab='historico';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='historico'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='historico'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
       📚 Histórico
     </button>
