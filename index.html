@@ -1315,9 +1315,16 @@ function dashboard() {
 
   const mesActual = new Date().toLocaleString('es-ES', { month:'long', year:'numeric' });
   const _mesHoyK = new Date().toISOString().slice(0,7);
-  const ingresosMes = DB.pagos
-    .filter(p => _mesNorm(p.MES) === _mesHoyK && String(p.ESTADO||'').toUpperCase() === 'PAGADO')
-    .reduce((s,p) => s + (parseFloat(p.TOTAL_RECIBIDO)||0), 0);
+  const _dbHasBanco = (DB.bancoHistorico||[]).length > 0;
+  const _esEfect = p => { const m=String(p.MÉTODO||'').toUpperCase(); return m.includes('EFECTIVO')||m==='CASH'; };
+  const _bancoCobMes  = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I'&&_bancoMesDe(r)===_mesHoyK).reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
+  const _efectMes     = DB.pagos.filter(p=>_mesNorm(p.MES)===_mesHoyK&&String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_esEfect(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const ingresosMes   = _dbHasBanco ? _bancoCobMes + _efectMes
+    : DB.pagos.filter(p=>_mesNorm(p.MES)===_mesHoyK&&String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const _bancoTotal   = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I').reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
+  const _efectTotal   = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_esEfect(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const ingresosTotal = _dbHasBanco ? _bancoTotal + _efectTotal
+    : DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
 
   render(`
     <div class="kpis">
@@ -1338,8 +1345,14 @@ function dashboard() {
         <div class="kpi-l">Preinscripciones nuevas</div>
       </div>
       <div class="kpi">
-        <div class="kpi-n">${fmtEur(ingresosMes)}</div>
-        <div class="kpi-l">Ingresos ${mesActual}</div>
+        <div class="kpi-n" style="color:var(--green)">${fmtEur(ingresosMes)}</div>
+        <div class="kpi-l">Cobrado ${mesActual}</div>
+        ${_dbHasBanco?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(_bancoCobMes)} + 💵 ${fmtEur(_efectMes)}</div>`:''}
+      </div>
+      <div class="kpi">
+        <div class="kpi-n" style="color:var(--green)">${fmtEur(ingresosTotal)}</div>
+        <div class="kpi-l">Total cobrado</div>
+        ${_dbHasBanco?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(_bancoTotal)} + 💵 ${fmtEur(_efectTotal)}</div>`:''}
       </div>
     </div>
 
