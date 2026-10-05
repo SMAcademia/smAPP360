@@ -689,7 +689,10 @@ function normalizarDB(raw) {
   DB.ampaSocios              = raw.ampaSocios              || [];
   DB.solicitudes             = raw.solicitudes             || [];
   DB.encuestasSatisfaccion   = raw.encuestasSatisfaccion   || [];
-  DB.bancoHistorico          = raw.bancoHistorico          || [];
+  DB.bancoHistorico          = (raw.bancoHistorico || []).map(r => ({
+    ...r,
+    CATEGORIA: r['CATEGORÍA'] || r.CATEGORIA || '',
+  }));
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
   try {
@@ -4566,7 +4569,7 @@ function pagos(filtro) {
         ${btnFac}
         ${btnWA}
         ${btnWAconf}
-        ${(pendiente || String(p.ESTADO||'').toUpperCase()==='PARCIAL') ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;opacity:.85" onclick='anularPago("${esc(String(p.ID_PAGO||p.ID||''))}",${pJson})' title="Anular pago">✕ Anular</button>` : ''}
+        ${(pendiente || String(p.ESTADO||'').toUpperCase()==='PARCIAL') ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;opacity:.85" onclick='anularPago("${esc(String(p.ID_PAGO||p.ID||''))}")' title="Anular pago">✕ Anular</button>` : ''}
       </td>
     </tr>`;
   } catch(e) { console.error('Error en fila pago', p, e); return `<tr><td colspan="11" style="color:var(--red);font-size:11px;padding:4px 8px">Error al renderizar pago ${esc(String(p.ID_PAGO||p.ID||''))} — ${esc(e.message)}</td></tr>`; }
@@ -4903,8 +4906,8 @@ function calcNeto2() {
   if (el) el.value = Math.max(0, parseFloat((imp - desc).toFixed(2))).toFixed(2);
 }
 
-async function anularPago(pagoId, pJson) {
-  const p = pJson ? JSON.parse(pJson) : DB.pagos.find(x => String(x.ID_PAGO||x.ID||'') === String(pagoId));
+async function anularPago(pagoId) {
+  const p = DB.pagos.find(x => String(x.ID_PAGO||x.ID||'') === String(pagoId));
   if (!p) { showToast('Pago no encontrado', 'error'); return; }
   const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
   const nombre = alu ? (alu.NOMBRE + ' ' + (alu.APELLIDOS||'')).trim() : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'') || '—';
@@ -5616,13 +5619,13 @@ async function _bancoGuardarHistorico() {
   const rows = _bancoMovs.map(mov => {
     const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
     return {
-      MES:       mes,
-      FECHA:     mov.fecha,
-      CONCEPTO:  mov.concepto,
-      IMPORTE:   mov.importe,
-      CATEGORIA: mov.cat,
-      TIPO:      catObj ? catObj.tipo : 'O',
-      LABEL_CAT: catObj ? catObj.label : mov.cat,
+      MES:        mes,
+      FECHA:      mov.fecha,
+      CONCEPTO:   mov.concepto,
+      IMPORTE:    mov.importe,
+      'CATEGORÍA': mov.cat,
+      TIPO:       catObj ? catObj.tipo : 'O',
+      LABEL_CAT:  catObj ? catObj.label : mov.cat,
     };
   });
 
@@ -5749,7 +5752,8 @@ function _bancoHistoricoView() {
 
   const filas = filasVis.map(r => {
     const imp    = parseFloat(r.IMPORTE||0);
-    const catObj = _BANCO_CATS.find(c => c.id === r.CATEGORIA);
+    const catEfectiva = r.CATEGORIA || _bancoCatAuto(r.CONCEPTO||'', parseFloat(r.IMPORTE||0) > 0);
+    const catObj = _BANCO_CATS.find(c => c.id === catEfectiva);
     const color  = imp > 0 ? 'var(--green)' : (r.TIPO === 'P' ? 'var(--amber)' : (r.TIPO === 'O' ? 'var(--text3)' : 'var(--red)'));
     return `<tr>
       <td style="font-size:12px;white-space:nowrap;color:var(--text3)">${r.FECHA||'—'}</td>
@@ -5761,7 +5765,7 @@ function _bancoHistoricoView() {
 
   const resumenCats = [];
   _BANCO_CATS.forEach(cat => {
-    const tot = filasMes.filter(r => r.CATEGORIA === cat.id).reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
+    const tot = filasMes.filter(r => (r.CATEGORIA || _bancoCatAuto(r.CONCEPTO||'', parseFloat(r.IMPORTE||0) > 0)) === cat.id).reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
     if (Math.abs(tot) > 0.01) resumenCats.push({ cat, tot });
   });
   resumenCats.sort((a,b) => Math.abs(b.tot) - Math.abs(a.tot));
