@@ -5835,6 +5835,19 @@ async function _bancoEliminarMes(mes) {
   _bancoRender();
 }
 
+async function _bancoRecargarHistorico() {
+  const btn = document.querySelector('[onclick="_bancoRecargarHistorico()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳…'; }
+  try {
+    await loadAllData();
+    showToast(`Histórico recargado: ${(DB.bancoHistorico||[]).length} registros`, 'success');
+    _bancoRender();
+  } catch(e) {
+    showToast('Error al recargar: ' + (e.message || e), 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '🔄 Recargar'; }
+  }
+}
+
 function _bancoHistoricoView() {
   const hist = DB.bancoHistorico || [];
   if (!hist.length) {
@@ -5919,6 +5932,9 @@ function _bancoHistoricoView() {
       </button>
       <button class="btn btn-sm" style="font-size:12px;background:#ef4444;color:#fff" onclick="_bancoEliminarMes('${mesSel}')">
         🗑️ Eliminar mes
+      </button>
+      <button class="btn btn-sm btn-secondary" style="font-size:12px" title="Recargar datos del histórico desde la hoja" onclick="_bancoRecargarHistorico()">
+        🔄 Recargar
       </button>
     </div>
 
@@ -7362,9 +7378,20 @@ function gastos() {
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
   topbarBtn('+ Registrar gasto', () => modalGasto());
 
+  const hoy = new Date();
+  const mesActual = hoy.toISOString().slice(0,7);
+
+  // ── Gastos manuales (GASTOS sheet) ──
   const totalMes = DB.gastos
-    .filter(g => { const f=new Date(g.FECHA||''); const n=new Date(); return f.getMonth()===n.getMonth()&&f.getFullYear()===n.getFullYear(); })
+    .filter(g => { const f=new Date(g.FECHA||''); return f.getMonth()===hoy.getMonth()&&f.getFullYear()===hoy.getFullYear(); })
     .reduce((s,g)=>s+(parseFloat(g.TOTAL)||0),0);
+  const totalManual = DB.gastos.reduce((s,g)=>s+(parseFloat(g.TOTAL)||0),0);
+
+  // ── Gastos del banco (TIPO G=empresa, P=personal) ──
+  const bancoGastosAll = (DB.bancoHistorico||[]).filter(r => r.TIPO==='G' || r.TIPO==='P');
+  const bancoGastosMes = bancoGastosAll.filter(r => (r.MES||'') === mesActual);
+  const totalBancoMes  = bancoGastosMes.reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
+  const totalBanco     = bancoGastosAll.reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
 
   const rows = DB.gastos.map(g => `
     <tr>
@@ -7376,18 +7403,34 @@ function gastos() {
       <td>${esc(g.PROVEEDOR||'—')}</td>
       <td>${g.FACTURA_REF?`<a href="${esc(g.FACTURA_REF)}" target="_blank" class="btn btn-sm btn-secondary">📎</a>`:'—'}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalGasto(${JSON.stringify(g)})'>Editar</button></td>
-    </tr>`).join('') || `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📉</div><p>Sin gastos registrados</p></div></td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📉</div><p>Sin gastos manuales</p></div></td></tr>`;
+
+  const rowsBanco = bancoGastosAll.sort((a,b)=>(b.FECHA||'').localeCompare(a.FECHA||'')).map(r => {
+    const imp = parseFloat(r.IMPORTE||0);
+    const catObj = _BANCO_CATS.find(c => c.id === (r.CATEGORIA || _bancoCatAuto(r.CONCEPTO||'', false)));
+    return `<tr>
+      <td style="font-size:12px;color:var(--text3)">${r.FECHA||'—'}</td>
+      <td>${esc(r.CONCEPTO||'—')}</td>
+      <td style="text-align:right;color:${imp<0?'var(--red)':'var(--amber)'};font-weight:600;font-variant-numeric:tabular-nums">${fmtEur(imp)}</td>
+      <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${catObj?.color||'#ccc'}22;color:${catObj?.color||'#888'};border:1px solid ${catObj?.color||'#ccc'}44">${catObj?.label||r.LABEL_CAT||'—'}</span></td>
+      <td><span class="badge badge-gray" style="font-size:10px">${r.TIPO==='P'?'Personal':'Empresa'}</span></td>
+      <td style="font-size:12px;color:var(--text3)">${r.MES||'—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏦</div><p>Sin gastos en banco histórico</p></div></td></tr>`;
 
   render(`
     <div class="kpis" style="margin-bottom:16px">
-      <div class="kpi"><div class="kpi-n">${DB.gastos.length}</div><div class="kpi-l">Total registros</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(totalMes)}</div><div class="kpi-l">Gastos este mes</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(DB.gastos.reduce((s,g)=>s+(parseFloat(g.TOTAL)||0),0))}</div><div class="kpi-l">Total gastos</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(totalMes)}</div><div class="kpi-l">Manual · este mes</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(totalManual)}</div><div class="kpi-l">Manual · total</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(totalBancoMes)}</div><div class="kpi-l">Banco · este mes</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(totalBanco)}</div><div class="kpi-l">Banco · total histórico</div></div>
     </div>
-    <div class="card" style="padding:14px 20px">
+
+    <div class="card" style="padding:14px 20px;margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:10px">Gastos manuales (hoja GASTOS)</div>
       <div class="table-toolbar">
         <input class="search-input" id="q-gas" placeholder="Buscar…" oninput="filterTable('q-gas','tbl-gas')">
-        <span class="text-muted">${DB.gastos.length} gastos</span>
+        <span class="text-muted">${DB.gastos.length} registros</span>
       </div>
       <div class="table-wrap">
         <table id="tbl-gas">
@@ -7395,7 +7438,23 @@ function gastos() {
           <tbody>${rows}</tbody>
         </table>
       </div>
-    </div>`);
+    </div>
+
+    ${bancoGastosAll.length > 0 ? `
+    <div class="card" style="padding:14px 20px">
+      <div class="card-title" style="margin-bottom:4px">Gastos del banco histórico</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Movimientos bancarios clasificados como gasto empresa o personal. No se suman a los manuales.</div>
+      <div class="table-toolbar">
+        <input class="search-input" id="q-gas-b" placeholder="Buscar…" oninput="filterTable('q-gas-b','tbl-gas-b')">
+        <span class="text-muted">${bancoGastosAll.length} movimientos</span>
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-gas-b">
+          <thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Importe</th><th>Categoría</th><th>Tipo</th><th>Mes</th></tr></thead>
+          <tbody>${rowsBanco}</tbody>
+        </table>
+      </div>
+    </div>` : ''}`);
 }
 
 function modalGasto(g) {
@@ -7541,27 +7600,68 @@ function fiscal() {
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
 
   const anyo = new Date().getFullYear();
+  const hasBanco = (DB.bancoHistorico||[]).some(r => String(r.MES||'').startsWith(String(anyo)));
 
-  // Ingresos por trimestre
+  // ── Ingresos: banco (TIPO=I) + pagos en efectivo (no bancarios) ──
+  // Los pagos bancarios ya están en banco histórico → solo sumamos efectivo para no duplicar
+  function esEfectivo(p) {
+    const met = String(p.MÉTODO||'').toUpperCase();
+    return met.includes('EFECTIVO') || met.includes('CASH') || met === 'EFECTIVO';
+  }
+
   const ingresosPorTrimestre = [1,2,3,4].map(t => {
-    const meses = [(t-1)*3, (t-1)*3+1, (t-1)*3+2]; // índices 0-based
-    return DB.pagos
+    const mesesTrim = [(t-1)*3+1, (t-1)*3+2, (t-1)*3+3]; // 1-indexed
+    // Banco
+    const bancoT = (DB.bancoHistorico||[])
+      .filter(r => {
+        if (r.TIPO !== 'I') return false;
+        const [y,m] = String(r.MES||'').split('-');
+        return parseInt(y) === anyo && mesesTrim.includes(parseInt(m));
+      })
+      .reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0);
+    // Efectivo (solo si hay banco histórico; si no, usar todos los pagos para no romper)
+    const efectivoT = DB.pagos
       .filter(p => {
         const f = new Date(p.FECHA_PAGO||p.FECHA_REGISTRO||'');
-        return f.getFullYear() === anyo && meses.includes(f.getMonth()) && String(p.ESTADO||'').toUpperCase()==='PAGADO';
+        return f.getFullYear() === anyo
+          && mesesTrim.includes(f.getMonth()+1)
+          && String(p.ESTADO||'').toUpperCase() === 'PAGADO'
+          && (!hasBanco || esEfectivo(p));
       })
-      .reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+      .reduce((s,p) => s + (parseFloat(p.TOTAL_RECIBIDO)||0), 0);
+    return bancoT + efectivoT;
   });
 
-  const gastosTotales = DB.gastos.reduce((s,g)=>s+(parseFloat(g.TOTAL)||0),0);
+  // ── Gastos: banco (TIPO=G empresa) + gastos manuales ──
+  // No sumamos TIPO=P (personal) al resultado empresarial
+  const gastosDesdeB = (DB.bancoHistorico||[])
+    .filter(r => r.TIPO === 'G' && String(r.MES||'').startsWith(String(anyo)))
+    .reduce((s,r) => s + parseFloat(r.IMPORTE||0), 0); // negativo
+  const gastosManual = DB.gastos.reduce((s,g) => s + (parseFloat(g.TOTAL)||0), 0);
+  // Si hay banco, usamos banco+manual; si no, solo manual (como antes)
+  const gastosTotales = hasBanco
+    ? Math.abs(gastosDesdeB) + gastosManual
+    : gastosManual;
+
   const ingresosTotal = ingresosPorTrimestre.reduce((s,v)=>s+v,0);
   const beneficio = ingresosTotal - gastosTotales;
-
   const nomCosteTot = DB.nominas.reduce((s,n)=>s+(parseFloat(n.COSTE_TOTAL)||0),0);
+
+  // Efectivo total del año
+  const efectivoAnyo = DB.pagos
+    .filter(p => {
+      const f = new Date(p.FECHA_PAGO||p.FECHA_REGISTRO||'');
+      return f.getFullYear() === anyo && String(p.ESTADO||'').toUpperCase() === 'PAGADO' && esEfectivo(p);
+    }).reduce((s,p) => s + (parseFloat(p.TOTAL_RECIBIDO)||0), 0);
+
+  const fuenteLabel = hasBanco
+    ? `<div style="font-size:11px;color:var(--text3);margin-top:6px">🏦 Banco + 💵 Efectivo · Gastos banco + manuales</div>`
+    : `<div style="font-size:11px;color:#f59e0b;margin-top:6px">⚠️ Sin banco histórico — usando solo pagos y gastos manuales</div>`;
 
   render(`
     <div class="kpis">
-      <div class="kpi"><div class="kpi-n">${fmtEur(ingresosTotal)}</div><div class="kpi-l">Ingresos ${anyo}</div></div>
+      <div class="kpi"><div class="kpi-n">${fmtEur(ingresosTotal)}</div><div class="kpi-l">Ingresos ${anyo}</div>${fuenteLabel}</div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--text3)">${fmtEur(efectivoAnyo)}</div><div class="kpi-l">De los que efectivo</div></div>
       <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(gastosTotales)}</div><div class="kpi-l">Gastos operativos</div></div>
       <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(nomCosteTot)}</div><div class="kpi-l">Coste nóminas</div></div>
       <div class="kpi"><div class="kpi-n" style="color:${beneficio>=0?'var(--g2)':'var(--red)'}">${fmtEur(beneficio)}</div><div class="kpi-l">Resultado bruto</div><div class="kpi-sub">Sin nóminas</div></div>
@@ -7570,6 +7670,7 @@ function fiscal() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="card">
         <div class="card-title">Ingresos por trimestre ${anyo}</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">${hasBanco?'Banco confirmado + efectivo':'Pagos cobrados (sin banco histórico)'}</div>
         ${[1,2,3,4].map(t=>`
           <div class="flex" style="margin-bottom:8px;font-size:13px">
             <span style="width:80px;color:var(--text3)">T${t}</span>
@@ -7578,6 +7679,11 @@ function fiscal() {
             </div>
             <strong style="margin-left:8px;min-width:80px;text-align:right">${fmtEur(ingresosPorTrimestre[t-1])}</strong>
           </div>`).join('')}
+        ${hasBanco ? `
+        <div style="font-size:11px;color:var(--text3);margin-top:12px;padding-top:10px;border-top:1px solid var(--border2)">
+          <div style="display:flex;justify-content:space-between"><span>🏦 Banco (transferencias, bizum…)</span><strong>${fmtEur(ingresosTotal - efectivoAnyo)}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px"><span>💵 Efectivo</span><strong>${fmtEur(efectivoAnyo)}</strong></div>
+        </div>` : ''}
       </div>
       <div class="card">
         <div class="card-title">Modelos fiscales (exento IGIC)</div>
@@ -7590,6 +7696,11 @@ function fiscal() {
             <span class="text-muted">Anual. Datos del año ${anyo}.</span></div>
           <div class="badge badge-green" style="margin-top:4px">✓ IGIC exento — umbral &gt;50.000€ desde julio 2026</div>
         </div>
+        ${hasBanco ? `
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border2);font-size:11px;color:var(--text3)">
+          <div style="display:flex;justify-content:space-between"><span>Gastos banco empresa</span><strong style="color:var(--red)">${fmtEur(Math.abs(gastosDesdeB))}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px"><span>Gastos manuales</span><strong style="color:var(--red)">${fmtEur(gastosManual)}</strong></div>
+        </div>` : ''}
       </div>
     </div>`);
 }
