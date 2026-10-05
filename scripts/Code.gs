@@ -75,6 +75,8 @@ function doPost(e) {
       result = updateRow(body.sheet, body.id, body.row || {});
     } else if (action === 'DELETE') {
       result = deleteRow(body.sheet, body.id);
+    } else if (action === 'DELETE_BATCH') {
+      result = deleteBatch(body.sheet, body.ids || []);
     } else if (action === 'NUEVA_PREINSCRIPCION') {
       result = nuevaPreinscripcion(body);
     } else {
@@ -334,6 +336,33 @@ function updateRow(sheetName, id, rowObj) {
   } finally {
     if (locked) { try { lock.releaseLock(); } catch(e2) {} }
   }
+}
+
+// ===========================================================================
+//  DELETE_BATCH - elimina múltiples filas por ID en una pasada
+// ===========================================================================
+function deleteBatch(sheetName, ids) {
+  if (!ids || !ids.length) return { ok: true, count: 0 };
+  var book  = ss_();
+  var sheet = book.getSheetByName(sheetName);
+  if (!sheet) return { ok: false, error: 'Hoja no encontrada: ' + sheetName };
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { ok: true, count: 0 };
+
+  var idSet = {};
+  ids.forEach(function(id) { idSet[String(id)] = true; });
+
+  var colIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  // Recorrer de abajo a arriba para que deleteRow no cambie índices
+  var deleted = 0;
+  for (var i = colIds.length - 1; i >= 0; i--) {
+    if (idSet[String(colIds[i][0])]) {
+      sheet.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+  return { ok: true, count: deleted };
 }
 
 // ===========================================================================

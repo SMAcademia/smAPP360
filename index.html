@@ -5144,9 +5144,8 @@ function _bancoPegarTexto() {
 
 function _bancoNuevoManual() {
   const hoy = new Date().toISOString().slice(0,10);
-  const optsCateg = _BANCO_CATS.map(c =>
-    `<option value="${c.id}">[${c.tipo}] ${c.label}</option>`
-  ).join('');
+  const imp0 = 0; // se actualiza al cambiar importe
+  const optsCateg = _bancoCatSelectHtml('', 'GASTO_OTROS', true);
   openModal('Añadir movimiento manual', `
     <div style="display:grid;gap:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -5258,13 +5257,29 @@ const _BANCO_CATS = [
   { id:'IMPUESTOS',     label:'Impuestos / IRPF',       tipo:'G', color:'#f43f5e' },
   { id:'GASTO_OTROS',   label:'Otros gastos empresa',   tipo:'G', color:'#9ca3af' },
   // Personal / propietario
-  { id:'PERSONAL',      label:'Retirada / autónomo',    tipo:'P', color:'#f59e0b' },
+  { id:'PERSONAL',      label:'Retirada personal / autónomo', tipo:'P', color:'#f59e0b' },
+  { id:'GASTO_PERSONAL',label:'Gasto personal (propietario)', tipo:'P', color:'#d97706' },
   // Otras
   { id:'TRANSFERENCIA', label:'Transferencia interna',  tipo:'O', color:'#64748b' },
   { id:'SIN_CLASE',     label:'Sin clasificar',         tipo:'O', color:'#cbd5e1' },
 ];
 const _BANCO_CATS_I = _BANCO_CATS.filter(c => c.tipo === 'I');
 const _BANCO_CATS_G = _BANCO_CATS.filter(c => c.tipo !== 'I');
+// Selector agrupado con optgroup
+function _bancoCatSelectHtml(selId, valActual, soloGasto) {
+  const grupos = soloGasto
+    ? [
+        { label: '— Gastos empresa', cats: _BANCO_CATS.filter(c => c.tipo === 'G') },
+        { label: '— Gastos personales', cats: _BANCO_CATS.filter(c => c.tipo === 'P') },
+        { label: '— Otros / internos', cats: _BANCO_CATS.filter(c => c.tipo === 'O') },
+      ]
+    : [{ label: '— Ingresos', cats: _BANCO_CATS_I }];
+  return grupos.map(g =>
+    `<optgroup label="${g.label}">${g.cats.map(c =>
+      `<option value="${c.id}" ${valActual===c.id?'selected':''}>${c.label}</option>`
+    ).join('')}</optgroup>`
+  ).join('');
+}
 let _bancoTab       = 'importar'; // 'importar' | 'historico'
 let _bancoHistMesSel  = '';
 let _bancoHistFiltro  = 'TODOS';
@@ -5377,10 +5392,8 @@ function _bancoTabla() {
     const pagoIdSel = _bancoMatches[idx] || '';
     const catObj    = _BANCO_CATS.find(c => c.id === mov.cat);
     const colorImp  = esIngreso ? 'var(--green)' : (catObj?.tipo === 'P' ? 'var(--amber)' : (catObj?.tipo === 'O' ? 'var(--text3)' : 'var(--red)'));
-    const catsCols  = esIngreso ? _BANCO_CATS_I : _BANCO_CATS_G;
-
     const catSel = `<select style="font-size:11px;padding:2px 4px;border-left:3px solid ${catObj?.color||'#ccc'}" onchange="_bancoCatSet(${idx},this.value)">
-      ${catsCols.map(c => `<option value="${c.id}" ${mov.cat===c.id?'selected':''}>${c.label}</option>`).join('')}
+      ${_bancoCatSelectHtml('', mov.cat, !esIngreso)}
     </select>`;
 
     const pagoSel = esIngreso ? `<select style="font-size:11px;max-width:200px;padding:2px 4px" onchange="_bancoSetMatch(${idx},this.value)">
@@ -5545,6 +5558,80 @@ async function _bancoGuardarHistorico() {
   }
 }
 
+function _bancoCargarMesParaEditar(mes) {
+  const filas = (DB.bancoHistorico || []).filter(r => (r.MES||'') === mes);
+  if (!filas.length) { showToast('No hay registros para ese mes', 'error'); return; }
+  // Convertir filas del histórico a formato de _bancoMovs
+  _bancoMovs = filas.map(r => ({
+    fecha:    r.FECHA   || '',
+    concepto: r.CONCEPTO|| '',
+    importe:  parseFloat(r.IMPORTE||0),
+    cat:      r.CATEGORIA || _bancoCatAuto(r.CONCEPTO||'', parseFloat(r.IMPORTE||0) > 0),
+  }));
+  _bancoMatches = {};
+  _bancoAutoMatch();
+  _bancoTab = 'importar';
+  _bancoRender();
+  // Pre-cargar el mes en el input
+  setTimeout(() => {
+    const inp = document.getElementById('banco-mes-input');
+    if (inp) inp.value = mes;
+  }, 50);
+  showToast(`${filas.length} movimientos de ${mes} cargados para editar. Recategoriza y guarda de nuevo.`, 'info');
+}
+
+async function _bancoEliminarMes(mes) {
+  const filas = (DB.bancoHistorico || []).filter(r => (r.MES||'') === mes);
+  if (!filas.length) { showToast('No hay registros para ese mes', 'error'); return; }
+  const conf = await new Promise(res => {
+    openModal(
+      `¿Eliminar histórico de ${mes}?`,
+      `Se eliminarán <strong>${filas.length} registros</strong> de ${mes} de la hoja de cálculo. Esta acción no se puede deshacer.`,
+      `<button class="btn btn-secondary" onclick="closeModal();window._bancoDelRes(false)">Cancelar</button>
+       <button class="btn" style="background:#ef4444;color:#fff" onclick="closeModal();window._bancoDelRes(true)">Eliminar</button>`
+    );
+    window._bancoDelRes = res;
+  });
+  delete window._bancoDelRes;
+  if (!conf) return;
+
+  const btn = document.querySelector('[onclick*="_bancoEliminarMes"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Eliminando…'; }
+
+  // Recoger IDs de las filas a eliminar
+  const idsAEliminar = filas.map(r => r.ID).filter(Boolean);
+  let ok = 0, err = 0;
+
+  if (idsAEliminar.length) {
+    // Borrado batch via AppScript
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'DELETE_BATCH', sheet: 'BANCO_HISTORICO', ids: idsAEliminar }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const data = await res.json();
+      ok = data.count || idsAEliminar.length;
+    } catch(e) {
+      // Fallback: borrar uno a uno
+      for (const id of idsAEliminar) {
+        try { await deleteFromSheet('BANCO_HISTORICO', id); ok++; } catch(_) { err++; }
+      }
+    }
+  } else {
+    // Sin IDs: solo actualizamos memoria (los registros se generaron sin ID)
+    ok = filas.length;
+    showToast('Registros sin ID — eliminados solo en memoria. Borra la hoja BANCO_HISTORICO manualmente para el mes ' + mes, 'error');
+  }
+
+  // Actualizar memoria
+  DB.bancoHistorico = (DB.bancoHistorico||[]).filter(r => (r.MES||'') !== mes);
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '🗑️ Eliminar mes'; }
+  showToast(`${ok} registro${ok===1?'':'s'} eliminado${ok===1?'':'s'} de ${mes}` + (err ? ` · ${err} error${err>1?'es':''}` : ''), err ? 'error' : 'success');
+  _bancoRender();
+}
+
 function _bancoHistoricoView() {
   const hist = DB.bancoHistorico || [];
   if (!hist.length) {
@@ -5620,6 +5707,12 @@ function _bancoHistoricoView() {
         <option value="P" ${filtro==='P'?'selected':''}>Gastos personales</option>
         <option value="O" ${filtro==='O'?'selected':''}>Otros / internos</option>
       </select>
+      <button class="btn btn-sm btn-secondary" style="margin-left:auto;font-size:12px" onclick="_bancoCargarMesParaEditar('${mesSel}')">
+        ✏️ Editar mes
+      </button>
+      <button class="btn btn-sm" style="font-size:12px;background:#ef4444;color:#fff" onclick="_bancoEliminarMes('${mesSel}')">
+        🗑️ Eliminar mes
+      </button>
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:12px">
