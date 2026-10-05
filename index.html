@@ -848,7 +848,7 @@ function applyRoleVisibility() {
     'nav-futbol':       futbolLike,
     'nav-extra':        extraLike || ampaRole,
     'nav-personal':     adminLike || ['MONITOR','ENTRENADOR'].includes(rol),
-    'nav-contabilidad': adminLike,
+    'nav-contabilidad': adminLike || ampaRole,
     'nav-ampa':         ampaLike,
     'nav-familia':      rol === 'FAMILIA',
   };
@@ -904,7 +904,8 @@ function applyRoleVisibility() {
 
   // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
-    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard']
+    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard',
+     'gastos','fiscal','presupuesto']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
@@ -4940,17 +4941,24 @@ let _bancoMovs    = [];   // movimientos parseados del Excel
 let _bancoMatches = {};   // { movIdx: pagoId } confirmaciones pendientes
 
 function bancoConciliacion() {
-  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Solo administradores</h2></div>'); return; }
+  const rol = currentUser?.rol;
+  if (!isAdmin() && rol !== 'AMPA') {
+    render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>');
+    return;
+  }
+  // AMPA solo puede ver el histórico, no importar
+  if (rol === 'AMPA') _bancoTab = 'historico';
   document.getElementById('topbar-actions').innerHTML = '';
   _bancoRender();
 }
 
 function _bancoRender() {
   const tieneMovs = _bancoMovs.length > 0;
+  const soloHistorico = currentUser?.rol === 'AMPA';
   const tabBar = `<div style="display:flex;gap:0;border-bottom:2px solid var(--border2);margin-bottom:16px">
-    <button onclick="_bancoTab='importar';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='importar'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='importar'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
+    ${!soloHistorico ? `<button onclick="_bancoTab='importar';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='importar'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='importar'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
       📂 Importar extracto
-    </button>
+    </button>` : ''}
     <button onclick="_bancoTab='historico';_bancoRender()" style="padding:8px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${_bancoTab==='historico'?'var(--primary)':'var(--text3)'};border-bottom:${_bancoTab==='historico'?'2px solid var(--primary)':'2px solid transparent'};margin-bottom:-2px">
       📚 Histórico
     </button>
@@ -4965,21 +4973,32 @@ function _bancoRender() {
     <div style="display:grid;gap:16px">
       ${tabBar}
       <div class="card" style="padding:16px 20px">
-        <div class="card-title" style="margin-bottom:12px">1. Cargar extracto BBVA (.xlsx)</div>
-        <div id="banco-dropzone" style="border:2px dashed var(--border2);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:background .2s"
-          onclick="document.getElementById('banco-file').click()"
+        <div class="card-title" style="margin-bottom:12px">1. Cargar extracto BBVA</div>
+
+        <!-- Label envuelve el input → funciona en Android sin JS .click() -->
+        <label for="banco-file" id="banco-dropzone"
+          style="display:block;border:2px dashed var(--border2);border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;transition:background .2s"
           ondragover="event.preventDefault();this.style.background='var(--bg3)'"
           ondragleave="this.style.background=''"
           ondrop="_bancoDrop(event)">
           <div style="font-size:32px;margin-bottom:8px">📂</div>
-          <div style="font-size:14px;font-weight:600">Arrastra el extracto de BBVA aquí</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px">o haz clic para seleccionar — .xlsx / .xls / .csv</div>
-          <div style="margin-top:12px;font-size:12px;color:var(--text3)">¿Problemas en móvil? →
-            <button class="btn btn-sm btn-secondary" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();_bancoPegarTexto()">📋 Pegar texto / CSV</button>
-          </div>
-        </div>
+          <div style="font-size:14px;font-weight:600">Toca aquí para seleccionar el archivo</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">.xlsx / .xls / .csv · también puedes arrastrar</div>
+        </label>
         <input type="file" id="banco-file" accept="*/*"
-          style="display:none" onchange="_bancoCargar(this.files[0])">
+          style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden"
+          onchange="_bancoCargar(this.files[0])">
+
+        <!-- Opciones alternativas en una fila -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-sm btn-secondary" onclick="_bancoPegarTexto()" style="font-size:12px">
+            📋 Pegar texto / CSV
+          </button>
+          <button class="btn btn-sm btn-secondary" onclick="_bancoNuevoManual()" style="font-size:12px">
+            ✏️ Añadir manualmente
+          </button>
+        </div>
+
         ${tieneMovs ? `<div style="margin-top:10px;font-size:12px;color:var(--text3)">${_bancoMovs.length} movimientos cargados — <button class="btn btn-sm btn-secondary" onclick="_bancoMovs=[];_bancoMatches={};_bancoRender()">Limpiar</button></div>` : ''}
       </div>
       ${tieneMovs ? _bancoTabla() : ''}
@@ -4998,6 +5017,7 @@ let _bancoPendingFile = null; // archivo en espera si XLSX aún no cargó
 
 function _bancoCargar(file) {
   if (!file) return;
+  showToast(`Cargando: ${file.name || 'archivo'} (${(file.size/1024).toFixed(1)} KB)`, 'info');
 
   // Si XLSX todavía no cargó, encolar y reintentar
   if (!window.XLSX) {
@@ -5103,6 +5123,83 @@ function _bancoPegarTexto() {
   );
 }
 
+function _bancoNuevoManual() {
+  const hoy = new Date().toISOString().slice(0,10);
+  const optsCateg = _BANCO_CATS.map(c =>
+    `<option value="${c.id}">[${c.tipo}] ${c.label}</option>`
+  ).join('');
+  openModal('Añadir movimiento manual', `
+    <div style="display:grid;gap:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Fecha</label>
+          <input type="date" id="bm-fecha" value="${hoy}"
+            style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Importe (€)</label>
+          <input type="number" id="bm-importe" step="0.01" placeholder="-50.00"
+            style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Concepto</label>
+        <input type="text" id="bm-concepto" placeholder="Ej: Recibo cuotas septiembre"
+          style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Categoría</label>
+        <select id="bm-cat"
+          style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg1);color:var(--text1)">
+          ${optsCateg}
+        </select>
+      </div>
+      <p style="font-size:12px;color:var(--text3);margin:0">
+        Importe positivo = ingreso · negativo = gasto. Puedes añadir varios uno a uno y guardar al final.
+      </p>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="_bancoGuardarManual()">Añadir</button>`
+  );
+  // Auto-seleccionar categoría cuando cambia el concepto
+  setTimeout(() => {
+    const inp = document.getElementById('bm-concepto');
+    const impInp = document.getElementById('bm-importe');
+    const catSel = document.getElementById('bm-cat');
+    if (inp && catSel) {
+      inp.addEventListener('blur', () => {
+        const imp = parseFloat(impInp?.value || '0');
+        const cat = _bancoCatAuto(inp.value, imp > 0);
+        catSel.value = cat;
+      });
+      impInp?.addEventListener('change', () => {
+        const imp = parseFloat(impInp.value || '0');
+        const cat = _bancoCatAuto(inp.value, imp > 0);
+        catSel.value = cat;
+      });
+    }
+  }, 50);
+}
+
+function _bancoGuardarManual() {
+  const fecha   = document.getElementById('bm-fecha')?.value || '';
+  const impStr  = document.getElementById('bm-importe')?.value || '';
+  const concepto = document.getElementById('bm-concepto')?.value?.trim() || '';
+  const cat     = document.getElementById('bm-cat')?.value || 'GASTO_OTROS';
+
+  const importe = parseFloat(impStr);
+  if (!fecha) { showToast('Indica una fecha', 'error'); return; }
+  if (isNaN(importe) || impStr === '') { showToast('Indica el importe', 'error'); return; }
+  if (!concepto) { showToast('Indica el concepto', 'error'); return; }
+
+  _bancoMovs.push({ fecha, concepto, importe, cat });
+  _bancoMatches = {};
+  _bancoAutoMatch();
+  closeModal();
+  _bancoRender();
+  showToast(`Movimiento añadido: ${concepto} (${importe > 0 ? '+' : ''}${importe.toFixed(2)}€)`, 'success');
+}
+
 function _bancoProcesarTexto() {
   const texto = (document.getElementById('banco-paste-area')?.value || '').trim();
   if (!texto) { showToast('El área de texto está vacía','error'); return; }
@@ -5164,9 +5261,16 @@ function _parseBBVA(rows) {
   if (headerIdx < 0) return [];
 
   const headers = rows[headerIdx].map(c => String(c||'').toLowerCase().trim());
-  const iFecha  = headers.findIndex(h => h.includes('f.') && h.includes('oper') || h === 'fecha operación' || h === 'fecha' || h.includes('f. operaci'));
-  const iDesc   = headers.findIndex(h => h.includes('concepto') || h.includes('descripci') || h.includes('movimiento'));
-  const iImporte= headers.findIndex(h => h.includes('importe') && !h.includes('saldo') && !h.includes('disponib'));
+  const iFecha  = headers.findIndex(h =>
+    h.includes('fecha') || h.includes('f. oper') || h.includes('f.oper') || h === 'date'
+  );
+  const iDesc   = headers.findIndex(h =>
+    h.includes('concepto') || h.includes('descripci') || h.includes('movimiento') || h.includes('observaci')
+  );
+  const iImporte= headers.findIndex(h =>
+    (h.includes('importe') || h === 'amount' || h === 'cargo' || h === 'abono') &&
+    !h.includes('saldo') && !h.includes('disponib') && !h.includes('retenci')
+  );
 
   if (iImporte < 0) return [];
 
