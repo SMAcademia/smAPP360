@@ -2749,8 +2749,22 @@ function modalCambioActividad(aluId, inscId) {
         <input id="ca-precio" type="number" min="0" step="0.01" value="${precioInit}" oninput="_caActualizarNeto()">
       </div>
       <div class="field">
-        <label>Descuento (%)</label>
-        <input id="ca-dto" type="number" min="0" max="100" step="1" value="${dtoInit}" oninput="_caActualizarNeto()">
+        <label>Descuento</label>
+        <select id="ca-dto-sel" onchange="_caToggleDto()">
+          <option value="0"      ${['0',''].includes(dtoInit)?'selected':''}>Sin descuento</option>
+          <option value="10"     ${dtoInit==='10'?'selected':''}>10% — 2.º hermano/a</option>
+          <optgroup label="Jugador SM Fútbol Club">
+            <option value="15"    ${dtoInit==='15'?'selected':''}>Sesión suelta — 20€ → 17€</option>
+            <option value="12.73" ${dtoInit==='12.73'?'selected':''}>1 ses/semana — 55€ → 48€</option>
+            <option value="15.45" ${dtoInit==='15.45'?'selected':''}>2 ses/semana — 110€ → 93€</option>
+            <option value="18.75" ${dtoInit==='18.75'?'selected':''}>3 ses/semana — 160€ → 130€</option>
+          </optgroup>
+          <option value="custom" ${!['0','','10','15','12.73','15.45','18.75'].includes(dtoInit)?'selected':''}>Personalizado</option>
+        </select>
+        <div id="ca-dto-custom-wrap" style="${!['0','','10','15','12.73','15.45','18.75'].includes(dtoInit)?'':'display:none'};margin-top:6px">
+          <input id="ca-dto" type="number" min="0" max="100" step="0.01" placeholder="% descuento"
+            value="${!['0','','10','15','12.73','15.45','18.75'].includes(dtoInit)?dtoInit:''}" oninput="_caActualizarNeto()">
+        </div>
       </div>
       <div class="field">
         <label>Grupo (opcional)</label>
@@ -2778,18 +2792,42 @@ function _caOnInscChange() {
   const o = sel.options[sel.selectedIndex];
   const elP = document.getElementById('ca-precio');
   const elG = document.getElementById('ca-grupo');
-  const elD = document.getElementById('ca-dto');
   const elF = document.getElementById('ca-fpago');
   if (elP) elP.value = o.dataset.precio || '0.00';
   if (elG) elG.value = o.dataset.grupo  || '';
-  if (elD) elD.value = o.dataset.dto    || '0';
   if (elF) elF.value = o.dataset.fpago  || 'BIZUM';
+  // Rellenar selector de descuento
+  const dtoVal = o.dataset.dto || '0';
+  const knownDtos = ['0','10','15','12.73','15.45','18.75'];
+  const selDto = document.getElementById('ca-dto-sel');
+  if (selDto) {
+    selDto.value = knownDtos.includes(dtoVal) ? dtoVal : 'custom';
+    const wrap = document.getElementById('ca-dto-custom-wrap');
+    const inp  = document.getElementById('ca-dto');
+    if (wrap) wrap.style.display = selDto.value === 'custom' ? '' : 'none';
+    if (inp && selDto.value === 'custom') inp.value = dtoVal;
+  }
   _caActualizarNeto();
+}
+
+function _caToggleDto() {
+  const sel = document.getElementById('ca-dto-sel');
+  const wrap = document.getElementById('ca-dto-custom-wrap');
+  if (!sel || !wrap) return;
+  wrap.style.display = sel.value === 'custom' ? '' : 'none';
+  _caActualizarNeto();
+}
+
+function _caGetDto() {
+  const sel = document.getElementById('ca-dto-sel');
+  if (!sel) return 0;
+  if (sel.value === 'custom') return parseFloat(document.getElementById('ca-dto')?.value || 0);
+  return parseFloat(sel.value) || 0;
 }
 
 function _caActualizarNeto() {
   const precio = parseFloat(document.getElementById('ca-precio')?.value || 0);
-  const dto    = parseFloat(document.getElementById('ca-dto')?.value    || 0);
+  const dto    = _caGetDto();
   const neto   = Math.round(precio * (1 - dto/100) * 100) / 100;
   const res    = document.getElementById('ca-resumen');
   if (res) res.innerHTML = dto > 0
@@ -2833,7 +2871,7 @@ async function guardarCambioActividad() {
   const t   = sinTildes(actNueva.TIPO||'');
 
   // Capturar descuento y forma de pago ANTES de cerrar el modal
-  const descPct = parseFloat(document.getElementById('ca-dto')?.value ?? oldInsc.DESCUENTO ?? '0') || 0;
+  const descPct = _caGetDto();
   const fPago   = document.getElementById('ca-fpago')?.value || oldInsc.FORMA_PAGO || '';
   const descEur = Math.round(precio * descPct / 100 * 100) / 100;
   const neto    = Math.round((precio - descEur) * 100) / 100;
