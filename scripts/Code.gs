@@ -69,6 +69,8 @@ function doPost(e) {
 
     if (action === 'APPEND') {
       result = appendRow(body.sheet, body.row || {});
+    } else if (action === 'APPEND_BATCH') {
+      result = appendBatch(body.sheet, body.rows || []);
     } else if (action === 'UPDATE') {
       result = updateRow(body.sheet, body.id, body.row || {});
     } else if (action === 'DELETE') {
@@ -215,6 +217,72 @@ function appendRow(sheetName, rowObj) {
 
     sheet.appendRow(newRow);
     return { ok: true, id: rowObj[idCol] || '' };
+
+  } catch (err) {
+    if (!locked) return { ok: false, error: 'Escritura simultanea. Reintenta.' };
+    return { ok: false, error: err.toString() };
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch(e2) {} }
+  }
+}
+
+// ===========================================================================
+//  APPEND_BATCH - escribe múltiples filas en una sola llamada (un único lock)
+// ===========================================================================
+function appendBatch(sheetName, rows) {
+  if (!rows || !rows.length) return { ok: true, count: 0 };
+  var lock   = LockService.getScriptLock();
+  var locked = false;
+  try {
+    lock.waitLock(30000);
+    locked = true;
+
+    var book  = ss_();
+    var sheet = book.getSheetByName(sheetName);
+
+    // Auto-crear la hoja con cabeceras si no existe
+    if (!sheet) {
+      sheet = book.insertSheet(sheetName);
+      var firstRow = rows[0];
+      var cols = Object.keys(firstRow);
+      // Añadir columna ID como primera si no está
+      if (cols[0] !== 'ID') cols.unshift('ID');
+      sheet.appendRow(cols);
+    }
+
+    var lastCol  = sheet.getLastColumn();
+    if (lastCol < 1) return { ok: false, error: 'Sin cabeceras: ' + sheetName };
+
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(function(h) { return String(h).trim(); });
+
+    var idCol    = headers[0];
+    var lastRow  = sheet.getLastRow();
+    var nextNum  = lastRow;  // fila actual para generar IDs secuenciales
+
+    var matrix = [];
+    var generatedIds = [];
+
+    rows.forEach(function(rowObj) {
+      if (idCol && !rowObj[idCol]) {
+        nextNum++;
+        rowObj[idCol] = sheetName + '-' + String(nextNum).padStart(4, '0');
+      }
+      var newRow = headers.map(function(h) {
+        var v = (rowObj[h] !== undefined && rowObj[h] !== null) ? rowObj[h] : '';
+        if (h.indexOf('HORA') !== -1 && v !== '') return String(v);
+        return v;
+      });
+      matrix.push(newRow);
+      generatedIds.push(rowObj[idCol] || '');
+    });
+
+    if (matrix.length) {
+      var startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, matrix.length, matrix[0].length).setValues(matrix);
+    }
+
+    return { ok: true, count: matrix.length, ids: generatedIds };
 
   } catch (err) {
     if (!locked) return { ok: false, error: 'Escritura simultanea. Reintenta.' };

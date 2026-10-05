@@ -593,6 +593,27 @@ async function writeToSheet(sheetName, rowObj, id) {
   throw lastErr;
 }
 
+async function writeBatchToSheet(sheetName, rows) {
+  if (!rows.length) return { ok: true, count: 0 };
+  const payload = JSON.stringify({ action: 'APPEND_BATCH', sheet: sheetName, rows });
+  _arWriting++;
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 60000); // batch puede tardar más
+  try {
+    const res  = await fetch(GAS_URL, { method: 'POST', body: payload, signal: ctrl.signal });
+    clearTimeout(timer);
+    const data = await res.json();
+    _arWriting = Math.max(0, _arWriting - 1);
+    _arPostWrite();
+    if (!data.ok) { const e = new Error(data.error || 'Error batch'); e._gasError = true; throw e; }
+    return data;
+  } catch (err) {
+    clearTimeout(timer);
+    _arWriting = Math.max(0, _arWriting - 1);
+    throw err;
+  }
+}
+
 async function deleteFromSheet(sheetName, id) {
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 32000);
@@ -5481,41 +5502,46 @@ async function _bancoGuardarHistorico() {
   // Verificar si ya existe ese mes en histórico
   const yaExiste = DB.bancoHistorico && DB.bancoHistorico.some(r => String(r.MES||'') === mes);
   if (yaExiste) {
-    const conf = await new Promise(res => openModal(
-      `¿Reemplazar histórico de ${mes}?`,
-      `Ya existe un extracto guardado para <strong>${mes}</strong>. Si continúas, los registros anteriores de ese mes no se borran automáticamente — se añadirán nuevos registros encima.`,
-      [{ label:'Continuar', cls:'btn', action: () => res(true) }, { label:'Cancelar', cls:'btn btn-secondary', action: () => res(false) }]
-    ));
+    const conf = await new Promise(res => {
+      openModal(
+        `¿Guardar histórico de ${mes}?`,
+        `Ya existe un extracto guardado para <strong>${mes}</strong>. Si continúas, se añadirán los nuevos registros (los anteriores no se borran).`,
+        `<button class="btn btn-secondary" onclick="closeModal();window._bancoConfRes(false)">Cancelar</button>
+         <button class="btn btn-primary" onclick="closeModal();window._bancoConfRes(true)">Continuar</button>`
+      );
+      window._bancoConfRes = res;
+    });
+    delete window._bancoConfRes;
     if (!conf) return;
   }
 
-  let ok = 0, err = 0;
-  for (const mov of _bancoMovs) {
-    const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
-    try {
-      await writeToSheet('BANCO_HISTORICO', {
-        MES:       mes,
-        FECHA:     mov.fecha,
-        CONCEPTO:  mov.concepto,
-        IMPORTE:   mov.importe,
-        CATEGORIA: mov.cat,
-        TIPO:      catObj ? catObj.tipo : 'O',
-        LABEL_CAT: catObj ? catObj.label : mov.cat,
-      }, null);
-      ok++;
-    } catch(e) { err++; }
-  }
+  // Bloquear botón y mostrar estado de carga
+  const btn = document.querySelector('[onclick="_bancoGuardarHistorico()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Guardando…'; }
 
-  if (ok) {
-    showToast(`${ok} movimiento${ok===1?'':'s'} guardado${ok===1?'':'s'} en histórico ${mes}` + (err ? ` · ${err} error${err>1?'es':''}` : ''), err ? 'error' : 'success');
-    // Actualizar DB en memoria para que el tab histórico refleje el cambio
+  const rows = _bancoMovs.map(mov => {
+    const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
+    return {
+      MES:       mes,
+      FECHA:     mov.fecha,
+      CONCEPTO:  mov.concepto,
+      IMPORTE:   mov.importe,
+      CATEGORIA: mov.cat,
+      TIPO:      catObj ? catObj.tipo : 'O',
+      LABEL_CAT: catObj ? catObj.label : mov.cat,
+    };
+  });
+
+  try {
+    const res = await writeBatchToSheet('BANCO_HISTORICO', rows);
+    const ok = res.count || rows.length;
+    showToast(`✅ ${ok} movimiento${ok===1?'':'s'} guardado${ok===1?'':'s'} en histórico ${mes}`, 'success');
     if (!DB.bancoHistorico) DB.bancoHistorico = [];
-    for (const mov of _bancoMovs) {
-      const catObj = _BANCO_CATS.find(c => c.id === mov.cat);
-      DB.bancoHistorico.push({ MES: mes, FECHA: mov.fecha, CONCEPTO: mov.concepto, IMPORTE: mov.importe, CATEGORIA: mov.cat, TIPO: catObj?.tipo||'O', LABEL_CAT: catObj?.label||mov.cat });
-    }
-  } else {
-    showToast('Error al guardar en histórico', 'error');
+    rows.forEach(r => DB.bancoHistorico.push(r));
+  } catch(e) {
+    showToast('Error al guardar: ' + (e.message || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '💾 Guardar en histórico'; }
   }
 }
 
