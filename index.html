@@ -4634,9 +4634,20 @@ function pagos(filtro) {
   }).join('') || `<tr><td colspan="11"><div class="empty"><div class="empty-icon">💳</div><p>Sin pagos registrados</p></div></td></tr>`;
 
   const totalEsperado  = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE)||0),0);
-  const totalCobr      = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
   const nPendMes       = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE'&&_mesNorm(p.MES)===mesActK).length;
-  const totalCobrMes   = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_mesNorm(p.MES)===mesActK).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+
+  // Total cobrado: banco histórico (fuente de verdad) + efectivo de pagos
+  const _esEfectivoPago = p => { const m=String(p.MÉTODO||'').toUpperCase(); return m.includes('EFECTIVO')||m==='CASH'; };
+  const hasBancoData = (DB.bancoHistorico||[]).length > 0;
+  const bancoCobrado     = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I').reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
+  const efectivoCobrado  = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_esEfectivoPago(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const totalCobr        = hasBancoData ? bancoCobrado + efectivoCobrado
+                           : DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+
+  const bancoCobradoMes  = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I'&&_bancoMesDe(r)===mesActK).reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
+  const efectivoMes      = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_mesNorm(p.MES)===mesActK&&_esEfectivoPago(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const totalCobrMes     = hasBancoData ? bancoCobradoMes + efectivoMes
+                           : DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_mesNorm(p.MES)===mesActK).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
 
   const bannerReclamacion = reclamacionActiva && nPendMes > 0
     ? `<div style="background:#e7f7e8;border:1px solid #25D366;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
@@ -4647,8 +4658,8 @@ function pagos(filtro) {
   render(`
     <div class="kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="kpi-n">${DB.pagos.length}</div><div class="kpi-l">Total pagos</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobrMes)}</div><div class="kpi-l">Cobrado este mes</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div>${hasBancoData?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(bancoCobrado)} + 💵 ${fmtEur(efectivoCobrado)}</div>`:''}</div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobrMes)}</div><div class="kpi-l">Cobrado este mes</div>${hasBancoData?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(bancoCobradoMes)} + 💵 ${fmtEur(efectivoMes)}</div>`:''}</div>
       <div class="kpi"><div class="kpi-n" style="color:${totalEsperado>0?'var(--amber)':'var(--text1)'}">${fmtEur(totalEsperado)}</div><div class="kpi-l">Pendiente de cobro</div></div>
       <div class="kpi"><div class="kpi-n" style="color:${nPendMes>0?'var(--red)':'var(--green)'}">${nPendMes}</div><div class="kpi-l">Pendientes mes actual</div></div>
     </div>
