@@ -8673,6 +8673,7 @@ function cargarListaExtra() {
     </div>
     ${prev ? '<div class="badge badge-amber" style="margin-top:8px">⚠️ Ya existe asistencia — guardar sobreescribirá y no sumará usos ya contados</div>' : ''}
     ${(() => {
+      if (!isAdmin()) return '';
       // Diagnóstico: inscripciones activas en esta actividad que NO aparecen en lista
       const todosInscritos = DB.inscripciones.filter(i => String(i.ID_ACTIVIDAD) === actId);
       const enLista = new Set(lista.map(x => String(x.insc.ID_ALUMNO)));
@@ -8695,15 +8696,21 @@ function cargarListaExtra() {
         return { alu, insc: i, razon };
       }).filter(Boolean);
       if (!excluidos.length) return '';
-      return `<div style="margin-top:10px;padding:8px 12px;background:rgba(245,158,11,.08);border:1px solid var(--amber);border-radius:6px;font-size:12px">
-        <div style="font-weight:600;color:var(--amber);margin-bottom:6px">⚠️ ${excluidos.length} alumno${excluidos.length>1?'s':''} inscrito${excluidos.length>1?'s':''} no aparece${excluidos.length>1?'n':''} hoy</div>
-        ${excluidos.map(({alu, razon}) =>
-          `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border2)">
-            <span style="font-weight:600">${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</span>
-            <span style="color:var(--text3)">${esc(razon)}</span>
-          </div>`
-        ).join('')}
-      </div>`;
+      const uid = 'diag-' + actId;
+      return `<details style="margin-top:10px;border:1px solid var(--amber);border-radius:6px;font-size:12px;overflow:hidden">
+        <summary style="padding:7px 12px;cursor:pointer;color:var(--amber);font-weight:600;list-style:none;display:flex;align-items:center;gap:6px;background:rgba(245,158,11,.06)">
+          <span>⚠️ ${excluidos.length} inscrito${excluidos.length>1?'s':''} no aparece${excluidos.length>1?'n':''} hoy</span>
+          <span style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text3)">▼ ver</span>
+        </summary>
+        <div style="padding:8px 12px">
+          ${excluidos.map(({alu, razon}) =>
+            `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border2)">
+              <span style="font-weight:600">${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</span>
+              <span style="color:var(--text3)">${esc(razon)}</span>
+            </div>`
+          ).join('')}
+        </div>
+      </details>`;
     })()}
   `;
   if(wrap) wrap.style.display = '';
