@@ -8672,6 +8672,39 @@ function cargarListaExtra() {
       }).join('')}
     </div>
     ${prev ? '<div class="badge badge-amber" style="margin-top:8px">⚠️ Ya existe asistencia — guardar sobreescribirá y no sumará usos ya contados</div>' : ''}
+    ${(() => {
+      // Diagnóstico: inscripciones activas en esta actividad que NO aparecen en lista
+      const todosInscritos = DB.inscripciones.filter(i => String(i.ID_ACTIVIDAD) === actId);
+      const enLista = new Set(lista.map(x => String(x.insc.ID_ALUMNO)));
+      const excluidos = todosInscritos.map(i => {
+        if (enLista.has(String(i.ID_ALUMNO))) return null;
+        const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
+        if (!alu) return null;
+        const alta = i.FECHA_ALTA || '', baja = i.FECHA_BAJA || '';
+        const estado = String(i.ESTADO||'').toUpperCase();
+        let razon = '';
+        if (alta && fecha && alta > fecha) razon = `Alta futura (${alta})`;
+        else if (baja && fecha && baja <= fecha) razon = `Baja el ${baja}`;
+        else if (!baja && estado === 'BAJA') razon = 'Estado BAJA sin fecha';
+        else if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') {
+          const dias = diasInscripcion(i);
+          if (dias.length && !dias.some(d => sinTildes(d) === diaHoy))
+            razon = `Sin clase ${diaHoy.charAt(0)+diaHoy.slice(1).toLowerCase()} (tiene: ${dias.map(d=>d.charAt(0)+d.slice(1).toLowerCase()).join(', ')})`;
+        }
+        if (!razon) razon = 'Excluido (causa desconocida)';
+        return { alu, insc: i, razon };
+      }).filter(Boolean);
+      if (!excluidos.length) return '';
+      return `<div style="margin-top:10px;padding:8px 12px;background:rgba(245,158,11,.08);border:1px solid var(--amber);border-radius:6px;font-size:12px">
+        <div style="font-weight:600;color:var(--amber);margin-bottom:6px">⚠️ ${excluidos.length} alumno${excluidos.length>1?'s':''} inscrito${excluidos.length>1?'s':''} no aparece${excluidos.length>1?'n':''} hoy</div>
+        ${excluidos.map(({alu, razon}) =>
+          `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border2)">
+            <span style="font-weight:600">${esc(alu.NOMBRE)} ${esc(alu.APELLIDOS||'')}</span>
+            <span style="color:var(--text3)">${esc(razon)}</span>
+          </div>`
+        ).join('')}
+      </div>`;
+    })()}
   `;
   if(wrap) wrap.style.display = '';
 }
