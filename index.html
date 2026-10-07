@@ -7461,7 +7461,7 @@ function nominas() {
 function modalNomina(n) {
   n = n || {};
   const isNew = !n.ID;
-  const opsPer = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S'))
+  const opsPer = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S') && !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase()))
     .map(p=>`<option value="${p.ID_MONITOR}" ${String(n.ID_MONITOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE+' '+(p.APELLIDOS||''))}</option>`).join('');
 
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -8163,7 +8163,7 @@ function anadirFichajeManual() {
   const today = new Date().toISOString().slice(0,10);
 
   const personalOpts = soloAdmin
-    ? DB.personal.filter(p => String(p.ACTIVO||'').toUpperCase().startsWith('S'))
+    ? DB.personal.filter(p => String(p.ACTIVO||'').toUpperCase().startsWith('S') && !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase()))
         .map(p => `<option value="${esc(p.ID_MONITOR)}">${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</option>`).join('')
     : '';
 
@@ -10572,7 +10572,7 @@ function ausencias() {
 function modalAusencia(a) {
   a = a || {};
   const isNew = !a.ID;
-  const trabajadores = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S'))
+  const trabajadores = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S') && !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase()))
     .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(a.ID_MONITOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
   openModal(isNew ? 'Registrar ausencia' : 'Editar ausencia', `
     <div class="form-grid">
