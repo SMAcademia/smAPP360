@@ -9313,16 +9313,19 @@ function marcarTodosExtra(val) {
   document.querySelectorAll('#lista-checks-extra input[type=checkbox]').forEach(cb => cb.checked=val);
 }
 
-function guardarAsistenciaExtra() {
+async function guardarAsistenciaExtra() {
   const actId = document.getElementById('as-act')?.value;
   const fecha  = document.getElementById('as-fecha')?.value;
   if (!actId||!fecha) return;
+
+  // Disable button immediately so monitor sees feedback right away
+  const btnGuardar = document.querySelector('[onclick="guardarAsistenciaExtra()"]');
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando…'; }
 
   const checks = [...document.querySelectorAll('#lista-checks-extra input[type=checkbox]')];
   const presentes = checks.filter(c=>c.checked).map(c=>c.dataset.id);
   const notas = document.getElementById('as-notas')?.value.trim()||'';
 
-  // Ver si existe ya (para actualizar en vez de crear). Si hay duplicados, usar el último.
   const prevAll = DB.asistenciasExtra.filter(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
   const prev = prevAll.length ? prevAll[prevAll.length-1] : null;
 
@@ -9336,90 +9339,94 @@ function guardarAsistenciaExtra() {
     NOTAS:             notas,
   };
 
-  writeToSheet('ASISTENCIAS_EXTRA', row, prev?.ID||null)
-  .then(async () => {
-    // Incrementar contador de bono para alumnos recién marcados presentes
-    // (cubre tanto la actividad = bono directo como alumnos con bono genérico)
-    const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
-    const nuevos  = presentes.filter(id => !prevIds.includes(id));
-    const avisos  = [];
-    for (const aluId of nuevos) {
-      // 1. Inscripción directa a la actividad seleccionada
-      const directInsc = DB.inscripciones.find(i =>
-        String(i.ID_ALUMNO)===aluId && String(i.ID_ACTIVIDAD)===actId &&
-        String(i.ESTADO||'').toUpperCase()==='ACTIVA'
-      );
-      // 2. Si no hay directa, buscar bono genérico activo
-      const bonoInsc = !directInsc
-        ? DB.inscripciones.find(i => {
-            if (String(i.ID_ALUMNO) !== aluId) return false;
-            if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
-            const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
-            return a && esBonoUsos(a.NOMBRE||'');
-          })
-        : null;
-      const insc = directInsc || bonoInsc;
-      if (!insc) continue;
-      const inscAct = DB.actividades.find(a => String(a.ID) === String(insc.ID_ACTIVIDAD));
-      if (!inscAct || !esBonoUsos(inscAct.NOMBRE||'')) continue;
-      const cap  = bonoCapacidad(inscAct.NOMBRE);
-      const usos = bonoUsosCont(insc);
-      if (usos >= cap) {
-        avisos.push(`Bono agotado — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`);
-        continue;
-      }
-      // Idempotencia por sesión: misma actividad + misma fecha no descuenta dos veces
-      // (permite múltiples usos distintos el mismo día, ej. recogida temprana + tardía)
-      if (bonoFechasRaw(insc).includes(fecha+':'+actId)) continue;
-      const nuevaObs = bonoObsActualizada(insc, usos + 1, fecha, actId);
-      try {
-        await writeToSheet('INSCRIPCIONES', {OBSERVACIONES:nuevaObs}, insc.ID_INSCRIPCION||insc.ID);
-        insc.OBSERVACIONES = nuevaObs;
-        const restantes = cap - (usos+1);
-        if (restantes <= 2)
-          avisos.push(`⚠ Bono: quedan ${restantes} uso${restantes===1?'':'s'} — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`);
-      } catch(e) { /* best-effort */ }
+  try {
+    const result = await writeToSheet('ASISTENCIAS_EXTRA', row, prev?.ID||null);
+
+    // --- Optimistic update: reflect result in memory and re-render immediately ---
+    const savedId = prev?.ID || result?.id || null;
+    if (prev) {
+      Object.assign(prev, row);
+      if (savedId) prev.ID = savedId;
+    } else {
+      DB.asistenciasExtra.push({ ...row, ID: savedId });
     }
-    // Baja automática de inscripciones de día suelto una vez pasada la sesión
-    const todoIds = checks.map(c => c.dataset.id);
-    const bajasDiaSuelto = [];
-    for (const aluId of todoIds) {
-      // Inscripción directa PAGO_ÚNICO a esta actividad, aún ACTIVA
-      const insc = DB.inscripciones.find(i =>
-        String(i.ID_ALUMNO) === aluId &&
-        String(i.ID_ACTIVIDAD) === actId &&
-        String(i.TIPO_PRECIO||'').toUpperCase() === 'PAGO_ÚNICO' &&
-        String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
-      );
-      if (!insc) {
-        // Buscar inscripción PAGO_ÚNICO del mismo mundo (sin depender del TIPO de la actividad)
-        const actSel2 = DB.actividades.find(a => String(a.ID) === actId);
-        const mundo2  = esFutbol(actSel2?.LINEA||actSel2?.NOMBRE||'') ? 'FUTBOL' : 'EXTRA';
-        const inscSuelta = DB.inscripciones.find(i => {
+    showToast(`Asistencia guardada — ${presentes.length}/${checks.length} presentes`);
+    asistenciasExtra(); // re-render now — monitor sees confirmation without waiting
+
+    // --- Background: bono counters + bajas de día suelto (fire-and-forget) ---
+    _procesarBonosYBajas(actId, fecha, presentes, checks, prev).catch(()=>{});
+
+  } catch(err) {
+    if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = 'Guardar asistencia'; }
+    showToast('Error al guardar: ' + (err.message||err), 'error');
+  }
+}
+
+async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
+  const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
+  const nuevos  = presentes.filter(id => !prevIds.includes(id));
+
+  for (const aluId of nuevos) {
+    const directInsc = DB.inscripciones.find(i =>
+      String(i.ID_ALUMNO)===aluId && String(i.ID_ACTIVIDAD)===actId &&
+      String(i.ESTADO||'').toUpperCase()==='ACTIVA'
+    );
+    const bonoInsc = !directInsc
+      ? DB.inscripciones.find(i => {
           if (String(i.ID_ALUMNO) !== aluId) return false;
           if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
-          if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') return false;
-          const aInsc = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
-          return (esFutbol(aInsc?.LINEA||aInsc?.NOMBRE||'') ? 'FUTBOL' : 'EXTRA') === mundo2;
-        });
-        if (inscSuelta) bajasDiaSuelto.push(inscSuelta);
-      } else {
-        bajasDiaSuelto.push(insc);
-      }
+          const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
+          return a && esBonoUsos(a.NOMBRE||'');
+        })
+      : null;
+    const insc = directInsc || bonoInsc;
+    if (!insc) continue;
+    const inscAct = DB.actividades.find(a => String(a.ID) === String(insc.ID_ACTIVIDAD));
+    if (!inscAct || !esBonoUsos(inscAct.NOMBRE||'')) continue;
+    const cap  = bonoCapacidad(inscAct.NOMBRE);
+    const usos = bonoUsosCont(insc);
+    if (usos >= cap) {
+      showToast(`Bono agotado — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`, 'warn');
+      continue;
     }
-    let nBajas = 0;
-    for (const insc of bajasDiaSuelto) {
-      try {
-        await writeToSheet('INSCRIPCIONES', { ...insc, ESTADO: 'BAJA', FECHA_BAJA: fecha }, insc.ID_INSCRIPCION || insc.ID);
-        nBajas++;
-      } catch(e) { /* best-effort */ }
-    }
+    if (bonoFechasRaw(insc).includes(fecha+':'+actId)) continue;
+    const nuevaObs = bonoObsActualizada(insc, usos + 1, fecha, actId);
+    try {
+      await writeToSheet('INSCRIPCIONES', {OBSERVACIONES:nuevaObs}, insc.ID_INSCRIPCION||insc.ID);
+      insc.OBSERVACIONES = nuevaObs;
+      const restantes = cap - (usos+1);
+      if (restantes <= 2)
+        showToast(`⚠ Bono: quedan ${restantes} uso${restantes===1?'':'s'} — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`, 'warn');
+    } catch(e) { /* best-effort */ }
+  }
 
-    avisos.forEach(m => showToast(m, 'warn'));
-    showToast(`Asistencia guardada — ${presentes.length}/${checks.length} presentes${nBajas?' · '+nBajas+' día suelto → baja':''}`);
-    loadAllData().then(asistenciasExtra);
-  })
-  .catch(err=>showToast('Error: '+err.message,'error'));
+  const todoIds = checks.map(c => c.dataset.id);
+  let nBajas = 0;
+  for (const aluId of todoIds) {
+    let insc = DB.inscripciones.find(i =>
+      String(i.ID_ALUMNO) === aluId && String(i.ID_ACTIVIDAD) === actId &&
+      String(i.TIPO_PRECIO||'').toUpperCase() === 'PAGO_ÚNICO' &&
+      String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
+    );
+    if (!insc) {
+      const actSel2 = DB.actividades.find(a => String(a.ID) === actId);
+      const mundo2  = esFutbol(actSel2?.LINEA||actSel2?.NOMBRE||'') ? 'FUTBOL' : 'EXTRA';
+      insc = DB.inscripciones.find(i => {
+        if (String(i.ID_ALUMNO) !== aluId) return false;
+        if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+        if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') return false;
+        const aInsc = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+        return (esFutbol(aInsc?.LINEA||aInsc?.NOMBRE||'') ? 'FUTBOL' : 'EXTRA') === mundo2;
+      });
+    }
+    if (!insc) continue;
+    try {
+      await writeToSheet('INSCRIPCIONES', { ...insc, ESTADO: 'BAJA', FECHA_BAJA: fecha }, insc.ID_INSCRIPCION || insc.ID);
+      insc.ESTADO = 'BAJA';
+      nBajas++;
+    } catch(e) { /* best-effort */ }
+  }
+  if (nBajas) showToast(`${nBajas} día suelto → baja procesada`, 'info');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
