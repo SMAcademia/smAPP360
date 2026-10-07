@@ -79,6 +79,8 @@ function doPost(e) {
       result = deleteBatch(body.sheet, body.ids || []);
     } else if (action === 'NUEVA_PREINSCRIPCION') {
       result = nuevaPreinscripcion(body);
+    } else if (action === 'SEND_FACTURA_EMAIL') {
+      result = sendFacturaEmail(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -569,5 +571,53 @@ function diagnostico() {
 
   } catch(err) {
     Logger.log('ERROR: ' + err.toString());
+  }
+}
+
+// ===========================================================================
+//  ENVÍO DE AVISO DE FACTURA POR EMAIL
+// ===========================================================================
+function sendFacturaEmail(body) {
+  var to      = body.email;
+  var nombre  = body.nombre  || 'cliente';
+  var numFac  = body.numFac  || '';
+  var total   = body.total   || '';
+  var portal  = 'https://smacademia.github.io/smAPP360/';
+
+  if (!to) return { ok: false, error: 'Sin email destinatario' };
+
+  var asunto = 'SM Academia · Nueva factura disponible (' + numFac + ')';
+
+  var html = '<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#222">'
+    + '<div style="background:#1a3a5c;padding:24px 32px;border-radius:8px 8px 0 0">'
+    +   '<h1 style="color:#fff;margin:0;font-size:22px">SM Academia</h1>'
+    + '</div>'
+    + '<div style="background:#f9f9f9;padding:28px 32px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0;border-top:none">'
+    +   '<p>Hola <strong>' + nombre + '</strong>,</p>'
+    +   '<p>Ya tienes disponible tu última factura en la app <strong>SM APP 360°</strong>.</p>'
+    +   '<table style="margin:20px 0;border-collapse:collapse;width:100%">'
+    +     '<tr><td style="padding:6px 0;color:#666;width:140px">Número de factura</td>'
+    +         '<td style="padding:6px 0;font-weight:bold">' + numFac + '</td></tr>'
+    +     (total ? '<tr><td style="padding:6px 0;color:#666">Importe</td>'
+    +              '<td style="padding:6px 0;font-weight:bold">' + total + ' €</td></tr>' : '')
+    +   '</table>'
+    +   '<p style="margin:28px 0 8px">'
+    +     '<a href="' + portal + '" style="background:#1a3a5c;color:#fff;padding:12px 28px;'
+    +     'border-radius:6px;text-decoration:none;font-size:15px">Acceder a la app</a>'
+    +   '</p>'
+    +   '<p style="margin-top:32px;font-size:12px;color:#999">SM Academia de Fútbol · '
+    +   'Este mensaje es informativo. Puedes consultar y descargar tu factura desde el portal de familias.</p>'
+    + '</div>'
+    + '</div>';
+
+  try {
+    MailApp.sendEmail({
+      to:       to,
+      subject:  asunto,
+      htmlBody: html,
+    });
+    return { ok: true };
+  } catch(err) {
+    return { ok: false, error: err.toString() };
   }
 }

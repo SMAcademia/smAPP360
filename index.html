@@ -6980,7 +6980,47 @@ async function _autoCrearFactura(pago, pagoId) {
   if (idx >= 0) DB.facturas[idx] = { ...row };
   else DB.facturas.push({ ...row });
 
+  // Aviso por email (fire-and-forget)
+  _enviarAvisoFactura(numFac, total, clienteNombre, esExterno, pago).catch(()=>{});
+
   return numFac;
+}
+
+async function _enviarAvisoFactura(numFac, total, clienteNombre, esExterno, pago) {
+  let emailDest = '';
+  if (esExterno) {
+    const pe = (DB.pagadoresExternos||[]).find(x => String(x.ID) === String(pago.ID_PAGADOR_EXT||''));
+    emailDest = pe?.EMAIL || '';
+  } else {
+    // Buscar email en clientes
+    let cli = pago.ID_CLIENTE
+      ? DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(pago.ID_CLIENTE))
+      : null;
+    if (!cli && pago.ID_ALUMNO) {
+      const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(pago.ID_ALUMNO));
+      if (alu?.ID_CLIENTE) cli = DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(alu.ID_CLIENTE));
+    }
+    emailDest = cli?.EMAIL || cli?.CORREO || '';
+    // Fallback: buscar en personal el tutor/familia vinculado al alumno
+    if (!emailDest && pago.ID_ALUMNO) {
+      const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(pago.ID_ALUMNO));
+      const fam = alu?.ID_CLIENTE
+        ? DB.personal.find(p => String(p.ID_CLIENTE||'') === String(alu.ID_CLIENTE) && String(p.ROL||'').toUpperCase()==='FAMILIA')
+        : null;
+      emailDest = fam?.EMAIL || fam?.CORREO || '';
+    }
+  }
+  if (!emailDest) return;
+  await fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'SEND_FACTURA_EMAIL',
+      email:  emailDest,
+      nombre: clienteNombre,
+      numFac: numFac,
+      total:  total.toFixed(2),
+    }),
+  });
 }
 
 async function saveFactura(isNew, id) {
