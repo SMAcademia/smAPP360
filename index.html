@@ -680,7 +680,13 @@ function normalizarDB(raw) {
   DB.movimientosBancarios = raw.movimientosBancarios || [];
   DB.personal             = raw.personal             || [];
   DB.ausencias            = raw.ausencias            || [];
-  DB.registroHorario      = raw.registroHorario      || [];
+  DB.registroHorario      = (raw.registroHorario || []).map(r => ({
+    ...r,
+    HORA_ENTRADA:     r.HORA_ENTRADA     || r.ENTRADA || '',
+    HORA_SALIDA:      r.HORA_SALIDA      || r.SALIDA  || '',
+    HORAS_TRABAJADAS: r.HORAS_TRABAJADAS || r.HORAS   || '',
+    ID_MONITOR:       r.ID_MONITOR       || r.ID_PERSONAL || '',
+  }));
   DB.sesiones             = raw.sesiones             || [];
   DB.asistenciasFutbol    = raw.asistenciasFutbol    || [];
   DB.asistenciasExtra     = raw.asistenciasExtra     || [];
@@ -8187,8 +8193,11 @@ async function guardarFichajeManual() {
       ID_MONITOR:       monId,
       FECHA:            fecha,
       HORA_ENTRADA:     entrada,
+      ENTRADA:          entrada,
       HORA_SALIDA:      salida || '',
+      SALIDA:           salida || '',
       HORAS_TRABAJADAS: horas,
+      HORAS:            horas,
       TIPO:             'MANUAL',
       ACTIVO:           'SÍ',
       JUSTIFICACION:    just,
@@ -8226,6 +8235,7 @@ function ficharEntrada() {
     ID_MONITOR:  myId,
     FECHA:       fecha,
     HORA_ENTRADA:hora,
+    ENTRADA:     hora,
     TIPO:        'NORMAL',
     ACTIVO:      'SÍ',
   })
@@ -8266,7 +8276,7 @@ function ficharSalida() {
 
   if (!idReg) { showToast('Error: registro sin ID — contacta con admin', 'error'); return; }
 
-  writeToSheet('REGISTRO_HORARIO', { HORA_SALIDA: hora, HORAS_TRABAJADAS: horas }, idReg)
+  writeToSheet('REGISTRO_HORARIO', { HORA_SALIDA: hora, SALIDA: hora, HORAS_TRABAJADAS: horas, HORAS: horas }, idReg)
   .then(() => {
     // Actualización inmediata en memoria
     entrada.HORA_SALIDA      = hora;
@@ -8326,8 +8336,11 @@ function ejecutarCorreccion(idOriginal) {
       ID_MONITOR:      r.ID_MONITOR,
       FECHA:           r.FECHA,
       HORA_ENTRADA:    entC,
+      ENTRADA:         entC,
       HORA_SALIDA:     salC,
+      SALIDA:          salC,
       HORAS_TRABAJADAS:horas,
+      HORAS:           horas,
       TIPO:            'CORRECCION',
       ACTIVO:          'SÍ',
       JUSTIFICACION:   just,
