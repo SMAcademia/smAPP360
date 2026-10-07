@@ -8235,7 +8235,9 @@ async function guardarFichajeManual() {
       String(r.TIPO||'').toUpperCase()!=='ERROR'
     );
     for (const p of prev) {
-      await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', JUSTIFICACION:'Sustituido por fichaje manual: '+just }, p.ID||p.ID_REGISTRO);
+      if (p._entradaId) await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', NOTAS:'Sustituido: '+just }, p._entradaId);
+      if (p._salidaId && p._salidaId !== p._entradaId) await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', NOTAS:'Sustituido: '+just }, p._salidaId);
+      if (!p._entradaId && (p.ID||p.ID_REGISTRO)) await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', NOTAS:'Sustituido: '+just }, p.ID||p.ID_REGISTRO);
       p.TIPO = 'ERROR'; p.ACTIVO = 'NO';
     }
 
@@ -8372,34 +8374,27 @@ function corregirFichaje(id) {
   );
 }
 
-function ejecutarCorreccion(idOriginal) {
+async function ejecutarCorreccion(idOriginal) {
   const just = document.getElementById('cor-just').value.trim();
   if (!just) { showToast('La justificación es obligatoria','error'); return; }
   const entC = document.getElementById('cor-ent').value;
   const salC = document.getElementById('cor-sal').value;
-
-  let horas = '';
-  if (entC && salC) {
-    const [he,me] = entC.split(':').map(Number);
-    const [hs,ms] = salC.split(':').map(Number);
-    horas = ((hs*60+ms - he*60-me)/60).toFixed(2);
-  }
+  if (!entC) { showToast('La hora de entrada es obligatoria','error'); return; }
 
   const r = DB.registroHorario.find(x => String(x.ID||'')===String(idOriginal));
   if (!r) return;
 
   const btn = document.querySelector('#modal-footer .btn-danger');
-  if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+  if (btn) { btn.disabled=true; btn.textContent='Guardando…'; }
 
-  // 1. Marcar original como ERROR
-  writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', JUSTIFICACION: 'Corregido: '+just }, idOriginal)
-  .then(() => {
-    // 2. Crear registro de corrección
-    // Marcar la fila de SALIDA original como ERROR también (si existe)
-    if (r._salidaId && r._salidaId !== r._entradaId) {
+  try {
+    // 1. Marcar fila ENTRADA original como ERROR
+    await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', NOTAS:'Corregido: '+just }, r._entradaId || idOriginal);
+    // 2. Marcar fila SALIDA original como ERROR (si existe y es distinta)
+    if (r._salidaId && r._salidaId !== (r._entradaId || idOriginal)) {
       await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', NOTAS:'Corregido: '+just }, r._salidaId);
     }
-    // Crear nueva fila ENTRADA corregida
+    // 3. Crear nueva fila ENTRADA corregida
     await writeToSheet('REGISTRO_HORARIO', {
       ID_MONITOR:     r.ID_MONITOR,
       NOMBRE_MONITOR: DB.personal.find(p=>String(p.ID_MONITOR)===String(r.ID_MONITOR))?.NOMBRE || '',
@@ -8408,9 +8403,9 @@ function ejecutarCorreccion(idOriginal) {
       HORA:           entC,
       NOTAS:          'Corrección: '+just,
     });
-    // Crear nueva fila SALIDA corregida si se indicó
+    // 4. Crear nueva fila SALIDA corregida si se indicó hora
     if (salC) {
-      return writeToSheet('REGISTRO_HORARIO', {
+      await writeToSheet('REGISTRO_HORARIO', {
         ID_MONITOR:     r.ID_MONITOR,
         NOMBRE_MONITOR: DB.personal.find(p=>String(p.ID_MONITOR)===String(r.ID_MONITOR))?.NOMBRE || '',
         FECHA:          r.FECHA,
@@ -8419,9 +8414,13 @@ function ejecutarCorreccion(idOriginal) {
         NOTAS:          'Corrección: '+just,
       });
     }
-  })
-  .then(()=>{ showToast('Corrección aplicada'); closeModal(); loadAllData().then(registroHorario); })
-  .catch(err=>{ showToast('Error: '+err.message,'error'); if(btn){btn.disabled=false;btn.textContent='Aplicar corrección';} });
+    showToast('Corrección aplicada');
+    closeModal();
+    loadAllData().then(registroHorario).catch(()=>{});
+  } catch(err) {
+    showToast('Error: '+(err.message||err), 'error');
+    if (btn) { btn.disabled=false; btn.textContent='Aplicar corrección'; }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
