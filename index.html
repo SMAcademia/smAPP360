@@ -8526,7 +8526,7 @@ function asistenciasExtra() {
           <table>
             <thead><tr><th>Fecha</th><th>Actividad</th><th>Presentes</th></tr></thead>
             <tbody>
-              ${DB.asistenciasExtra.slice(-20).reverse().map(a=>{
+              ${[...DB.asistenciasExtra].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||''))).slice(0,20).map(a=>{
                 const act=DB.actividades.find(x=>String(x.ID)===String(a.ID_ACTIVIDAD));
                 return `<tr><td>${fmtFecha(a.FECHA)}</td><td>${act?esc(act.NOMBRE):esc(a.ID_ACTIVIDAD||'—')}</td><td><strong>${a.TOTAL_PRESENTES||0}</strong></td></tr>`;
               }).join('')}
