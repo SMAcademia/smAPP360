@@ -5267,12 +5267,27 @@ async function guardarPago(id) {
   }
 
   const esConfirmado = String(row.ESTADO||'').toUpperCase() === 'PAGADO' && !!row.ID_ALUMNO;
+  // Detectar si el pago ya tiene factura (para no crear una segunda)
+  const pagoExistente = id ? DB.pagos.find(p => String(p.ID_PAGO||p.ID||'') === String(id)) : null;
+  const yaFacturado   = !!(pagoExistente?.ID_FACTURA);
+  const debeAutoFac   = String(row.ESTADO||'').toUpperCase() === 'PAGADO' && !yaFacturado;
+
   const saves = [writeToSheet('PAGOS', row, id)];
   if (row2) saves.push(writeToSheet('PAGOS', row2, null));
   Promise.all(saves)
-    .then(() => {
+    .then(async (results) => {
+      const savedPagoId = id || (results[0]?.id || '');
       showToast(id ? 'Pago actualizado' : (row2 ? 'Pagos registrados (2 alumnos)' : 'Pago registrado'));
       closeModal();
+      if (debeAutoFac && savedPagoId) {
+        try {
+          const facId = await _autoCrearFactura({ ...row, ID_PAGO: savedPagoId }, savedPagoId);
+          showToast(`Factura ${facId} generada automáticamente`, 'success');
+        } catch(e) {
+          console.error('Auto-factura error:', e);
+          showToast('Pago guardado · Error al crear factura automática: ' + (e.message||e), 'error');
+        }
+      }
       loadAllData().then(() => { pagos(); if (esConfirmado) _ofrecerWAConfirmPago(row); });
     })
     .catch(err => { showToast('Error: '+err.message, 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } });
@@ -6883,6 +6898,89 @@ function calcTotalFac() {
   const total    = parseFloat((baseNeta + cuota).toFixed(2));
   const cEl = document.getElementById('fac-cuota'); if(cEl) cEl.value = cuota.toFixed(2);
   const tEl = document.getElementById('fac-total'); if(tEl) tEl.value = total.toFixed(2);
+}
+
+async function _autoCrearFactura(pago, pagoId) {
+  const esExterno = LINEAS_EXT.includes(pago.LINEA);
+  const metodosMap = {
+    BIZUM: 'Bizum', TRANSFERENCIA: 'Transferencia bancaria',
+    EFECTIVO: 'Efectivo', 'DOMICILIACIÓN': 'Domiciliación bancaria',
+    TARJETA: 'Tarjeta bancaria',
+  };
+
+  // Resolver cliente/nombre/NIF
+  let cliId = '', clienteNombre = '', clienteNif = '';
+  if (esExterno) {
+    const pe = (DB.pagadoresExternos||[]).find(x => String(x.ID) === String(pago.ID_PAGADOR_EXT||''));
+    clienteNombre = pe ? (pe.RAZON_SOCIAL || pe.NOMBRE || '') : '';
+    clienteNif    = pe?.CIF || '';
+  } else {
+    let cli = pago.ID_CLIENTE
+      ? DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(pago.ID_CLIENTE))
+      : null;
+    if (!cli && pago.ID_ALUMNO) {
+      const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(pago.ID_ALUMNO));
+      if (alu?.ID_CLIENTE) cli = DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(alu.ID_CLIENTE));
+    }
+    cliId         = cli ? String(cli.ID_CLIENTE||cli.ID||'') : (pago.ID_CLIENTE||'');
+    clienteNombre = cli ? `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim() : '';
+    clienteNif    = cli?.NIF || cli?.DNI || '';
+  }
+
+  const serie         = 'SM';
+  const baseImponible = parseFloat(pago.IMPORTE || pago.TOTAL_ESPERADO || 0);
+  const descuento     = parseFloat(pago.DESC_EUR || 0) || 0;
+  const total         = parseFloat(Math.max(0, baseImponible - descuento).toFixed(2));
+  const fecha         = new Date().toISOString().slice(0,10);
+  const mes           = pago.MES ? ` — ${pago.MES}` : '';
+  const concepto      = `${pago.SERVICIO||'Servicio'}${mes}`;
+  const formaPago     = metodosMap[String(pago.MÉTODO||'').toUpperCase()] || '';
+
+  // Número de factura (reserva en memoria primero para evitar duplicados)
+  const nextNum = Math.max(0, ...DB.facturas.map(f => parseInt(f.NUMERO)||0)) + 1;
+  const numFac  = `${serie}-${String(nextNum).padStart(3,'0')}`;
+  DB.facturas.push({ ID_FACTURA: numFac, NUMERO: nextNum, SERIE: serie, _reservado: true });
+
+  // Hash VeriFactu: toma el último hash de facturas reales (excluir la reservada)
+  const reales  = DB.facturas.filter(f => !f._reservado).sort((a,b) => String(a.FECHA_EXP||'') < String(b.FECHA_EXP||'') ? -1 : 1);
+  const hashAnt = reales.length > 0 ? (reales[reales.length-1].HASH_ACTUAL || '0'.repeat(64)) : '0'.repeat(64);
+  const cadena  = `${NIF_EMISOR}|${numFac}|${fecha}|${total.toFixed(2)}|${hashAnt}`;
+  const hashActual = await sha256hex(cadena);
+
+  const row = {
+    ID_FACTURA:       numFac,
+    FECHA_EXP:        fecha,
+    SERIE:            serie,
+    NUMERO:           nextNum,
+    TOTAL:            total,
+    CLIENTE_NOMBRE:   clienteNombre,
+    CLIENTE_NIF:      clienteNif,
+    NIF_RECEPTOR:     clienteNif,
+    NOMBRE_EMISOR:    NOMBRE_EMISOR,
+    DOMICILIO_EMISOR: DOMICILIO_EMISOR,
+    CONCEPTO:         concepto,
+    HASH_ANTERIOR:    hashAnt,
+    HASH_ACTUAL:      hashActual,
+    ESTADO_AEAT:      'COBRADA',
+    BASE_IMPONIBLE:   baseImponible,
+    TIPO_IMPUESTO:    'EXENTO',
+    CUOTA_IMPUESTO:   0,
+    DESCUENTO:        descuento || undefined,
+    FORMA_PAGO:       formaPago || undefined,
+    NIF_EMISOR:       NIF_EMISOR,
+    ID_CLIENTE:       cliId || undefined,
+    TIPO_FACTURA:     'ORIGINAL',
+  };
+
+  await writeToSheet('FACTURAS', row, null);
+  await writeToSheet('PAGOS', { ID_FACTURA: numFac }, pagoId);
+
+  // Sustituir la entrada reservada por la real
+  const idx = DB.facturas.findIndex(f => f.ID_FACTURA === numFac && f._reservado);
+  if (idx >= 0) DB.facturas[idx] = { ...row };
+  else DB.facturas.push({ ...row });
+
+  return numFac;
 }
 
 async function saveFactura(isNew, id) {
