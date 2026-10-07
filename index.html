@@ -8053,7 +8053,7 @@ function registroHorario() {
       <div class="card-title">${soloAdmin?'Todos los registros':'Mis registros'}</div>
       <div class="table-toolbar">
         <input class="search-input" id="q-rh" placeholder="Buscar…" oninput="filterTable('q-rh','tbl-rh')">
-        <button class="btn btn-secondary btn-sm" onclick="anadirFichajeManual()">➕ Añadir fichaje</button>
+        ${isAdmin() ? '<button class="btn btn-secondary btn-sm" onclick="anadirFichajeManual()">➕ Añadir fichaje</button>' : ''}
         ${soloAdmin ? '<span class="text-muted badge badge-amber" style="font-size:11px">Admin: puedes corregir cualquier fichaje</span>' : ''}
       </div>
       <div class="table-wrap">
