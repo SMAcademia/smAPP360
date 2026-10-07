@@ -1383,16 +1383,8 @@ function dashboard() {
 
   const mesActual = new Date().toLocaleString('es-ES', { month:'long', year:'numeric' });
   const _mesHoyK = new Date().toISOString().slice(0,7);
-  const _dbHasBanco = (DB.bancoHistorico||[]).length > 0;
-  const _esEfect = p => { const m=String(p.MÉTODO||'').toUpperCase(); return m.includes('EFECTIVO')||m==='CASH'; };
-  const _bancoCobMes  = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I'&&_bancoMesDe(r)===_mesHoyK).reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
-  const _efectMes     = DB.pagos.filter(p=>_mesNorm(p.MES)===_mesHoyK&&String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_esEfect(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-  const ingresosMes   = _dbHasBanco ? _bancoCobMes + _efectMes
-    : DB.pagos.filter(p=>_mesNorm(p.MES)===_mesHoyK&&String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-  const _bancoTotal   = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I').reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
-  const _efectTotal   = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_esEfect(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-  const ingresosTotal = _dbHasBanco ? _bancoTotal + _efectTotal
-    : DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const ingresosMes   = DB.pagos.filter(p=>_mesNorm(p.MES)===_mesHoyK&&String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const ingresosTotal = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
 
   render(`
     <div class="kpis">
@@ -1415,12 +1407,10 @@ function dashboard() {
       <div class="kpi">
         <div class="kpi-n" style="color:var(--green)">${fmtEur(ingresosMes)}</div>
         <div class="kpi-l">Cobrado ${mesActual}</div>
-        ${_dbHasBanco?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(_bancoCobMes)} + 💵 ${fmtEur(_efectMes)}</div>`:''}
       </div>
       <div class="kpi">
         <div class="kpi-n" style="color:var(--green)">${fmtEur(ingresosTotal)}</div>
         <div class="kpi-l">Total cobrado</div>
-        ${_dbHasBanco?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(_bancoTotal)} + 💵 ${fmtEur(_efectTotal)}</div>`:''}
       </div>
     </div>
 
@@ -4614,7 +4604,7 @@ function autorellenarPago(mantenerImportes) {
 
 const LINEAS_EXT = ['AMPA','CLUB','ENTRENADOR','EXTERNO'];
 let _pgFiltro = 'TODOS';
-let _pgSort   = { col: 'FECHA', dir: -1 };
+let _pgSort   = { col: 'ID', dir: -1 };
 
 function _servicioVisible(servicio) {
   if (!servicio) return '—';
@@ -4659,6 +4649,11 @@ function pagos(filtro) {
   </div>`;
 
   const _pgSortVal = p => {
+    if (_pgSort.col === 'ID') {
+      const id = String(p.ID_PAGO||p.ID||'');
+      const n = parseInt(id.replace(/\D/g,''), 10);
+      return isNaN(n) ? id : n;
+    }
     if (_pgSort.col === 'MES')      return String(p.MES||'');
     if (_pgSort.col === 'PAGADOR') { const a = DB.alumnos.find(x=>String(x.ID_ALUMNO)===String(p.ID_ALUMNO)); return a ? (a.NOMBRE+' '+(a.APELLIDOS||'')).trim() : String(p.ID_ALUMNO||''); }
     if (_pgSort.col === 'SERVICIO') return String(p.SERVICIO||'');
@@ -4727,18 +4722,8 @@ function pagos(filtro) {
   const totalEsperado  = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE').reduce((s,p)=>s+(parseFloat(p.TOTAL_ESPERADO||p.IMPORTE)||0),0);
   const nPendMes       = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PENDIENTE'&&_mesNorm(p.MES)===mesActK).length;
 
-  // Total cobrado: banco histórico (fuente de verdad) + efectivo de pagos
-  const _esEfectivoPago = p => { const m=String(p.MÉTODO||'').toUpperCase(); return m.includes('EFECTIVO')||m==='CASH'; };
-  const hasBancoData = (DB.bancoHistorico||[]).length > 0;
-  const bancoCobrado     = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I').reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
-  const efectivoCobrado  = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_esEfectivoPago(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-  const totalCobr        = hasBancoData ? bancoCobrado + efectivoCobrado
-                           : DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-
-  const bancoCobradoMes  = (DB.bancoHistorico||[]).filter(r=>r.TIPO==='I'&&_bancoMesDe(r)===mesActK).reduce((s,r)=>s+parseFloat(r.IMPORTE||0),0);
-  const efectivoMes      = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_mesNorm(p.MES)===mesActK&&_esEfectivoPago(p)).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
-  const totalCobrMes     = hasBancoData ? bancoCobradoMes + efectivoMes
-                           : DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_mesNorm(p.MES)===mesActK).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const totalCobr    = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO').reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
+  const totalCobrMes = DB.pagos.filter(p=>String(p.ESTADO||'').toUpperCase()==='PAGADO'&&_mesNorm(p.MES)===mesActK).reduce((s,p)=>s+(parseFloat(p.TOTAL_RECIBIDO)||0),0);
 
   const bannerReclamacion = reclamacionActiva && nPendMes > 0
     ? `<div style="background:#e7f7e8;border:1px solid #25D366;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
@@ -4749,8 +4734,8 @@ function pagos(filtro) {
   render(`
     <div class="kpis" style="margin-bottom:16px">
       <div class="kpi"><div class="kpi-n">${DB.pagos.length}</div><div class="kpi-l">Total pagos</div></div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div>${hasBancoData?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(bancoCobrado)} + 💵 ${fmtEur(efectivoCobrado)}</div>`:''}</div>
-      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobrMes)}</div><div class="kpi-l">Cobrado este mes</div>${hasBancoData?`<div class="kpi-sub" style="font-size:10px">🏦 ${fmtEur(bancoCobradoMes)} + 💵 ${fmtEur(efectivoMes)}</div>`:''}</div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobr)}</div><div class="kpi-l">Total cobrado</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(totalCobrMes)}</div><div class="kpi-l">Cobrado este mes</div></div>
       <div class="kpi"><div class="kpi-n" style="color:${totalEsperado>0?'var(--amber)':'var(--text1)'}">${fmtEur(totalEsperado)}</div><div class="kpi-l">Pendiente de cobro</div></div>
       <div class="kpi"><div class="kpi-n" style="color:${nPendMes>0?'var(--red)':'var(--green)'}">${nPendMes}</div><div class="kpi-l">Pendientes mes actual</div></div>
     </div>
