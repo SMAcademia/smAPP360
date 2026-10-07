@@ -8526,10 +8526,18 @@ function asistenciasExtra() {
           <table>
             <thead><tr><th>Fecha</th><th>Actividad</th><th>Presentes</th></tr></thead>
             <tbody>
-              ${[...DB.asistenciasExtra].sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||''))).slice(0,20).map(a=>{
-                const act=DB.actividades.find(x=>String(x.ID)===String(a.ID_ACTIVIDAD));
-                return `<tr><td>${fmtFecha(a.FECHA)}</td><td>${act?esc(act.NOMBRE):esc(a.ID_ACTIVIDAD||'—')}</td><td><strong>${a.TOTAL_PRESENTES||0}</strong></td></tr>`;
-              }).join('')}
+              ${(() => {
+                // Deduplicar por FECHA+ID_ACTIVIDAD (quedarse con el último de cada par)
+                const seen = new Map();
+                for (const a of DB.asistenciasExtra) seen.set(String(a.FECHA)+'|'+String(a.ID_ACTIVIDAD), a);
+                return [...seen.values()]
+                  .sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||'')))
+                  .slice(0,20)
+                  .map(a=>{
+                    const act=DB.actividades.find(x=>String(x.ID)===String(a.ID_ACTIVIDAD));
+                    return `<tr><td>${fmtFecha(a.FECHA)}</td><td>${act?esc(act.NOMBRE):esc(a.ID_ACTIVIDAD||'—')}</td><td><strong>${a.TOTAL_PRESENTES||0}</strong></td></tr>`;
+                  }).join('');
+              })()}
             </tbody>
           </table>
         </div>
@@ -8626,7 +8634,8 @@ function cargarListaExtra() {
   const actEsBono = actObj && esBonoUsos(actObj.NOMBRE||'');
   const actBonoCap = actEsBono ? bonoCapacidad(actObj.NOMBRE) : 0;
 
-  const prev    = DB.asistenciasExtra.find(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
+  const prevAll2 = DB.asistenciasExtra.filter(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
+  const prev    = prevAll2.length ? prevAll2[prevAll2.length-1] : null;
   const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
 
   const nBono    = inscsBono.length;
@@ -8729,8 +8738,9 @@ function guardarAsistenciaExtra() {
   const presentes = checks.filter(c=>c.checked).map(c=>c.dataset.id);
   const notas = document.getElementById('as-notas')?.value.trim()||'';
 
-  // Ver si existe ya (para actualizar en vez de crear)
-  const prev = DB.asistenciasExtra.find(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
+  // Ver si existe ya (para actualizar en vez de crear). Si hay duplicados, usar el último.
+  const prevAll = DB.asistenciasExtra.filter(a => String(a.ID_ACTIVIDAD)===actId && String(a.FECHA)===fecha);
+  const prev = prevAll.length ? prevAll[prevAll.length-1] : null;
 
   const row = {
     FECHA:             fecha,
