@@ -586,7 +586,7 @@ function sendFacturaEmail(body) {
 
   if (!to) return { ok: false, error: 'Sin email destinatario' };
 
-  var asunto = 'SM Academia · Nueva factura disponible (' + numFac + ')';
+  var asunto = 'Factura disponible · ' + numFac + ' — SM Academia';
 
   var html = '<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#222">'
     + '<div style="background:#1a3a5c;padding:24px 32px;border-radius:8px 8px 0 0">'
@@ -613,6 +613,7 @@ function sendFacturaEmail(body) {
   try {
     MailApp.sendEmail({
       to:       to,
+      name:     'SM Academia',
       subject:  asunto,
       htmlBody: html,
     });
