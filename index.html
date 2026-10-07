@@ -6857,7 +6857,7 @@ function modalFactura(f) {
         <input type="number" step="0.01" min="0" id="fac-descuento" value="${esc(f.DESCUENTO||'0')}" placeholder="0,00" oninput="calcTotalFac()"></div>
       <div class="field"><label>Forma de pago</label>
         <select id="fac-forma-pago">
-          ${['','Transferencia bancaria','Domiciliación bancaria','Efectivo','Tarjeta bancaria'].map(s=>`<option value="${s}" ${(f.FORMA_PAGO||'')===s?'selected':''}>${s||'— No especificada —'}</option>`).join('')}
+          ${['','Transferencia bancaria','Bizum','Domiciliación bancaria','Efectivo','Tarjeta bancaria'].map(s=>`<option value="${s}" ${(f.FORMA_PAGO||'')===s?'selected':''}>${s||'— No especificada —'}</option>`).join('')}
         </select></div>
       <div class="field"><label>Estado AEAT</label>
         <select id="fac-estado">
@@ -8298,8 +8298,8 @@ function registroHorario() {
   }).join('') || `<tr><td colspan="${soloAdmin?8:7}"><div class="empty"><div class="empty-icon">🕐</div><p>Sin registros</p></div></td></tr>`;
 
   render(`
+    ${soloAdmin ? _rhResumenAdmin(today) : `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-      <!-- Estado hoy -->
       <div class="card">
         <div class="card-title">Hoy — ${fmtFecha(today)}</div>
         <div style="font-size:15px;margin-bottom:20px">${estadoCard}</div>
@@ -8317,12 +8317,11 @@ function registroHorario() {
           Hora actual: <strong id="reloj-live">${nowTime}</strong>
         </div>
       </div>
-      <!-- Resumen semana -->
       <div class="card">
         <div class="card-title">Esta semana</div>
         ${resumenSemanaHorario(myId)}
       </div>
-    </div>
+    </div>`}
     <div class="card" style="padding:14px 20px">
       <div class="card-title">${soloAdmin?'Todos los registros':'Mis registros'}</div>
       <div class="table-toolbar">
@@ -8345,6 +8344,69 @@ function registroHorario() {
     if (el) el.textContent = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
     else { clearInterval(window._relojHorarioTimer); window._relojHorarioTimer = null; }
   }, 30000);
+}
+
+function _rhResumenAdmin(today) {
+  const hoy   = new Date(today);
+  const lunes  = new Date(hoy); lunes.setDate(hoy.getDate() - ((hoy.getDay()||7) - 1));
+  const diasSemana = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(lunes); d.setDate(lunes.getDate()+i); diasSemana.push(d.toISOString().slice(0,10)); }
+  const mesK = today.slice(0,7);
+
+  const trabajadoras = (DB.personal||[]).filter(p =>
+    String(p.ACTIVO||'').toUpperCase().startsWith('S') &&
+    !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase())
+  ).sort((a,b) => String(a.NOMBRE||'').localeCompare(String(b.NOMBRE||''), 'es'));
+
+  const sumaHoras = (registros) => {
+    const total = registros.reduce((s,r) => s + (parseFloat(r.HORAS_TRABAJADAS)||0), 0);
+    return total > 0 ? total.toFixed(1) + ' h' : '—';
+  };
+
+  const filas = trabajadoras.map(p => {
+    const id = String(p.ID_MONITOR||p.ID||'');
+    const regs = (DB.registroHorario||[]).filter(r =>
+      String(r.ID_MONITOR) === id && String(r.TIPO||'').toUpperCase() !== 'ERROR'
+    );
+    const regsHoy    = regs.filter(r => String(r.FECHA) === today);
+    const regsSemana = regs.filter(r => diasSemana.includes(String(r.FECHA)));
+    const regsMes    = regs.filter(r => String(r.FECHA||'').slice(0,7) === mesK);
+
+    const fichajeHoy = regsHoy.length > 0
+      ? (regsHoy[0].HORA_ENTRADA && regsHoy[0].HORA_SALIDA
+          ? `<span style="color:var(--green);font-size:11px">${regsHoy[0].HORA_ENTRADA}–${regsHoy[0].HORA_SALIDA}</span>`
+          : regsHoy[0].HORA_ENTRADA
+            ? `<span style="color:var(--amber);font-size:11px">Desde ${regsHoy[0].HORA_ENTRADA}</span>`
+            : '—')
+      : '<span style="color:var(--text3);font-size:11px">—</span>';
+
+    const rolBadge = p.ROL ? `<span class="badge" style="font-size:9px;opacity:.7;margin-left:4px">${esc(p.ROL)}</span>` : '';
+
+    return `<tr>
+      <td><strong>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</strong>${rolBadge}</td>
+      <td style="text-align:center">${fichajeHoy}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${sumaHoras(regsSemana)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${sumaHoras(regsMes)}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick="anadirFichajeManual('${esc(id)}')">+ Fichaje</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">Sin trabajadoras activas</td></tr>`;
+
+  return `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Horas trabajadas — ${fmtFecha(today)}</div>
+      <div style="overflow-x:auto">
+        <table class="tabla-admin">
+          <thead><tr>
+            <th>Trabajadora</th>
+            <th style="text-align:center">Hoy</th>
+            <th style="text-align:right">Esta semana</th>
+            <th style="text-align:right">Este mes</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function resumenSemanaHorario(monitorId) {
@@ -8374,14 +8436,14 @@ function resumenSemanaHorario(monitorId) {
     <div class="flex"><span style="flex:1;color:var(--text3)">Total semana</span><strong>${totalH} h</strong></div>`;
 }
 
-function anadirFichajeManual() {
+function anadirFichajeManual(preselId) {
   const soloAdmin = currentUser?.rol === 'ADMIN';
   const myId = String(currentUser?.id||'');
   const today = new Date().toISOString().slice(0,10);
 
   const personalOpts = soloAdmin
     ? DB.personal.filter(p => String(p.ACTIVO||'').toUpperCase().startsWith('S') && !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase()))
-        .map(p => `<option value="${esc(p.ID_MONITOR)}">${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</option>`).join('')
+        .map(p => `<option value="${esc(p.ID_MONITOR)}" ${preselId && String(p.ID_MONITOR)===String(preselId)?'selected':''}>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</option>`).join('')
     : '';
 
   openModal('Añadir fichaje anterior', `
@@ -8391,7 +8453,7 @@ function anadirFichajeManual() {
     </div>
     <div class="form-grid">
       ${soloAdmin ? `<div class="field span2"><label>Persona <span class="req">*</span></label>
-        <select id="fm-persona"><option value="${esc(myId)}">— Mi propio fichaje —</option>${personalOpts}</select></div>` : ''}
+        <select id="fm-persona"><option value="${esc(myId)}" ${!preselId?'selected':''}>— Mi propio fichaje —</option>${personalOpts}</select></div>` : ''}
       <div class="field"><label>Fecha <span class="req">*</span></label>
         <input id="fm-fecha" type="date" max="${today}" value="${today}" onchange="fm_checkDup()"></div>
       <div class="field"><label>Hora entrada <span class="req">*</span></label>
