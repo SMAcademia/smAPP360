@@ -8017,7 +8017,7 @@ function registroHorario() {
       <td>${esc(r.HORA_ENTRADA||'—')}</td>
       <td>${esc(r.HORA_SALIDA||'—')}</td>
       <td>${esc(r.HORAS_TRABAJADAS||'—')}</td>
-      <td>${es_error ? '<span class="badge badge-red">ERROR</span>' : es_corr ? '<span class="badge badge-amber">CORRECCIÓN</span>' : '<span class="badge badge-green">OK</span>'}</td>
+      <td>${es_error ? '<span class="badge badge-red">ERROR</span>' : es_corr ? '<span class="badge badge-amber">CORRECCIÓN</span>' : String(r.TIPO||'').toUpperCase()==='MANUAL' ? '<span class="badge badge-blue">MANUAL</span>' : '<span class="badge badge-green">OK</span>'}</td>
       <td style="font-size:11px;color:var(--text3)">${esc(r.JUSTIFICACION||'')}</td>
       ${soloAdmin && !es_error ? `<td><button class="btn btn-sm btn-secondary" onclick="corregirFichaje('${esc(r.ID||'')}')">Corregir</button></td>` : '<td></td>'}
     </tr>`;
@@ -8053,6 +8053,7 @@ function registroHorario() {
       <div class="card-title">${soloAdmin?'Todos los registros':'Mis registros'}</div>
       <div class="table-toolbar">
         <input class="search-input" id="q-rh" placeholder="Buscar…" oninput="filterTable('q-rh','tbl-rh')">
+        <button class="btn btn-secondary btn-sm" onclick="anadirFichajeManual()">➕ Añadir fichaje</button>
         ${soloAdmin ? '<span class="text-muted badge badge-amber" style="font-size:11px">Admin: puedes corregir cualquier fichaje</span>' : ''}
       </div>
       <div class="table-wrap">
@@ -8099,10 +8100,128 @@ function resumenSemanaHorario(monitorId) {
     <div class="flex"><span style="flex:1;color:var(--text3)">Total semana</span><strong>${totalH} h</strong></div>`;
 }
 
+function anadirFichajeManual() {
+  const soloAdmin = currentUser?.rol === 'ADMIN';
+  const myId = String(currentUser?.id||'');
+  const today = new Date().toISOString().slice(0,10);
+
+  const personalOpts = soloAdmin
+    ? DB.personal.filter(p => String(p.ACTIVO||'').toUpperCase().startsWith('S'))
+        .map(p => `<option value="${esc(p.ID_MONITOR)}">${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</option>`).join('')
+    : '';
+
+  openModal('Añadir fichaje anterior', `
+    <div style="background:var(--info-bg,#eff6ff);border:1px solid var(--info,#3b82f6);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px">
+      Usa esto para registrar fichajes que no se pudieron hacer en su momento.
+      Si ya existe un registro para ese día, quedará marcado como ERROR y se creará uno de corrección.
+    </div>
+    <div class="form-grid">
+      ${soloAdmin ? `<div class="field span2"><label>Persona <span class="req">*</span></label>
+        <select id="fm-persona"><option value="${esc(myId)}">— Mi propio fichaje —</option>${personalOpts}</select></div>` : ''}
+      <div class="field"><label>Fecha <span class="req">*</span></label>
+        <input id="fm-fecha" type="date" max="${today}" value="${today}" onchange="fm_checkDup()"></div>
+      <div class="field"><label>Hora entrada <span class="req">*</span></label>
+        <input id="fm-entrada" type="time"></div>
+      <div class="field"><label>Hora salida</label>
+        <input id="fm-salida" type="time"></div>
+      <div class="field"><label>Justificación <span class="req">*</span></label>
+        <textarea id="fm-just" placeholder="Motivo del fichaje retroactivo…"></textarea></div>
+    </div>
+    <div id="fm-dup-warn" style="display:none;margin-top:8px;padding:8px 12px;border-radius:6px;background:var(--amber-l);border:1px solid var(--amber);font-size:13px;color:var(--amber-d)">
+      ⚠️ Ya existe un registro para esa fecha. El registro actual quedará marcado como ERROR y se creará uno nuevo.
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarFichajeManual()">Guardar fichaje</button>`
+  );
+}
+
+function fm_checkDup() {
+  const fecha = document.getElementById('fm-fecha')?.value;
+  const personaEl = document.getElementById('fm-persona');
+  const monId = personaEl ? personaEl.value : String(currentUser?.id||'');
+  if (!fecha || !monId) return;
+  const existe = DB.registroHorario.find(r =>
+    String(r.ID_MONITOR)===String(monId) && String(r.FECHA)===fecha &&
+    String(r.TIPO||'').toUpperCase()!=='ERROR'
+  );
+  const warn = document.getElementById('fm-dup-warn');
+  if (warn) warn.style.display = existe ? '' : 'none';
+}
+
+async function guardarFichajeManual() {
+  const fecha   = document.getElementById('fm-fecha')?.value;
+  const entrada = document.getElementById('fm-entrada')?.value;
+  const salida  = document.getElementById('fm-salida')?.value;
+  const just    = document.getElementById('fm-just')?.value.trim();
+  const personaEl = document.getElementById('fm-persona');
+  const monId   = personaEl ? personaEl.value : String(currentUser?.id||'');
+
+  if (!fecha)   { showToast('Indica la fecha', 'error'); return; }
+  if (!entrada) { showToast('Indica la hora de entrada', 'error'); return; }
+  if (!just)    { showToast('La justificación es obligatoria', 'error'); return; }
+
+  let horas = '';
+  if (entrada && salida) {
+    const [he,me] = entrada.split(':').map(Number);
+    const [hs,ms] = salida.split(':').map(Number);
+    const mins = (hs*60+ms) - (he*60+me);
+    if (mins > 0) horas = (mins/60).toFixed(2);
+  }
+
+  const btn = document.querySelector('#modal-footer .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  try {
+    // Marcar como ERROR si existe registro activo para ese día
+    const prev = DB.registroHorario.filter(r =>
+      String(r.ID_MONITOR)===String(monId) && String(r.FECHA)===fecha &&
+      String(r.TIPO||'').toUpperCase()!=='ERROR'
+    );
+    for (const p of prev) {
+      await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', JUSTIFICACION:'Sustituido por fichaje manual: '+just }, p.ID||p.ID_REGISTRO);
+      p.TIPO = 'ERROR'; p.ACTIVO = 'NO';
+    }
+
+    // Crear nuevo registro manual
+    const res = await writeToSheet('REGISTRO_HORARIO', {
+      ID_MONITOR:       monId,
+      FECHA:            fecha,
+      HORA_ENTRADA:     entrada,
+      HORA_SALIDA:      salida || '',
+      HORAS_TRABAJADAS: horas,
+      TIPO:             'MANUAL',
+      ACTIVO:           'SÍ',
+      JUSTIFICACION:    just,
+    });
+
+    DB.registroHorario.push({
+      ID: res?.id || ('RH-M-' + Date.now()),
+      ID_MONITOR: monId, FECHA: fecha,
+      HORA_ENTRADA: entrada, HORA_SALIDA: salida||'',
+      HORAS_TRABAJADAS: horas, TIPO: 'MANUAL', ACTIVO: 'SÍ', JUSTIFICACION: just,
+    });
+
+    showToast('Fichaje guardado correctamente', 'success');
+    closeModal();
+    loadAllData().then(registroHorario).catch(()=>{});
+  } catch(e) {
+    showToast('Error: ' + (e.message||e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar fichaje'; }
+  }
+}
+
 function ficharEntrada() {
   const hora  = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
   const fecha = new Date().toISOString().slice(0,10);
   const myId  = String(currentUser?.id||'');
+
+  // Guard: no duplicar si ya existe entrada activa hoy
+  const yaActivo = DB.registroHorario.find(r =>
+    String(r.ID_MONITOR)===myId && String(r.FECHA)===fecha &&
+    r.HORA_ENTRADA && String(r.TIPO||'').toUpperCase()!=='ERROR'
+  );
+  if (yaActivo) { showToast('Ya tienes un fichaje activo hoy', 'error'); return; }
+
   writeToSheet('REGISTRO_HORARIO', {
     ID_MONITOR:  myId,
     FECHA:       fecha,
