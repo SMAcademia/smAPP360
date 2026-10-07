@@ -750,6 +750,7 @@ function normalizarDB(raw) {
     ...r,
     CATEGORIA: r['CATEGORÍA'] || r.CATEGORIA || '',
   }));
+  DB.pagadoresExternos       = raw.pagadoresExternos || [];
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
   try {
@@ -4684,7 +4685,16 @@ function pagos(filtro) {
     return `<tr>
       <td class="mono">${esc(p.ID_PAGO||p.ID||'')}</td>
       <td>${esc(p.MES||'—')}</td>
-      <td>${alu ? esc(alu.NOMBRE+' '+(alu.APELLIDOS||'')) : (p.LINEA==='EXTERNO' ? '<em style="color:var(--text3);font-size:11px">'+(esc((p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,''))||'Pagador externo')+'</em>' : esc(p.ID_ALUMNO||'—'))}</td>
+      <td>${(() => {
+        if (alu) return esc(alu.NOMBRE+' '+(alu.APELLIDOS||''));
+        if (LINEAS_EXT.includes(p.LINEA)) {
+          const pe = (DB.pagadoresExternos||[]).find(x=>String(x.ID)===String(p.ID_PAGADOR_EXT||''));
+          const nombre = pe ? (pe.RAZON_SOCIAL||pe.NOMBRE||'') : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'');
+          const cif    = pe ? pe.CIF : '';
+          return `<span style="font-size:12px">${esc(nombre)||'Pagador externo'}${cif?` <span style="color:var(--text3);font-size:10px">${esc(cif)}</span>`:''}`;
+        }
+        return esc(p.ID_ALUMNO||'—');
+      })()}</td>
       <td>${lineaBadge}${esc(_servicioVisible(p.SERVICIO))}</td>
       <td class="mono">${fmtEur(p.IMPORTE)}</td>
       <td class="mono">${p.DESC_EUR&&parseFloat(p.DESC_EUR)>0?'−'+fmtEur(p.DESC_EUR):'—'}</td>
@@ -4811,13 +4821,16 @@ function modalPago(p) {
     ? '<option value="">— Selecciona —</option>' + _opcionesInscPago(String(p.ID_ALUMNO), p.ID_INSCRIPCION||'', p.ID_INSCRIPCION||'')
     : '<option value="">— Selecciona primero un alumno —</option>';
 
-  // Para externo: payer name = primera línea de NOTAS (sin prefijo "Pagador: ")
-  const pagadorNombre = modoInicial==='externo'
-    ? (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'')
-    : '';
+  // Para externo: leer pagador de ID_PAGADOR_EXT o fallback a NOTAS legacy
+  const pagExtId = p.ID_PAGADOR_EXT || '';
   const notasResto = modoInicial==='externo'
-    ? (p.NOTAS||'').split('\n').slice(1).join('\n').trim()
+    ? (p.NOTAS||'').replace(/^Pagador:[^\n]*\n?/,'').trim()
     : (p.NOTAS||'');
+  // Opciones de pagadores externos
+  const opsPagExt = (DB.pagadoresExternos||[])
+    .sort((a,b)=>String(a.RAZON_SOCIAL||'').localeCompare(String(b.RAZON_SOCIAL||''),'es'))
+    .map(pe=>`<option value="${esc(pe.ID)}" ${String(pagExtId)===String(pe.ID)?'selected':''}>${esc(pe.RAZON_SOCIAL||pe.NOMBRE||'')} — ${esc(pe.CIF||'sin CIF')}</option>`)
+    .join('');
 
   openModal(isNew ? 'Registrar pago' : 'Editar pago', `
     <input type="hidden" id="p-modo" value="${modoInicial}">
@@ -4918,10 +4931,36 @@ function modalPago(p) {
           <option value="EXTERNO"    ${tipoExtInicial==='EXTERNO'?'selected':''}>Otro externo</option>
         </select>
       </div>
-      <div class="field">
-        <label>Nombre del pagador <span class="req">*</span></label>
-        <input id="p-pagador" placeholder="Ej: AMPA CEIP San Matías, Club Atlético…" value="${esc(pagadorNombre)}">
+      <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+        <div style="flex:1">
+          <label>Pagador <span class="req">*</span></label>
+          <select id="p-pagext-sel" onchange="onPagExtChange()">
+            <option value="">— Selecciona o crea nuevo —</option>
+            ${opsPagExt}
+            <option value="__nuevo__" ${!pagExtId&&modoInicial==='externo'?'selected':''}>➕ Nuevo pagador…</option>
+          </select>
+        </div>
       </div>
+      <!-- Ficha del pagador (readonly si existente, editable si nuevo) -->
+      <div id="p-pagext-ficha" class="span2" style="display:${pagExtId||(!pagExtId&&modoInicial==='externo')?'grid':'none'};grid-template-columns:1fr 1fr;gap:10px;padding:10px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2);font-size:13px">
+        <div class="field" style="margin:0">
+          <label>Razón social / Nombre <span class="req">*</span></label>
+          <input id="p-pext-nombre" placeholder="AMPA CEIP San Matías…" value="${esc(DB.pagadoresExternos.find(x=>String(x.ID)===pagExtId)?.RAZON_SOCIAL||'')}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>CIF / NIF <span class="req">*</span></label>
+          <input id="p-pext-cif" placeholder="B12345678" value="${esc(DB.pagadoresExternos.find(x=>String(x.ID)===pagExtId)?.CIF||'')}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>Email</label>
+          <input id="p-pext-email" type="email" placeholder="contacto@ampa.es" value="${esc(DB.pagadoresExternos.find(x=>String(x.ID)===pagExtId)?.EMAIL||'')}">
+        </div>
+        <div class="field" style="margin:0">
+          <label>Teléfono</label>
+          <input id="p-pext-tel" placeholder="600 000 000" value="${esc(DB.pagadoresExternos.find(x=>String(x.ID)===pagExtId)?.TELEFONO||'')}">
+        </div>
+      </div>
+      <input type="hidden" id="p-pagext-id" value="${esc(pagExtId)}">
       <div class="field span2">
         <label>Concepto <span class="req">*</span></label>
         <input id="p-concepto" placeholder="Ej: Cuota mensual AMPA enero 2026" value="${esc(modoInicial==='externo'?(p.SERVICIO||''):'')}">
@@ -4977,6 +5016,45 @@ function modalPago(p) {
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="guardarPago(${isNew?'null':`'${id}'`})">Guardar</button>`
   );
+}
+
+function onPagExtChange() {
+  const sel   = document.getElementById('p-pagext-sel');
+  const val   = sel?.value || '';
+  const ficha = document.getElementById('p-pagext-ficha');
+  const hidId = document.getElementById('p-pagext-id');
+  if (!ficha || !hidId) return;
+
+  if (val === '__nuevo__') {
+    // Formulario vacío para nuevo pagador
+    hidId.value = '';
+    document.getElementById('p-pext-nombre').value = '';
+    document.getElementById('p-pext-cif').value    = '';
+    document.getElementById('p-pext-email').value  = '';
+    document.getElementById('p-pext-tel').value    = '';
+    // Campos editables
+    ['p-pext-nombre','p-pext-cif','p-pext-email','p-pext-tel'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.readOnly = false;
+    });
+    ficha.style.display = 'grid';
+  } else if (val) {
+    // Pagador existente — rellenar y poner readonly
+    const pe = (DB.pagadoresExternos||[]).find(x => String(x.ID) === val);
+    if (pe) {
+      hidId.value = pe.ID;
+      document.getElementById('p-pext-nombre').value = pe.RAZON_SOCIAL || pe.NOMBRE || '';
+      document.getElementById('p-pext-cif').value    = pe.CIF    || '';
+      document.getElementById('p-pext-email').value  = pe.EMAIL  || '';
+      document.getElementById('p-pext-tel').value    = pe.TELEFONO || '';
+      ['p-pext-nombre','p-pext-cif','p-pext-email','p-pext-tel'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.readOnly = true;
+      });
+    }
+    ficha.style.display = 'grid';
+  } else {
+    hidId.value = '';
+    ficha.style.display = 'none';
+  }
 }
 
 function setPagoModo(modo) {
@@ -5079,20 +5157,50 @@ async function anularPago(pagoId) {
   }
 }
 
-function guardarPago(id) {
+async function guardarPago(id) {
   const modo = document.getElementById('p-modo')?.value || 'alumno';
   const btn  = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
   let row;
   if (modo === 'externo') {
-    const pagador   = document.getElementById('p-pagador')?.value.trim() || '';
     const concepto  = document.getElementById('p-concepto')?.value.trim() || '';
-    if (!pagador)  { showToast('Introduce el nombre del pagador', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
     if (!concepto) { showToast('Introduce el concepto', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+
+    // Resolver pagador externo
+    let pagExtId = document.getElementById('p-pagext-id')?.value || '';
+    const selVal = document.getElementById('p-pagext-sel')?.value || '';
+
+    if (selVal === '__nuevo__' || !pagExtId) {
+      // Crear nuevo pagador
+      const razonSocial = document.getElementById('p-pext-nombre')?.value.trim() || '';
+      const cif         = document.getElementById('p-pext-cif')?.value.trim() || '';
+      if (!razonSocial) { showToast('Introduce la razón social del pagador', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+      if (!cif)         { showToast('Introduce el CIF/NIF del pagador', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+      try {
+        const res = await writeToSheet('PAGADORES_EXTERNOS', {
+          RAZON_SOCIAL: razonSocial,
+          CIF:          cif,
+          EMAIL:        document.getElementById('p-pext-email')?.value.trim() || '',
+          TELEFONO:     document.getElementById('p-pext-tel')?.value.trim() || '',
+        });
+        pagExtId = res?.id || '';
+        // Añadir a memoria
+        DB.pagadoresExternos.push({ ID: pagExtId, RAZON_SOCIAL: razonSocial, CIF: cif,
+          EMAIL: document.getElementById('p-pext-email')?.value.trim()||'',
+          TELEFONO: document.getElementById('p-pext-tel')?.value.trim()||'' });
+      } catch(e) {
+        showToast('Error al crear pagador: '+(e.message||e), 'error');
+        if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return;
+      }
+    }
+
+    if (!pagExtId && selVal && selVal !== '__nuevo__') pagExtId = selVal;
+    if (!pagExtId) { showToast('Selecciona o crea un pagador externo', 'error'); if (btn) { btn.disabled=false; btn.textContent='Guardar'; } return; }
+
     const notasExtra = document.getElementById('p-notas')?.value.trim() || '';
-    const notas      = notasExtra ? `Pagador: ${pagador}\n${notasExtra}` : `Pagador: ${pagador}`;
     row = {
+      ID_PAGADOR_EXT: pagExtId,
       LINEA:          document.getElementById('p-tipo-ext')?.value || 'EXTERNO',
       SERVICIO:       concepto,
       MES:            document.getElementById('p-mes-ext')?.value.trim() || '',
@@ -5103,7 +5211,7 @@ function guardarPago(id) {
       MÉTODO:         document.getElementById('p-metodo')?.value || '',
       ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
       FECHA:          document.getElementById('p-fecha')?.value || '',
-      NOTAS:          notas,
+      NOTAS:          notasExtra,
     };
   } else {
     const aluId   = document.getElementById('p-alu')?.value;

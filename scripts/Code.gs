@@ -130,6 +130,7 @@ function getAllData() {
     encuestasSatisfaccion:   sheetToJSON(book, 'ENCUESTAS_SATISFACCION'),
     solicitudes:             sheetToJSON(book, 'SOLICITUDES'),
     bancoHistorico:          sheetToJSON(book, 'BANCO_HISTORICO'),
+    pagadoresExternos:       sheetToJSON(book, 'PAGADORES_EXTERNOS'),
   };
 }
 
@@ -403,6 +404,7 @@ function nextId_(sheet, sheetName, headers) {
     'SESIONES':               'SES-',
     'NOMINAS':                'NOM-',
     'ENCUESTAS_SATISFACCION': 'ENC-',
+    'PAGADORES_EXTERNOS':     'PE-',
   };
 
   var prefix  = PREFIX_MAP[sheetName];
