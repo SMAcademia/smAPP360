@@ -373,6 +373,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('presupuesto')" data-page="presupuesto">
           <span class="nav-icon">🧮</span><span>Presupuestos</span>
         </div>
+        <div class="nav-item" onclick="navigate('pagadores-externos')" data-page="pagadores-externos">
+          <span class="nav-icon">🏢</span><span>Pagadores ext.</span>
+        </div>
       </div>
 
       <div class="nav-section" id="nav-ampa">
@@ -1030,6 +1033,7 @@ const PAGE_META = {
   'comunicacion':       { title: 'Comunicación',          sub: 'Mensajes y avisos a familias' },
   'configuracion':      { title: 'Configuración',        sub: 'Ajustes del sistema' },
   'presupuesto':        { title: 'Presupuestos',          sub: 'Calculadora de costes, margen e impuestos' },
+  'pagadores-externos': { title: 'Pagadores externos',   sub: 'Entidades y empresas pagadoras' },
 };
 
 const MODULES = {
@@ -1054,6 +1058,7 @@ const MODULES = {
   'registro-horario':   registroHorario,
   'nominas':            nominas,
   'gastos':             gastos,
+  'pagadores-externos': pagadoresExternosSec,
   'fiscal':             fiscal,
   'ampa-socios':        ampaSocios,
   'portal-familia':     portalFamilia,
@@ -1064,6 +1069,11 @@ const MODULES = {
 };
 
 function navigate(page) {
+  // AMPA no tiene acceso a contabilidad
+  if (isAmpa() && ['banco','gastos','fiscal','presupuesto','pagadores-externos'].includes(page)) {
+    navigate('extra-resumen');
+    return;
+  }
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const active = document.querySelector(`[data-page="${page}"]`);
@@ -7618,6 +7628,119 @@ function guardarNomina(id) {
   writeToSheet('NOMINAS', row, id)
     .then(()=>{ showToast('Nómina guardada'); closeModal(); loadAllData().then(nominas); })
     .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: PAGADORES EXTERNOS
+// ══════════════════════════════════════════════════════════════════════════
+function pagadoresExternosSec() {
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn btn-primary btn-sm" onclick="modalPagadorExterno()">+ Nuevo pagador</button>`;
+  _renderPagExt();
+}
+
+function _renderPagExt() {
+  const lista = (DB.pagadoresExternos || []).slice().sort((a,b) =>
+    String(a.RAZON_SOCIAL||a.NOMBRE||'').localeCompare(String(b.RAZON_SOCIAL||b.NOMBRE||''))
+  );
+  render(`
+    <div style="display:grid;gap:16px">
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table class="tabla-admin">
+            <thead><tr>
+              <th>ID</th><th>Razón social / Nombre</th><th>CIF/NIF</th>
+              <th>Email</th><th>Teléfono</th><th>Pagos</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${lista.length === 0
+                ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text3)">No hay pagadores externos registrados</td></tr>`
+                : lista.map(pe => {
+                    const nPagos = (DB.pagos||[]).filter(p => String(p.ID_PAGADOR_EXT||'') === String(pe.ID||'')).length;
+                    return `<tr>
+                      <td><span class="badge">${esc(pe.ID||'')}</span></td>
+                      <td><strong>${esc(pe.RAZON_SOCIAL||pe.NOMBRE||'—')}</strong></td>
+                      <td>${esc(pe.CIF||'—')}</td>
+                      <td>${pe.EMAIL ? `<a href="mailto:${esc(pe.EMAIL)}">${esc(pe.EMAIL)}</a>` : '—'}</td>
+                      <td>${esc(pe.TELEFONO||'—')}</td>
+                      <td><span style="font-variant-numeric:tabular-nums">${nPagos}</span></td>
+                      <td style="white-space:nowrap">
+                        <button class="btn btn-sm btn-secondary" onclick="modalPagadorExterno('${esc(pe.ID||'')}')">Editar</button>
+                      </td>
+                    </tr>`;
+                  }).join('')
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function modalPagadorExterno(id) {
+  const pe = id ? (DB.pagadoresExternos||[]).find(x => String(x.ID) === String(id)) : null;
+  const esNuevo = !pe;
+  openModal(
+    esNuevo ? 'Nuevo pagador externo' : 'Editar pagador externo',
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group span2">
+        <label>Razón social / Nombre *</label>
+        <input id="pext-nombre" value="${esc(pe?.RAZON_SOCIAL||pe?.NOMBRE||'')}" placeholder="AMPA CEIP San Matías…">
+      </div>
+      <div class="form-group">
+        <label>CIF / NIF *</label>
+        <input id="pext-cif" value="${esc(pe?.CIF||'')}" placeholder="G12345678">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input id="pext-email" type="email" value="${esc(pe?.EMAIL||'')}" placeholder="contacto@entidad.es">
+      </div>
+      <div class="form-group">
+        <label>Teléfono</label>
+        <input id="pext-tel" value="${esc(pe?.TELEFONO||'')}" placeholder="600 000 000">
+      </div>
+      <div class="form-group">
+        <label>Dirección</label>
+        <input id="pext-dir" value="${esc(pe?.DIRECCION||'')}" placeholder="Calle, número, CP…">
+      </div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="guardarPagadorExterno(${id ? `'${esc(id)}'` : 'null'})">Guardar</button>`
+  );
+}
+
+async function guardarPagadorExterno(id) {
+  const nombre = document.getElementById('pext-nombre')?.value.trim();
+  const cif    = document.getElementById('pext-cif')?.value.trim();
+  if (!nombre) { showToast('La razón social es obligatoria', 'error'); return; }
+  if (!cif)    { showToast('El CIF/NIF es obligatorio', 'error'); return; }
+
+  const row = {
+    RAZON_SOCIAL: nombre,
+    CIF:          cif,
+    EMAIL:        document.getElementById('pext-email')?.value.trim() || '',
+    TELEFONO:     document.getElementById('pext-tel')?.value.trim()   || '',
+    DIRECCION:    document.getElementById('pext-dir')?.value.trim()   || '',
+  };
+
+  try {
+    const res = await writeToSheet('PAGADORES_EXTERNOS', row, id || null);
+    if (id) {
+      const idx = (DB.pagadoresExternos||[]).findIndex(x => String(x.ID) === String(id));
+      if (idx >= 0) DB.pagadoresExternos[idx] = { ...DB.pagadoresExternos[idx], ...row, ID: id };
+    } else {
+      const newId = res?.id || ('PE-' + Date.now());
+      DB.pagadoresExternos = DB.pagadoresExternos || [];
+      DB.pagadoresExternos.push({ ID: newId, ...row });
+    }
+    closeModal();
+    showToast(id ? 'Pagador actualizado' : 'Pagador registrado', 'success');
+    _renderPagExt();
+  } catch(e) {
+    showToast('Error al guardar: ' + e.message, 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
