@@ -680,13 +680,64 @@ function normalizarDB(raw) {
   DB.movimientosBancarios = raw.movimientosBancarios || [];
   DB.personal             = raw.personal             || [];
   DB.ausencias            = raw.ausencias            || [];
-  DB.registroHorario      = (raw.registroHorario || []).map(r => ({
-    ...r,
-    HORA_ENTRADA:     r.HORA_ENTRADA     || r.ENTRADA || '',
-    HORA_SALIDA:      r.HORA_SALIDA      || r.SALIDA  || '',
-    HORAS_TRABAJADAS: r.HORAS_TRABAJADAS || r.HORAS   || '',
-    ID_MONITOR:       r.ID_MONITOR       || r.ID_PERSONAL || '',
-  }));
+  // REGISTRO_HORARIO: el sheet usa un registro por fichaje (TIPO=ENTRADA/SALIDA + columna HORA).
+  // Emparejamos por ID_MONITOR+FECHA para obtener registros con HORA_ENTRADA/HORA_SALIDA/HORAS.
+  (function() {
+    const rhRaw = raw.registroHorario || [];
+    const pares = {}; // key = monitorId|fecha
+    const legacy = []; // filas NORMAL/CORRECCION/MANUAL/ERROR sin TIPO=ENTRADA|SALIDA
+
+    for (const r of rhRaw) {
+      const tipo = String(r.TIPO||'').toUpperCase();
+      const monId = String(r.ID_MONITOR || r.ID_PERSONAL || '');
+      const key = monId + '|' + String(r.FECHA||'');
+      if (tipo === 'ENTRADA') {
+        if (!pares[key]) pares[key] = { monId, fecha: r.FECHA };
+        pares[key].entrada = r;
+      } else if (tipo === 'SALIDA') {
+        if (!pares[key]) pares[key] = { monId, fecha: r.FECHA };
+        pares[key].salida = r;
+      } else {
+        // Filas antiguas o de legacy (NORMAL, CORRECCION, MANUAL, ERROR)
+        legacy.push({
+          ...r,
+          ID_MONITOR:       monId,
+          HORA_ENTRADA:     r.HORA_ENTRADA || r.HORA || '',
+          HORA_SALIDA:      r.HORA_SALIDA  || '',
+          HORAS_TRABAJADAS: r.HORAS_TRABAJADAS || r.HORAS || '',
+        });
+      }
+    }
+
+    const combinados = Object.values(pares).map(p => {
+      const ent = p.entrada, sal = p.salida;
+      let horas = '';
+      if (ent?.HORA && sal?.HORA) {
+        const [he,me] = String(ent.HORA).split(':').map(Number);
+        const [hs,ms] = String(sal.HORA).split(':').map(Number);
+        const mins = (hs*60+ms) - (he*60+me);
+        if (mins > 0) horas = (mins/60).toFixed(2);
+      }
+      return {
+        ID:              ent?.ID || sal?.ID || '',
+        _entradaId:      ent?.ID || '',
+        _salidaId:       sal?.ID || '',
+        ID_MONITOR:      p.monId,
+        FECHA:           p.fecha,
+        HORA_ENTRADA:    ent?.HORA || '',
+        HORA_SALIDA:     sal?.HORA || '',
+        HORAS_TRABAJADAS:horas,
+        TIPO:            'NORMAL',
+        ACTIVO:          'SÍ',
+        JUSTIFICACION:   ent?.NOTAS || sal?.NOTAS || '',
+        ACTIVIDAD:       ent?.ACTIVIDAD || '',
+        CENTRO:          ent?.CENTRO || '',
+      };
+    });
+
+    DB.registroHorario = [...combinados, ...legacy]
+      .sort((a,b) => String(b.FECHA||'').localeCompare(String(a.FECHA||'')));
+  })();
   DB.sesiones             = raw.sesiones             || [];
   DB.asistenciasFutbol    = raw.asistenciasFutbol    || [];
   DB.asistenciasExtra     = raw.asistenciasExtra     || [];
@@ -8189,19 +8240,27 @@ async function guardarFichajeManual() {
     }
 
     // Crear nuevo registro manual
-    const res = await writeToSheet('REGISTRO_HORARIO', {
-      ID_MONITOR:       monId,
-      FECHA:            fecha,
-      HORA_ENTRADA:     entrada,
-      ENTRADA:          entrada,
-      HORA_SALIDA:      salida || '',
-      SALIDA:           salida || '',
-      HORAS_TRABAJADAS: horas,
-      HORAS:            horas,
-      TIPO:             'MANUAL',
-      ACTIVO:           'SÍ',
-      JUSTIFICACION:    just,
+    // Escribir fila ENTRADA
+    const resEnt = await writeToSheet('REGISTRO_HORARIO', {
+      ID_MONITOR:     monId,
+      NOMBRE_MONITOR: DB.personal.find(p=>String(p.ID_MONITOR)===String(monId))?.NOMBRE || '',
+      FECHA:          fecha,
+      TIPO:           'ENTRADA',
+      HORA:           entrada,
+      NOTAS:          just,
     });
+    // Escribir fila SALIDA si se indicó hora de salida
+    if (salida) {
+      await writeToSheet('REGISTRO_HORARIO', {
+        ID_MONITOR:     monId,
+        NOMBRE_MONITOR: DB.personal.find(p=>String(p.ID_MONITOR)===String(monId))?.NOMBRE || '',
+        FECHA:          fecha,
+        TIPO:           'SALIDA',
+        HORA:           salida,
+        NOTAS:          just,
+      });
+    }
+    const res = resEnt;
 
     DB.registroHorario.push({
       ID: res?.id || ('RH-M-' + Date.now()),
@@ -8231,18 +8290,19 @@ function ficharEntrada() {
   );
   if (yaActivo) { showToast('Ya tienes un fichaje activo hoy', 'error'); return; }
 
+  // Escribir una fila TIPO=ENTRADA con columna HORA (formato real del sheet)
   writeToSheet('REGISTRO_HORARIO', {
-    ID_MONITOR:  myId,
-    FECHA:       fecha,
-    HORA_ENTRADA:hora,
-    ENTRADA:     hora,
-    TIPO:        'NORMAL',
-    ACTIVO:      'SÍ',
+    ID_MONITOR:     myId,
+    NOMBRE_MONITOR: currentUser?.nombre || '',
+    FECHA:          fecha,
+    TIPO:           'ENTRADA',
+    HORA:           hora,
   })
   .then(res => {
-    // Actualización inmediata en memoria — no esperar a loadAllData()
-    DB.registroHorario.push({
+    // Añadir registro combinado en memoria
+    DB.registroHorario.unshift({
       ID: res?.id || ('RH-' + Date.now()),
+      _entradaId: res?.id || '',
       ID_MONITOR:      myId,
       FECHA:           fecha,
       HORA_ENTRADA:    hora,
@@ -8272,13 +8332,16 @@ function ficharSalida() {
   const [hs,ms] = hora.split(':').map(Number);
   const mins  = (hs*60+ms) - (he*60+me);
   const horas = (mins > 0 ? mins/60 : 0).toFixed(2);
-  const idReg = entrada.ID || entrada.ID_REGISTRO || '';
 
-  if (!idReg) { showToast('Error: registro sin ID — contacta con admin', 'error'); return; }
-
-  writeToSheet('REGISTRO_HORARIO', { HORA_SALIDA: hora, SALIDA: hora, HORAS_TRABAJADAS: horas, HORAS: horas }, idReg)
+  // Escribir nueva fila TIPO=SALIDA (APPEND, no update)
+  writeToSheet('REGISTRO_HORARIO', {
+    ID_MONITOR:     myId,
+    NOMBRE_MONITOR: currentUser?.nombre || '',
+    FECHA:          today,
+    TIPO:           'SALIDA',
+    HORA:           hora,
+  })
   .then(() => {
-    // Actualización inmediata en memoria
     entrada.HORA_SALIDA      = hora;
     entrada.HORAS_TRABAJADAS = horas;
     showToast(`Salida fichada: ${hora} — ${horas} h trabajadas`, 'success');
@@ -8332,19 +8395,30 @@ function ejecutarCorreccion(idOriginal) {
   writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', JUSTIFICACION: 'Corregido: '+just }, idOriginal)
   .then(() => {
     // 2. Crear registro de corrección
-    return writeToSheet('REGISTRO_HORARIO', {
-      ID_MONITOR:      r.ID_MONITOR,
-      FECHA:           r.FECHA,
-      HORA_ENTRADA:    entC,
-      ENTRADA:         entC,
-      HORA_SALIDA:     salC,
-      SALIDA:          salC,
-      HORAS_TRABAJADAS:horas,
-      HORAS:           horas,
-      TIPO:            'CORRECCION',
-      ACTIVO:          'SÍ',
-      JUSTIFICACION:   just,
+    // Marcar la fila de SALIDA original como ERROR también (si existe)
+    if (r._salidaId && r._salidaId !== r._entradaId) {
+      await writeToSheet('REGISTRO_HORARIO', { TIPO:'ERROR', ACTIVO:'NO', NOTAS:'Corregido: '+just }, r._salidaId);
+    }
+    // Crear nueva fila ENTRADA corregida
+    await writeToSheet('REGISTRO_HORARIO', {
+      ID_MONITOR:     r.ID_MONITOR,
+      NOMBRE_MONITOR: DB.personal.find(p=>String(p.ID_MONITOR)===String(r.ID_MONITOR))?.NOMBRE || '',
+      FECHA:          r.FECHA,
+      TIPO:           'ENTRADA',
+      HORA:           entC,
+      NOTAS:          'Corrección: '+just,
     });
+    // Crear nueva fila SALIDA corregida si se indicó
+    if (salC) {
+      return writeToSheet('REGISTRO_HORARIO', {
+        ID_MONITOR:     r.ID_MONITOR,
+        NOMBRE_MONITOR: DB.personal.find(p=>String(p.ID_MONITOR)===String(r.ID_MONITOR))?.NOMBRE || '',
+        FECHA:          r.FECHA,
+        TIPO:           'SALIDA',
+        HORA:           salC,
+        NOTAS:          'Corrección: '+just,
+      });
+    }
   })
   .then(()=>{ showToast('Corrección aplicada'); closeModal(); loadAllData().then(registroHorario); })
   .catch(err=>{ showToast('Error: '+err.message,'error'); if(btn){btn.disabled=false;btn.textContent='Aplicar corrección';} });
