@@ -357,6 +357,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('nominas')" data-page="nominas">
           <span class="nav-icon">💶</span><span>Nóminas</span>
         </div>
+        <div class="nav-item" onclick="navigate('documentacion')" data-page="documentacion">
+          <span class="nav-icon">📋</span><span>Documentación</span>
+        </div>
       </div>
 
       <div class="nav-section" id="nav-contabilidad">
@@ -1034,6 +1037,7 @@ const PAGE_META = {
   'configuracion':      { title: 'Configuración',        sub: 'Ajustes del sistema' },
   'presupuesto':        { title: 'Presupuestos',          sub: 'Calculadora de costes, margen e impuestos' },
   'pagadores-externos': { title: 'Pagadores externos',   sub: 'Entidades y empresas pagadoras' },
+  'documentacion':      { title: 'Documentación',        sub: 'Protocolos y documentos laborales' },
 };
 
 const MODULES = {
@@ -1059,6 +1063,7 @@ const MODULES = {
   'nominas':            nominas,
   'gastos':             gastos,
   'pagadores-externos': pagadoresExternosSec,
+  'documentacion':      documentacionSec,
   'fiscal':             fiscal,
   'ampa-socios':        ampaSocios,
   'portal-familia':     portalFamilia,
@@ -1070,7 +1075,11 @@ const MODULES = {
 
 function navigate(page) {
   // AMPA no tiene acceso a contabilidad
-  if (isAmpa() && ['banco','gastos','fiscal','presupuesto','pagadores-externos'].includes(page)) {
+  if (isAmpa() && ['banco','gastos','fiscal','presupuesto','pagadores-externos','documentacion'].includes(page)) {
+    navigate('extra-resumen');
+    return;
+  }
+  if (currentUser.rol === 'FAMILIA' && page === 'documentacion') {
     navigate('extra-resumen');
     return;
   }
@@ -7397,6 +7406,108 @@ function exportarFacturaPDF(f) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: DOCUMENTACIÓN LABORAL
+// ══════════════════════════════════════════════════════════════════════════
+const _PROTOCOLOS_EMPRESA = [
+  {
+    titulo:  'Protocolo de Acoso e Igualdad LGTBIQ+',
+    desc:    'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo.',
+    icono:   '🏳️‍🌈',
+    url:     'https://docs.google.com/document/d/129HsZemfn4aUOnwulsoU1TJhZ97KG2bjlHBl2FazNJs/edit',
+    etiqueta:'Obligatorio',
+    color:   'badge-blue',
+  },
+  {
+    titulo:  'Protocolo operativo — CEIP Escaleritas',
+    desc:    'Guía de procedimientos y control horario: fichaje de entrada, pase de lista, cierre de actividad y entrega de menores.',
+    icono:   '📋',
+    url:     'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/view',
+    etiqueta:'Operativo',
+    color:   'badge-green',
+  },
+];
+
+function _parseDocs(raw) {
+  return String(raw||'').split(';;').map(s => {
+    const [titulo, url] = s.split('|');
+    return titulo && url ? { titulo: titulo.trim(), url: url.trim() } : null;
+  }).filter(Boolean);
+}
+
+function documentacionSec() {
+  document.getElementById('topbar-actions').innerHTML = '';
+
+  const protCards = _PROTOCOLOS_EMPRESA.map(p => `
+    <div class="card" style="display:flex;gap:16px;align-items:flex-start;padding:20px 24px">
+      <div style="font-size:32px;line-height:1">${p.icono}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <strong style="font-size:15px">${esc(p.titulo)}</strong>
+          <span class="badge ${p.color}">${p.etiqueta}</span>
+        </div>
+        <p style="margin:0 0 12px;color:var(--text2);font-size:13px">${esc(p.desc)}</p>
+        <a href="${esc(p.url)}" target="_blank" rel="noopener"
+           class="btn btn-sm btn-secondary">↗ Abrir documento</a>
+      </div>
+    </div>`).join('');
+
+  // Mis documentos personales
+  const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
+  const misDocs = _parseDocs(miPer?.DOCS_DRIVE);
+  const misDocsHtml = misDocs.length
+    ? misDocs.map(d => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:18px">📄</span>
+          <span style="flex:1">${esc(d.titulo)}</span>
+          <a href="${esc(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">↗ Abrir</a>
+        </div>`).join('')
+    : '<p style="color:var(--text3);margin:0">Sin documentos asignados. Contacta con el coordinador.</p>';
+
+  // Vista admin: tabla de todos los trabajadores con sus docs
+  let adminDocsHtml = '';
+  if (isAdmin()) {
+    const trabajadores = DB.personal.filter(p => !['AMPA','FAMILIA'].includes(String(p.ROL||'').toUpperCase()));
+    const filas = trabajadores.map(p => {
+      const docs = _parseDocs(p.DOCS_DRIVE);
+      const docsCell = docs.length
+        ? docs.map(d => `<a href="${esc(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px">${esc(d.titulo)}</a>`).join('')
+        : '<span class="badge badge-red">Sin docs</span>';
+      return `<tr>
+        <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
+        <td><span class="badge badge-blue">${esc(p.ROL||'—')}</span></td>
+        <td>${docsCell}</td>
+        <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Editar docs</button></td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="4"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
+
+    adminDocsHtml = `
+      <div class="card" style="padding:14px 20px">
+        <div class="card-title">Documentos por trabajadora</div>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Para añadir o editar documentos, pulsa "Editar docs" y rellena el campo <em>Documentos Drive</em> con el formato <code>Título|URL;;Título2|URL2</code>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Trabajadora</th><th>Rol</th><th>Documentos</th><th></th></tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  render(`
+    <div class="card" style="padding:20px 24px;margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:16px">Protocolos de empresa</div>
+      <div style="display:flex;flex-direction:column;gap:12px">${protCards}</div>
+    </div>
+    <div class="card" style="padding:20px 24px;margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:4px">Mis documentos</div>
+      <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Contratos, documentos informativos y otros documentos personales de tu relación laboral.</p>
+      <div>${misDocsHtml}</div>
+    </div>
+    ${adminDocsHtml}
+  `);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: PERSONAL
 // ══════════════════════════════════════════════════════════════════════════
 function personal() {
@@ -7629,6 +7740,10 @@ function modalPersonal(p) {
           <option value="SÍ" ${String(p.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
           <option value="NO" ${String(p.ACTIVO||'').toUpperCase()==='NO'?'selected':''}>No</option>
         </select></div>
+      <div class="field span2"><label>Documentos Drive <span style="font-size:11px;color:var(--text3)">(formato: Título|URL;;Título 2|URL2)</span></label>
+        <textarea id="per-docs" style="min-height:60px;font-size:12px;font-family:monospace">${esc(p.DOCS_DRIVE||'')}</textarea>
+        <span style="font-size:11px;color:var(--text3)">Pega los enlaces de Drive separados por ;; — ej: Contrato|https://drive.google.com/…;;Nómina oct|https://…</span>
+      </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="guardarPersonal(${isNew?'null':`'${p.ID_MONITOR}'`})">Guardar</button>`);
@@ -7654,6 +7769,7 @@ function guardarPersonal(id) {
     FECHA_ALTA:          document.getElementById('per-falta').value,
     CERTIFICADO_DELITOS: document.getElementById('per-cert').value.trim(),
     ACTIVO:              document.getElementById('per-activo').value,
+    DOCS_DRIVE:          document.getElementById('per-docs').value.trim(),
   };
   writeToSheet('PERSONAL', row, id)
     .then(()=>{ showToast(id?'Trabajador actualizado':'Trabajador creado'); closeModal(); loadAllData().then(personal); })
