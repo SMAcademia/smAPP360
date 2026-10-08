@@ -757,6 +757,7 @@ function normalizarDB(raw) {
     CATEGORIA: r['CATEGORÍA'] || r.CATEGORIA || '',
   }));
   DB.pagadoresExternos       = raw.pagadoresExternos || [];
+  DB.firmasProtocolo         = raw.firmasProtocolo   || [];
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
   try {
@@ -7410,20 +7411,24 @@ function exportarFacturaPDF(f) {
 // ══════════════════════════════════════════════════════════════════════════
 const _PROTOCOLOS_EMPRESA = [
   {
+    docId:   'lgtbiq',
     titulo:  'Protocolo de Acoso e Igualdad LGTBIQ+',
-    desc:    'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo.',
+    desc:    'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo. Amparado en la Ley 8/2014 de Canarias, LO 10/2022 y LOPIVI.',
     icono:   '🏳️‍🌈',
-    url:     'https://docs.google.com/document/d/17OxjIj8TPfYU5Klhih_nrWWw7YB4_wnooRSaJX-KPtI/edit',
+    url:     'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/edit',
     etiqueta:'Obligatorio',
     color:   'badge-blue',
+    firmaRequerida: true,
   },
   {
+    docId:   'operativo-escaleritas',
     titulo:  'Protocolo operativo — CEIP Escaleritas',
     desc:    'Guía de procedimientos y control horario: fichaje de entrada, pase de lista, cierre de actividad y entrega de menores.',
     icono:   '📋',
     url:     'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/view',
     etiqueta:'Operativo',
     color:   'badge-green',
+    firmaRequerida: true,
   },
 ];
 
@@ -7437,19 +7442,34 @@ function _parseDocs(raw) {
 function documentacionSec() {
   document.getElementById('topbar-actions').innerHTML = '';
 
-  const protCards = _PROTOCOLOS_EMPRESA.map(p => `
+  const misFirmas = DB.firmasProtocolo || [];
+  const miId = String(currentUser.id);
+
+  const protCards = _PROTOCOLOS_EMPRESA.map(p => {
+    const firma = misFirmas.find(f => String(f.ID_MONITOR) === miId && f.DOC_ID === p.docId);
+    const firmaHtml = p.firmaRequerida
+      ? (firma
+          ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(firma.FECHA)}</span>`
+          : `<button class="btn btn-sm" style="background:var(--green,#2e7d32);color:#fff;border:none"
+               onclick="modalFirmaProtocolo('${esc(p.docId)}','${esc(p.titulo)}')">✍ Firmar</button>`)
+      : '';
+    return `
     <div class="card" style="display:flex;gap:16px;align-items:flex-start;padding:20px 24px">
       <div style="font-size:32px;line-height:1">${p.icono}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
           <strong style="font-size:15px">${esc(p.titulo)}</strong>
           <span class="badge ${p.color}">${p.etiqueta}</span>
         </div>
         <p style="margin:0 0 12px;color:var(--text2);font-size:13px">${esc(p.desc)}</p>
-        <a href="${esc(p.url)}" target="_blank" rel="noopener"
-           class="btn btn-sm btn-secondary">↗ Abrir documento</a>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <a href="${esc(p.url)}" target="_blank" rel="noopener"
+             class="btn btn-sm btn-secondary">↗ Abrir documento</a>
+          ${firmaHtml}
+        </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   // Mis documentos personales
   const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
@@ -7463,11 +7483,32 @@ function documentacionSec() {
         </div>`).join('')
     : '<p style="color:var(--text3);margin:0">Sin documentos asignados. Contacta con el coordinador.</p>';
 
-  // Vista admin: tabla de todos los trabajadores con sus docs
+  // Vista admin: tabla de trabajadores con docs y estado de firmas
   let adminDocsHtml = '';
   if (isAdmin()) {
     const trabajadores = DB.personal.filter(p => !['AMPA','FAMILIA'].includes(String(p.ROL||'').toUpperCase()));
-    const filas = trabajadores.map(p => {
+
+    // Tabla de firmas por protocolo
+    const protRequeridos = _PROTOCOLOS_EMPRESA.filter(p => p.firmaRequerida);
+    const thProts = protRequeridos.map(p => `<th style="font-size:11px;white-space:nowrap">${esc(p.titulo.replace('Protocolo ','').replace(' — CEIP Escaleritas',''))}</th>`).join('');
+
+    const filasFirmas = trabajadores.map(p => {
+      const idT = String(p.ID_MONITOR || p.ID || '');
+      const celdas = protRequeridos.map(prot => {
+        const f = misFirmas.find(f => String(f.ID_MONITOR) === idT && f.DOC_ID === prot.docId);
+        return f
+          ? `<td style="text-align:center"><span class="badge badge-green" title="Firmado el ${esc(f.FECHA)} ${esc(f.HORA)}">✓ ${esc(f.FECHA)}</span></td>`
+          : `<td style="text-align:center"><span class="badge badge-red">Pendiente</span></td>`;
+      }).join('');
+      return `<tr>
+        <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
+        <td><span class="badge badge-blue">${esc(p.ROL||'—')}</span></td>
+        ${celdas}
+      </tr>`;
+    }).join('') || `<tr><td colspan="${2 + protRequeridos.length}"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
+
+    // Tabla de documentos por trabajador
+    const filasDoc = trabajadores.map(p => {
       const docs = _parseDocs(p.DOCS_DRIVE);
       const docsCell = docs.length
         ? docs.map(d => `<a href="${esc(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px">${esc(d.titulo)}</a>`).join('')
@@ -7481,13 +7522,23 @@ function documentacionSec() {
     }).join('') || `<tr><td colspan="4"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
 
     adminDocsHtml = `
+      <div class="card" style="padding:14px 20px;margin-bottom:16px">
+        <div class="card-title">Estado de firmas</div>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Registro de protocolos obligatorios firmados digitalmente por cada trabajador/a.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Trabajadora</th><th>Rol</th>${thProts}</tr></thead>
+            <tbody>${filasFirmas}</tbody>
+          </table>
+        </div>
+      </div>
       <div class="card" style="padding:14px 20px">
         <div class="card-title">Documentos por trabajadora</div>
         <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Para añadir o editar documentos, pulsa "Editar docs" y rellena el campo <em>Documentos Drive</em> con el formato <code>Título|URL;;Título2|URL2</code>.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Trabajadora</th><th>Rol</th><th>Documentos</th><th></th></tr></thead>
-            <tbody>${filas}</tbody>
+            <tbody>${filasDoc}</tbody>
           </table>
         </div>
       </div>`;
@@ -7505,6 +7556,114 @@ function documentacionSec() {
     </div>
     ${adminDocsHtml}
   `);
+}
+
+// ── Sistema de firma digital ──────────────────────────────────────────────────
+let _firmaCtx = null, _firmaDrawing = false, _firmaTieneTrazos = false;
+
+function modalFirmaProtocolo(docId, docTitulo) {
+  const ya = (DB.firmasProtocolo||[]).find(f =>
+    String(f.ID_MONITOR) === String(currentUser.id) && f.DOC_ID === docId
+  );
+  if (ya) { showToast('Ya has firmado este protocolo (' + ya.FECHA + ')'); return; }
+
+  openModal('Firmar protocolo', `
+    <p style="margin:0 0 6px;font-size:13px;color:var(--text2)">
+      Estás firmando: <strong>${esc(docTitulo)}</strong>
+    </p>
+    <p style="margin:0 0 10px;font-size:12px;color:var(--text3)">
+      Dibuja tu firma con el dedo o el ratón. Al confirmar queda registrada con tu nombre, fecha y hora.
+    </p>
+    <canvas id="firma-canvas" width="560" height="190"
+      style="width:100%;border:2px solid var(--border2);border-radius:8px;background:#fff;cursor:crosshair;touch-action:none;display:block"></canvas>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <button class="btn btn-sm btn-secondary" onclick="_firmaLimpiar()">🗑 Limpiar</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-sm btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-sm" id="btn-confirmar-firma"
+        onclick="guardarFirmaProtocolo('${esc(docId)}','${esc(docTitulo)}')"
+        disabled style="background:var(--green,#2e7d32);color:#fff;border:none;opacity:0.5">✓ Confirmar firma</button>
+    </div>
+  `);
+
+  requestAnimationFrame(() => {
+    const canvas = document.getElementById('firma-canvas');
+    if (!canvas) return;
+    _firmaCtx = canvas.getContext('2d');
+    _firmaCtx.strokeStyle = '#111';
+    _firmaCtx.lineWidth = 2.5;
+    _firmaCtx.lineCap = 'round';
+    _firmaCtx.lineJoin = 'round';
+    _firmaDrawing = false;
+    _firmaTieneTrazos = false;
+
+    const pos = e => {
+      const r = canvas.getBoundingClientRect();
+      const s = e.touches ? e.touches[0] : e;
+      return { x: (s.clientX - r.left) * (canvas.width / r.width),
+               y: (s.clientY - r.top)  * (canvas.height / r.height) };
+    };
+
+    canvas.addEventListener('mousedown',  e => { _firmaDrawing = true; const p = pos(e); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); });
+    canvas.addEventListener('mousemove',  e => { if (!_firmaDrawing) return; const p = pos(e); _firmaCtx.lineTo(p.x, p.y); _firmaCtx.stroke(); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); _firmaTieneTrazos = true; _firmaActualizarBtn(); });
+    canvas.addEventListener('mouseup',    () => { _firmaDrawing = false; });
+    canvas.addEventListener('mouseleave', () => { _firmaDrawing = false; });
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); _firmaDrawing = true; const p = pos(e); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); }, { passive: false });
+    canvas.addEventListener('touchmove',  e => { e.preventDefault(); if (!_firmaDrawing) return; const p = pos(e); _firmaCtx.lineTo(p.x, p.y); _firmaCtx.stroke(); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); _firmaTieneTrazos = true; _firmaActualizarBtn(); }, { passive: false });
+    canvas.addEventListener('touchend',   () => { _firmaDrawing = false; });
+  });
+}
+
+function _firmaActualizarBtn() {
+  const btn = document.getElementById('btn-confirmar-firma');
+  if (!btn) return;
+  btn.disabled = !_firmaTieneTrazos;
+  btn.style.opacity = _firmaTieneTrazos ? '1' : '0.5';
+}
+
+function _firmaLimpiar() {
+  const canvas = document.getElementById('firma-canvas');
+  if (!canvas || !_firmaCtx) return;
+  _firmaCtx.clearRect(0, 0, canvas.width, canvas.height);
+  _firmaTieneTrazos = false;
+  _firmaActualizarBtn();
+}
+
+async function guardarFirmaProtocolo(docId, docTitulo) {
+  const canvas = document.getElementById('firma-canvas');
+  if (!canvas || !_firmaTieneTrazos) return;
+  const btn = document.getElementById('btn-confirmar-firma');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  const ahora  = new Date();
+  const fecha  = ahora.toLocaleDateString('es-ES');
+  const hora   = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const miPer  = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
+  const nombre = miPer ? `${miPer.NOMBRE||''} ${miPer.APELLIDOS||''}`.trim() : (currentUser.nombre || currentUser.email || '');
+  const firmaImg = canvas.toDataURL('image/png');
+
+  const row = {
+    ID_MONITOR: currentUser.id,
+    NOMBRE:     nombre,
+    DOC_ID:     docId,
+    TITULO_DOC: docTitulo,
+    FECHA:      fecha,
+    HORA:       hora,
+    FIRMA_IMG:  firmaImg,
+  };
+
+  try {
+    const res = await writeToSheet('FIRMAS_PROTOCOLO', row, null);
+    const newId = res?.id || ('FIRMA-' + Date.now());
+    DB.firmasProtocolo = DB.firmasProtocolo || [];
+    DB.firmasProtocolo.push({ ...row, ID: newId });
+    closeModal();
+    showToast('Firma registrada correctamente', 'success');
+    documentacionSec();
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '✓ Confirmar firma'; }
+    showToast('Error al guardar la firma: ' + (e.message||e), 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════

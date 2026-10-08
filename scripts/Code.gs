@@ -133,6 +133,7 @@ function getAllData() {
     solicitudes:             sheetToJSON(book, 'SOLICITUDES'),
     bancoHistorico:          sheetToJSON(book, 'BANCO_HISTORICO'),
     pagadoresExternos:       sheetToJSON(book, 'PAGADORES_EXTERNOS'),
+    firmasProtocolo:         sheetToJSON(book, 'FIRMAS_PROTOCOLO'),
   };
 }
 
@@ -407,6 +408,7 @@ function nextId_(sheet, sheetName, headers) {
     'NOMINAS':                'NOM-',
     'ENCUESTAS_SATISFACCION': 'ENC-',
     'PAGADORES_EXTERNOS':     'PE-',
+    'FIRMAS_PROTOCOLO':       'FIRMA-',
   };
 
   var prefix  = PREFIX_MAP[sheetName];
