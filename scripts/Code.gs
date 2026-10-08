@@ -589,7 +589,7 @@ function sendFacturaEmail(body) {
   var asunto = 'Factura disponible · ' + numFac + ' — SM Academia';
 
   var html = '<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#222">'
-    + '<div style="background:#1a3a5c;padding:24px 32px;border-radius:8px 8px 0 0">'
+    + '<div style="background:#2e7d32;padding:24px 32px;border-radius:8px 8px 0 0">'
     +   '<h1 style="color:#fff;margin:0;font-size:22px">SM Academia</h1>'
     + '</div>'
     + '<div style="background:#f9f9f9;padding:28px 32px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0;border-top:none">'
@@ -602,8 +602,8 @@ function sendFacturaEmail(body) {
     +              '<td style="padding:6px 0;font-weight:bold">' + total + ' €</td></tr>' : '')
     +   '</table>'
     +   '<p style="margin:28px 0 8px">'
-    +     '<a href="' + portal + '" style="background:#1a3a5c;color:#fff;padding:12px 28px;'
-    +     'border-radius:6px;text-decoration:none;font-size:15px">Acceder a la app</a>'
+    +     '<a href="' + portal + '" style="background:#2e7d32;color:#fff;padding:12px 28px;'
+    +     'border-radius:6px;text-decoration:none;font-size:15px;background:#2e7d32">Acceder a la app</a>'
     +   '</p>'
     +   '<p style="margin-top:32px;font-size:12px;color:#999">SM Academia de Fútbol · '
     +   'Este mensaje es informativo. Puedes consultar y descargar tu factura desde el portal de familias.</p>'
