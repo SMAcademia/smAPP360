@@ -7411,23 +7411,27 @@ function exportarFacturaPDF(f) {
 // ══════════════════════════════════════════════════════════════════════════
 const _PROTOCOLOS_EMPRESA = [
   {
-    docId:   'lgtbiq',
-    titulo:  'Protocolo de Acoso e Igualdad LGTBIQ+',
-    desc:    'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo. Amparado en la Ley 8/2014 de Canarias, LO 10/2022 y LOPIVI.',
-    icono:   '🏳️‍🌈',
-    url:     'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/edit',
-    etiqueta:'Obligatorio',
-    color:   'badge-blue',
+    docId:      'lgtbiq',
+    fileId:     '1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI',
+    titulo:     'Protocolo de Acoso e Igualdad LGTBIQ+',
+    desc:       'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo. Amparado en la Ley 8/2014 de Canarias, LO 10/2022 y LOPIVI.',
+    icono:      '🏳️‍🌈',
+    previewUrl: 'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/preview',
+    url:        'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/edit',
+    etiqueta:   'Obligatorio',
+    color:      'badge-blue',
     firmaRequerida: true,
   },
   {
-    docId:   'operativo-escaleritas',
-    titulo:  'Protocolo operativo — CEIP Escaleritas',
-    desc:    'Guía de procedimientos y control horario: fichaje de entrada, pase de lista, cierre de actividad y entrega de menores.',
-    icono:   '📋',
-    url:     'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/view',
-    etiqueta:'Operativo',
-    color:   'badge-green',
+    docId:      'operativo-escaleritas',
+    fileId:     '13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap',
+    titulo:     'Protocolo operativo — CEIP Escaleritas',
+    desc:       'Guía de procedimientos y control horario: fichaje de entrada, pase de lista, cierre de actividad y entrega de menores.',
+    icono:      '📋',
+    previewUrl: 'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/preview',
+    url:        'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/view',
+    etiqueta:   'Operativo',
+    color:      'badge-green',
     firmaRequerida: true,
   },
 ];
@@ -7447,12 +7451,10 @@ function documentacionSec() {
 
   const protCards = _PROTOCOLOS_EMPRESA.map(p => {
     const firma = misFirmas.find(f => String(f.ID_MONITOR) === miId && f.DOC_ID === p.docId);
-    const firmaHtml = p.firmaRequerida
-      ? (firma
-          ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(firma.FECHA)}</span>`
-          : `<button class="btn btn-sm" style="background:var(--green,#2e7d32);color:#fff;border:none"
-               onclick="modalFirmaProtocolo('${esc(p.docId)}','${esc(p.titulo)}')">✍ Firmar</button>`)
-      : '';
+    const estadoHtml = firma
+      ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(firma.FECHA)}</span>
+         ${firma.PDF_URL ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>` : '<span style="font-size:11px;color:var(--text3)">Generando PDF…</span>'}`
+      : (p.firmaRequerida ? `<span class="badge badge-red" style="font-size:12px">Pendiente de firma</span>` : '');
     return `
     <div class="card" style="display:flex;gap:16px;align-items:flex-start;padding:20px 24px">
       <div style="font-size:32px;line-height:1">${p.icono}</div>
@@ -7463,9 +7465,9 @@ function documentacionSec() {
         </div>
         <p style="margin:0 0 12px;color:var(--text2);font-size:13px">${esc(p.desc)}</p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <a href="${esc(p.url)}" target="_blank" rel="noopener"
-             class="btn btn-sm btn-secondary">↗ Abrir documento</a>
-          ${firmaHtml}
+          <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none"
+            onclick="verDocumento('${esc(p.docId)}')">📖 Leer y firmar</button>
+          ${estadoHtml}
         </div>
       </div>
     </div>`;
@@ -7500,12 +7502,17 @@ function documentacionSec() {
           ? `<td style="text-align:center"><span class="badge badge-green" title="Firmado el ${esc(f.FECHA)} ${esc(f.HORA)}">✓ ${esc(f.FECHA)}</span></td>`
           : `<td style="text-align:center"><span class="badge badge-red">Pendiente</span></td>`;
       }).join('');
+      const pdfs = protRequeridos.map(prot => {
+        const f = misFirmas.find(f => String(f.ID_MONITOR) === idT && f.DOC_ID === prot.docId && f.PDF_URL);
+        return f ? `<a href="${esc(f.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px;font-size:11px">📄 ${esc(prot.icono)}</a>` : '';
+      }).join('');
       return `<tr>
         <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
         <td><span class="badge badge-blue">${esc(p.ROL||'—')}</span></td>
         ${celdas}
+        <td>${pdfs || '<span style="color:var(--text3);font-size:11px">—</span>'}</td>
       </tr>`;
-    }).join('') || `<tr><td colspan="${2 + protRequeridos.length}"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
+    }).join('') || `<tr><td colspan="${3 + protRequeridos.length}"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
 
     // Tabla de documentos por trabajador
     const filasDoc = trabajadores.map(p => {
@@ -7521,13 +7528,21 @@ function documentacionSec() {
       </tr>`;
     }).join('') || `<tr><td colspan="4"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
 
+    const totalFirmados = misFirmas.filter(f => f.PDF_ID).length;
     adminDocsHtml = `
       <div class="card" style="padding:14px 20px;margin-bottom:16px">
-        <div class="card-title">Estado de firmas</div>
-        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Registro de protocolos obligatorios firmados digitalmente por cada trabajador/a.</p>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="card-title" style="margin:0">Estado de firmas</div>
+          <button class="btn btn-sm" onclick="enviarDocsAsesoria()"
+            style="background:#2e7d32;color:#fff;border:none;margin-left:auto"
+            ${totalFirmados ? '' : 'disabled'}>
+            ✉ Enviar documentación a asesoría${totalFirmados ? ' (' + totalFirmados + ' docs)' : ''}
+          </button>
+        </div>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Protocolos obligatorios firmados digitalmente. El botón envía todos los PDFs generados a <strong>info@vgasesoria.es</strong>.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Trabajadora</th><th>Rol</th>${thProts}</tr></thead>
+            <thead><tr><th>Trabajadora</th><th>Rol</th>${thProts}<th>PDF</th></tr></thead>
             <tbody>${filasFirmas}</tbody>
           </table>
         </div>
@@ -7558,6 +7573,62 @@ function documentacionSec() {
   `);
 }
 
+// ── Visor de documentos + envío a asesoría ───────────────────────────────────
+function verDocumento(docId) {
+  const p = _PROTOCOLOS_EMPRESA.find(x => x.docId === docId);
+  if (!p) return;
+  const misFirmas = DB.firmasProtocolo || [];
+  const firma = misFirmas.find(f => String(f.ID_MONITOR) === String(currentUser.id) && f.DOC_ID === docId);
+
+  const firmaBlock = firma ? `
+    <div style="padding:14px 18px;background:var(--bg2);border-top:2px solid #2e7d32;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <img src="${firma.FIRMA_IMG}" style="height:48px;border:1px solid var(--border);border-radius:4px;background:#fff;padding:3px;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;color:#2e7d32;font-size:13px">✓ Firmado digitalmente</div>
+        <div style="font-size:12px;color:var(--text2)">${esc(firma.NOMBRE)} · ${esc(firma.FECHA)} ${esc(firma.HORA)}</div>
+      </div>
+      ${firma.PDF_URL ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>` : '<span style="font-size:11px;color:var(--text3)">Generando PDF…</span>'}
+    </div>` : '';
+
+  const botonesFooter = firma
+    ? `<div style="margin-top:10px;text-align:right"><button class="btn btn-sm btn-secondary" onclick="closeModal()">Cerrar</button></div>`
+    : `<div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-sm btn-secondary" onclick="closeModal()">Cerrar</button>
+        <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none"
+          onclick="closeModal();modalFirmaProtocolo('${esc(docId)}','${esc(p.titulo)}')">✍ Firmar</button>
+      </div>`;
+
+  openModal(p.titulo, `
+    <div style="display:flex;flex-direction:column">
+      <div style="position:relative;width:100%;padding-top:66%;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#f5f5f5">
+        <iframe src="${esc(p.previewUrl)}"
+          style="position:absolute;inset:0;width:100%;height:100%;border:none"
+          allow="autoplay" loading="lazy"></iframe>
+      </div>
+      ${firmaBlock}
+    </div>
+    ${botonesFooter}
+  `);
+}
+
+async function enviarDocsAsesoria() {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'ENVIAR_DOCS_ASESORIA' }) });
+    const d = await r.json();
+    if (d.ok) {
+      showToast(`Enviados ${d.enviados} documento(s) a info@vgasesoria.es`, 'success');
+    } else {
+      showToast('Error: ' + (d.error || 'desconocido'), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = btn.textContent.replace('Enviando…','Enviar documentación a asesoría'); }
+    }
+  } catch(e) {
+    showToast('Error de conexión: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; }
+  }
+}
+
 // ── Sistema de firma digital ──────────────────────────────────────────────────
 let _firmaCtx = null, _firmaDrawing = false, _firmaTieneTrazos = false;
 
@@ -7574,7 +7645,7 @@ function modalFirmaProtocolo(docId, docTitulo) {
     <p style="margin:0 0 10px;font-size:12px;color:var(--text3)">
       Dibuja tu firma con el dedo o el ratón. Al confirmar queda registrada con tu nombre, fecha y hora.
     </p>
-    <canvas id="firma-canvas" width="560" height="190"
+    <canvas id="firma-canvas" width="500" height="130"
       style="width:100%;border:2px solid var(--border2);border-radius:8px;background:#fff;cursor:crosshair;touch-action:none;display:block"></canvas>
     <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
       <button class="btn btn-sm btn-secondary" onclick="_firmaLimpiar()">🗑 Limpiar</button>
@@ -7640,7 +7711,7 @@ async function guardarFirmaProtocolo(docId, docTitulo) {
   const hora   = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   const miPer  = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
   const nombre = miPer ? `${miPer.NOMBRE||''} ${miPer.APELLIDOS||''}`.trim() : (currentUser.nombre || currentUser.email || '');
-  const firmaImg = canvas.toDataURL('image/png');
+  const firmaImg = canvas.toDataURL('image/jpeg', 0.85);
 
   const row = {
     ID_MONITOR: currentUser.id,
@@ -7650,16 +7721,34 @@ async function guardarFirmaProtocolo(docId, docTitulo) {
     FECHA:      fecha,
     HORA:       hora,
     FIRMA_IMG:  firmaImg,
+    PDF_ID:     '',
+    PDF_URL:    '',
   };
 
   try {
     const res = await writeToSheet('FIRMAS_PROTOCOLO', row, null);
     const newId = res?.id || ('FIRMA-' + Date.now());
     DB.firmasProtocolo = DB.firmasProtocolo || [];
-    DB.firmasProtocolo.push({ ...row, ID: newId });
+    const entry = { ...row, ID: newId };
+    DB.firmasProtocolo.push(entry);
     closeModal();
-    showToast('Firma registrada correctamente', 'success');
+    showToast('Firma registrada. Generando PDF firmado…');
     documentacionSec();
+
+    // Background: generar PDF firmado en GAS
+    try {
+      const r2 = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+        action: 'GENERAR_PDF_FIRMADO', firmaId: newId
+      })});
+      const d2 = await r2.json();
+      if (d2.ok && d2.pdfUrl) {
+        entry.PDF_ID  = d2.pdfId;
+        entry.PDF_URL = d2.pdfUrl;
+        showToast('PDF firmado listo — disponible para descargar', 'success');
+        documentacionSec();
+      }
+    } catch(_) { /* PDF fallará silenciosamente; la firma ya está guardada */ }
+
   } catch(e) {
     if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '✓ Confirmar firma'; }
     showToast('Error al guardar la firma: ' + (e.message||e), 'error');

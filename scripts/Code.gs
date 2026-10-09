@@ -81,6 +81,10 @@ function doPost(e) {
       result = nuevaPreinscripcion(body);
     } else if (action === 'SEND_FACTURA_EMAIL') {
       result = sendFacturaEmail(body);
+    } else if (action === 'GENERAR_PDF_FIRMADO') {
+      result = generarPDFFirmado_(body.firmaId);
+    } else if (action === 'ENVIAR_DOCS_ASESORIA') {
+      result = enviarDocsAsesoria_();
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -623,4 +627,185 @@ function sendFacturaEmail(body) {
   } catch(err) {
     return { ok: false, error: err.toString() };
   }
+}
+
+// ===========================================================================
+//  GENERACIÓN DE PDF FIRMADO
+// ===========================================================================
+var PROTO_GDOC_IDS_ = {
+  'lgtbiq':                '1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI',
+  'operativo-escaleritas': '13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap',
+};
+
+function generarPDFFirmado_(firmaId) {
+  var book   = ss_();
+  var firmas = sheetToJSON(book, 'FIRMAS_PROTOCOLO');
+  var firma  = null;
+  for (var i = 0; i < firmas.length; i++) {
+    if (String(firmas[i].ID) === String(firmaId)) { firma = firmas[i]; break; }
+  }
+  if (!firma) return { ok: false, error: 'Firma no encontrada: ' + firmaId };
+
+  var nombre    = firma.NOMBRE    || '';
+  var fecha     = firma.FECHA     || '';
+  var hora      = firma.HORA      || '';
+  var tituloDoc = firma.TITULO_DOC || '';
+  var docId     = firma.DOC_ID    || '';
+  var rawB64    = String(firma.FIRMA_IMG || '').replace(/^data:image\/[a-z]+;base64,/, '');
+
+  if (!rawB64) return { ok: false, error: 'Imagen de firma no encontrada' };
+
+  var imgBlob;
+  try {
+    imgBlob = Utilities.newBlob(Utilities.base64Decode(rawB64), 'image/jpeg', 'firma.jpg');
+  } catch(e) {
+    try {
+      imgBlob = Utilities.newBlob(Utilities.base64Decode(rawB64), 'image/png', 'firma.png');
+    } catch(e2) {
+      return { ok: false, error: 'Error decodificando firma: ' + e2.message };
+    }
+  }
+
+  var driveFileId = PROTO_GDOC_IDS_[docId];
+  var newDoc;
+  try {
+    if (driveFileId) {
+      // Copiar el Google Doc original e inyectar la firma
+      var copia = DriveApp.getFileById(driveFileId).makeCopy(
+        'Firmado_' + nombre.replace(/\s+/g,'_') + '_' + fecha.replace(/\//g,'-')
+      );
+      newDoc = DocumentApp.openById(copia.getId());
+      var body = newDoc.getBody();
+
+      // Reemplazar placeholder con bloque de firma
+      var found = body.findText('\\{\\{FIRMA_TRABAJADOR\\}\\}');
+      if (found) {
+        var el = found.getElement().getParent();
+        var idx = body.getChildIndex(el);
+        body.removeChild(el);
+        var pFirma = body.insertParagraph(idx, 'Firmado digitalmente por: ' + nombre);
+        pFirma.setSpacingBefore(6);
+        body.insertParagraph(idx + 1, 'Fecha: ' + fecha + '  ·  Hora: ' + hora);
+        var pImg = body.insertParagraph(idx + 2, '');
+        pImg.appendInlineImage(imgBlob).setWidth(190).setHeight(65);
+      } else {
+        // Sin placeholder: añadir al final
+        body.appendHorizontalRule();
+        body.appendParagraph('FIRMA DEL/LA TRABAJADOR/A').setBold(true);
+        body.appendParagraph(nombre + '  ·  ' + fecha + '  ·  ' + hora);
+        body.appendParagraph('').appendInlineImage(imgBlob).setWidth(190).setHeight(65);
+      }
+      newDoc.saveAndClose();
+    } else {
+      // Sin Google Doc: generar certificado
+      newDoc = DocumentApp.create(
+        'Cert_Firma_' + nombre.replace(/\s+/g,'_') + '_' + fecha.replace(/\//g,'-')
+      );
+      var body = newDoc.getBody();
+      body.appendParagraph('SM ACADEMIA SPORTS & FOOTBALL')
+        .setHeading(DocumentApp.ParagraphHeading.HEADING1)
+        .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      body.appendParagraph('Certificado de firma de protocolo')
+        .setHeading(DocumentApp.ParagraphHeading.HEADING2)
+        .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      body.appendHorizontalRule();
+      body.appendParagraph('DOCUMENTO: ' + tituloDoc);
+      body.appendParagraph('');
+      body.appendParagraph('Nombre y apellidos: ' + nombre);
+      body.appendParagraph('Fecha: ' + fecha + '  ·  Hora: ' + hora);
+      body.appendParagraph('');
+      body.appendParagraph('Firma:');
+      body.appendParagraph('').appendInlineImage(imgBlob).setWidth(190).setHeight(65);
+      body.appendHorizontalRule();
+      body.appendParagraph('Documento generado por SM Academia · ' + fecha)
+        .setFontSize(8).setItalic(true);
+      newDoc.saveAndClose();
+    }
+
+    // Exportar como PDF
+    var pdfBlob = DriveApp.getFileById(newDoc.getId()).getAs(MimeType.PDF);
+    pdfBlob.setName('Protocolo_' + nombre.replace(/\s+/g,'_') + '_' + fecha.replace(/\//g,'-') + '.pdf');
+
+    var folder  = _carpetaFirmados_();
+    var pdfFile = folder.createFile(pdfBlob);
+    pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    // Borrar copia intermedia
+    DriveApp.getFileById(newDoc.getId()).setTrashed(true);
+
+    var pdfId  = pdfFile.getId();
+    var pdfUrl = pdfFile.getUrl();
+
+    // Actualizar fila en FIRMAS_PROTOCOLO con PDF_ID y PDF_URL
+    var sheet = book.getSheetByName('FIRMAS_PROTOCOLO');
+    if (sheet && sheet.getLastRow() > 1) {
+      var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      var colPdfId  = headers.indexOf('PDF_ID')  + 1;
+      var colPdfUrl = headers.indexOf('PDF_URL') + 1;
+      var colId     = headers.indexOf('ID')      + 1;
+      if (colId > 0) {
+        var vals = sheet.getRange(2, colId, sheet.getLastRow() - 1, 1).getValues();
+        for (var r = 0; r < vals.length; r++) {
+          if (String(vals[r][0]) === String(firmaId)) {
+            if (colPdfId  > 0) sheet.getRange(r + 2, colPdfId ).setValue(pdfId);
+            if (colPdfUrl > 0) sheet.getRange(r + 2, colPdfUrl).setValue(pdfUrl);
+            break;
+          }
+        }
+      }
+    }
+
+    return { ok: true, pdfId: pdfId, pdfUrl: pdfUrl };
+
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function _carpetaFirmados_() {
+  var name = 'SM Academia — Documentos Firmados';
+  var it   = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+// ===========================================================================
+//  ENVÍO DE DOCUMENTACIÓN A ASESORÍA
+// ===========================================================================
+function enviarDocsAsesoria_() {
+  var book   = ss_();
+  var firmas = sheetToJSON(book, 'FIRMAS_PROTOCOLO');
+  var conPdf = firmas.filter(function(f) { return f.PDF_ID; });
+
+  if (!conPdf.length) return { ok: false, error: 'No hay documentos firmados con PDF generado' };
+
+  var attachments = [];
+  var resumen     = [];
+  conPdf.forEach(function(f) {
+    try {
+      var blob = DriveApp.getFileById(f.PDF_ID).getBlob();
+      blob.setName((f.TITULO_DOC || f.DOC_ID) + ' — ' + (f.NOMBRE || '') + '.pdf');
+      attachments.push(blob);
+      resumen.push('• ' + (f.NOMBRE || '—') + ' · ' + (f.TITULO_DOC || f.DOC_ID) + ' · ' + (f.FECHA || ''));
+    } catch(e) {
+      Logger.log('Error adjuntando ' + f.PDF_ID + ': ' + e.message);
+    }
+  });
+
+  if (!attachments.length) return { ok: false, error: 'No se pudieron obtener los archivos PDF' };
+
+  var asunto  = 'SM Academia — Protocolos firmados por el equipo';
+  var cuerpo  = 'Se adjuntan los protocolos firmados digitalmente por el equipo de SM Academia Sports & Football.\n\n'
+    + resumen.join('\n') + '\n\n'
+    + 'Total adjuntos: ' + attachments.length + '\n'
+    + 'Enviado: ' + new Date().toLocaleDateString('es-ES');
+
+  MailApp.sendEmail({
+    to:          'info@vgasesoria.es',
+    name:        'SM Academia',
+    subject:     asunto,
+    body:        cuerpo,
+    attachments: attachments,
+  });
+
+  return { ok: true, enviados: attachments.length };
 }
