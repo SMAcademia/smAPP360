@@ -993,7 +993,7 @@ function applyRoleVisibility() {
 
   // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
-    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard']
+    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard','documentacion']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
