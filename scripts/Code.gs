@@ -154,6 +154,37 @@ function getAllData() {
   };
 }
 
+// Ejecutar UNA VEZ desde el editor GAS para migrar columnas HORA a texto plano
+function migrarHorasATexto() {
+  var book = ss_();
+  var sheets = ['SESIONES', 'ACTIVIDADES', 'REGISTRO_HORARIO'];
+  sheets.forEach(function(sName) {
+    var sheet = book.getSheetByName(sName);
+    if (!sheet) return;
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2) return;
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var horaIdxs = [];
+    headers.forEach(function(h, i) { if (String(h).indexOf('HORA') !== -1) horaIdxs.push(i); });
+    if (!horaIdxs.length) return;
+    var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    data.forEach(function(row, ri) {
+      horaIdxs.forEach(function(ci) {
+        var v = row[ci];
+        if (v instanceof Date) {
+          var formatted = Utilities.formatDate(v, 'Atlantic/Canary', 'HH:mm');
+          var cell = sheet.getRange(ri + 2, ci + 1);
+          cell.setNumberFormat('@STRING@');
+          cell.setValue(formatted);
+        }
+      });
+    });
+    Logger.log('Migrado: ' + sName);
+  });
+  Logger.log('Migración completada');
+}
+
 // Convierte una hoja en array de objetos ([] si no existe)
 function sheetToJSON(book, sheetName) {
   var sheet = book.getSheetByName(sheetName);
@@ -180,7 +211,8 @@ function sheetToJSON(book, sheetName) {
       var v = row[j];
       if (v instanceof Date) {
         if (h.indexOf('HORA') !== -1) {
-          obj[h] = Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
+          // Usar 'Atlantic/Canary' para evitar offset con 'Europe/Madrid' (Islas Canarias UTC+0/+1)
+          obj[h] = Utilities.formatDate(v, 'Atlantic/Canary', 'HH:mm');
         } else {
           obj[h] = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
         }
@@ -239,6 +271,16 @@ function appendRow(sheetName, rowObj) {
     });
 
     sheet.appendRow(newRow);
+
+    // Forzar columnas HORA a texto plano para evitar que Sheets reinterprete
+    // "17:00" como fracción decimal y pierda la hora por zona horaria
+    var newRowNum = sheet.getLastRow();
+    headers.forEach(function(h, i) {
+      if (h.indexOf('HORA') !== -1) {
+        sheet.getRange(newRowNum, i + 1).setNumberFormat('@STRING@');
+      }
+    });
+
     return { ok: true, id: rowObj[idCol] || '' };
 
   } catch (err) {
@@ -346,6 +388,14 @@ function updateRow(sheetName, id, rowObj) {
           return data[i][j];
         });
         sheet.getRange(i + 1, 1, 1, headers.length).setValues([updatedRow]);
+
+        // Forzar columnas HORA a texto plano tras actualizar
+        headers.forEach(function(h, j) {
+          if (h.indexOf('HORA') !== -1) {
+            sheet.getRange(i + 1, j + 1).setNumberFormat('@STRING@');
+          }
+        });
+
         return { ok: true, id: id };
       }
     }
