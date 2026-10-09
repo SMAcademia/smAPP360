@@ -158,6 +158,44 @@ function getAllData() {
   };
 }
 
+// Ejecutar UNA VEZ desde el editor GAS para convertir campos de dinero de texto a número.
+// SEGURO: solo procesa celdas cuyo valor es un string puro (typeof === 'string').
+// Números ya almacenados como número y fechas (Date objects) se dejan intactos.
+function migrarImportesANumero() {
+  var book = ss_();
+  var CONFIG = [
+    { sheet: 'PAGOS',         cols: ['IMPORTE','DESC_EUR','TOTAL_ESPERADO','TOTAL_RECIBIDO'] },
+    { sheet: 'INSCRIPCIONES', cols: ['PRECIO_ACORDADO','DESCUENTO'] },
+    { sheet: 'ACTIVIDADES',   cols: ['PRECIO'] },
+    { sheet: 'FACTURAS',      cols: ['BASE_IMPONIBLE','DESCUENTO','TOTAL'] },
+  ];
+  var totalFixed = 0;
+  CONFIG.forEach(function(cfg) {
+    var sheet = book.getSheetByName(cfg.sheet);
+    if (!sheet) return;
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2) return;
+    var headers = sheet.getRange(1,1,1,lastCol).getValues()[0].map(function(h){ return String(h).trim(); });
+    var colIdxs = [];
+    cfg.cols.forEach(function(col){ var idx=headers.indexOf(col); if(idx>=0) colIdxs.push(idx); });
+    if (!colIdxs.length) return;
+    var data = sheet.getRange(2,1,lastRow-1,lastCol).getValues();
+    data.forEach(function(row, ri) {
+      colIdxs.forEach(function(ci) {
+        var v = row[ci];
+        if (typeof v !== 'string' || v.trim() === '') return; // solo strings, nunca fechas ni números
+        var n = parseFloat(v.replace(',','.'));
+        if (isNaN(n) || !isFinite(n)) return;
+        sheet.getRange(ri+2, ci+1).setValue(n);
+        totalFixed++;
+      });
+    });
+    Logger.log('Procesada: ' + cfg.sheet);
+  });
+  Logger.log('Total celdas convertidas: ' + totalFixed);
+}
+
 // Ejecutar UNA VEZ desde el editor GAS para migrar columnas HORA a texto plano
 function migrarHorasATexto() {
   var book = ss_();
