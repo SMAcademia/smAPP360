@@ -7455,6 +7455,278 @@ function _parseDocs(raw) {
   }).filter(Boolean);
 }
 
+function _driveFileId(url) {
+  const m = String(url||'').match(/\/d\/([a-zA-Z0-9_-]{15,})/);
+  return m ? m[1] : null;
+}
+
+// ── Estado del firmador de PDF ────────────────────────────────────────────────
+let _pfSigImg   = null;  // base64 JPEG de la firma dibujada
+let _pfPdfBytes = null;  // Uint8Array del PDF cargado
+let _pfPdfDoc   = null;  // documento PDF.js
+let _pfNumPags  = 0;
+let _pfPagina   = 1;
+let _pfSigPx = 0, _pfSigPy = 0; // posición signature en px sobre el canvas renderizado
+let _pfSigW  = 180, _pfSigH = 54; // tamaño en px sobre el canvas
+let _pfDragging = false, _pfDragOx = 0, _pfDragOy = 0;
+
+async function _cargarLibsPDF() {
+  const cargar = src => new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  if (!window.pdfjsLib) {
+    await cargar('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  if (!window.PDFLib) {
+    await cargar('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js');
+  }
+}
+
+async function modalFirmaPDF(fileId, titulo) {
+  _pfSigImg = null; _pfPdfBytes = null; _pfPdfDoc = null;
+  _pfPagina = 1; _pfSigPx = 40; _pfSigPy = 40;
+
+  openModal('✍️ ' + titulo, `
+    <p style="font-size:13px;color:var(--text2);margin:0 0 10px">
+      <strong>Paso 1 de 2</strong> — Dibuja tu firma</p>
+    <div style="border:1px solid var(--border2);border-radius:8px;overflow:hidden;background:#fff">
+      <canvas id="pf-canvas" width="500" height="130"
+        style="display:block;width:100%;cursor:crosshair;touch-action:none"></canvas>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <button class="btn btn-sm btn-secondary" onclick="_pfLimpiar()">🗑 Limpiar</button>
+      <button id="btn-pf-next" class="btn btn-primary" disabled
+        onclick="_pfPasoPosicion('${esc(fileId)}','${esc(titulo)}')">Siguiente →</button>
+    </div>`);
+
+  const canvas = document.getElementById('pf-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,500,130);
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  let drawing = false;
+  const pos = e => {
+    const r = canvas.getBoundingClientRect();
+    const s = e.touches ? e.touches[0] : e;
+    return { x: (s.clientX-r.left)*(500/r.width), y: (s.clientY-r.top)*(130/r.height) };
+  };
+  const start = e => { drawing=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+  const move  = e => {
+    if (!drawing) return; const p=pos(e);
+    ctx.lineTo(p.x,p.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x,p.y);
+    document.getElementById('btn-pf-next').disabled = false;
+  };
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup', ()=>drawing=false);
+  canvas.addEventListener('mouseleave', ()=>drawing=false);
+  canvas.addEventListener('touchstart', e=>{e.preventDefault();start(e);},{passive:false});
+  canvas.addEventListener('touchmove',  e=>{e.preventDefault();move(e);},{passive:false});
+  canvas.addEventListener('touchend', ()=>drawing=false);
+}
+
+function _pfLimpiar() {
+  const canvas = document.getElementById('pf-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,500,130);
+  document.getElementById('btn-pf-next').disabled = true;
+}
+
+async function _pfPasoPosicion(fileId, titulo) {
+  const canvas = document.getElementById('pf-canvas');
+  if (!canvas) return;
+  // Exportar firma con fondo blanco
+  const off = document.createElement('canvas');
+  off.width=500; off.height=130;
+  const octx = off.getContext('2d');
+  octx.fillStyle='#fff'; octx.fillRect(0,0,500,130);
+  octx.drawImage(canvas,0,0);
+  _pfSigImg = off.toDataURL('image/jpeg',0.85);
+
+  openModal('✍️ ' + titulo, `
+    <p style="font-size:13px;color:var(--text2);margin:0 0 8px">
+      <strong>Paso 2 de 2</strong> — Arrastra la firma al lugar correcto del documento</p>
+    <div id="pf-loading" style="text-align:center;padding:40px;color:var(--text3)">
+      Cargando documento…</div>
+    <div id="pf-viewer" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px">
+        <button class="btn btn-sm btn-secondary" id="btn-pf-prev" onclick="_pfCambiarPag(-1)">‹</button>
+        <span id="pf-pag-info" style="color:var(--text2)"></span>
+        <button class="btn btn-sm btn-secondary" id="btn-pf-next2" onclick="_pfCambiarPag(1)">›</button>
+      </div>
+      <div id="pf-canvas-wrap" style="position:relative;border:1px solid var(--border2);border-radius:6px;overflow:hidden;background:#555;cursor:default;user-select:none">
+        <canvas id="pf-render" style="display:block;width:100%"></canvas>
+        <img id="pf-sig-drag" src="${_pfSigImg}"
+          style="position:absolute;left:${_pfSigPx}px;top:${_pfSigPy}px;width:${_pfSigW}px;height:${_pfSigH}px;cursor:grab;border:2px dashed #2e7d32;border-radius:4px;opacity:0.85">
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin:6px 0 0">
+        ↕ Arrastra la firma verde al lugar donde debe aparecer</p>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn btn-secondary" onclick="modalFirmaPDF('${esc(fileId)}','${esc(titulo)}')">← Volver</button>
+      <button id="btn-pf-firmar" class="btn btn-primary" disabled
+        onclick="_pfConfirmar('${esc(fileId)}','${esc(titulo)}')">✍️ Firmar documento</button>
+    </div>`);
+
+  try {
+    await _cargarLibsPDF();
+    const r = await fetch(GAS_URL, { method:'POST', body: JSON.stringify({
+      action:'OBTENER_PDF_B64', fileId
+    })});
+    const d = await r.json();
+    if (!d.ok) { document.getElementById('pf-loading').textContent='Error: '+d.error; return; }
+
+    const raw = atob(d.b64);
+    _pfPdfBytes = new Uint8Array(raw.length);
+    for (let i=0;i<raw.length;i++) _pfPdfBytes[i]=raw.charCodeAt(i);
+
+    _pfPdfDoc  = await window.pdfjsLib.getDocument({ data: _pfPdfBytes }).promise;
+    _pfNumPags = _pfPdfDoc.numPages;
+    _pfPagina  = _pfNumPags; // última página (donde suele ir la firma)
+
+    document.getElementById('pf-loading').style.display = 'none';
+    document.getElementById('pf-viewer').style.display  = 'block';
+    document.getElementById('btn-pf-firmar').disabled   = false;
+    await _pfRenderPagina();
+    _pfIniciarDrag();
+  } catch(e) {
+    document.getElementById('pf-loading').textContent = 'Error cargando PDF: '+e.message;
+  }
+}
+
+async function _pfRenderPagina() {
+  const page   = await _pfPdfDoc.getPage(_pfPagina);
+  const canvas = document.getElementById('pf-render');
+  if (!canvas) return;
+  const wrap   = document.getElementById('pf-canvas-wrap');
+  const wrapW  = wrap.clientWidth || 660;
+  const vp0    = page.getViewport({ scale: 1 });
+  const scale  = wrapW / vp0.width;
+  const vp     = page.getViewport({ scale });
+  canvas.width  = vp.width;
+  canvas.height = vp.height;
+  canvas.style.height = vp.height + 'px';
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+  const info = document.getElementById('pf-pag-info');
+  if (info) info.textContent = `Página ${_pfPagina} / ${_pfNumPags}`;
+  const prev = document.getElementById('btn-pf-prev');
+  const next = document.getElementById('btn-pf-next2');
+  if (prev) prev.disabled = _pfPagina <= 1;
+  if (next) next.disabled = _pfPagina >= _pfNumPags;
+
+  // Posicionar firma en la zona inferior si es la primera vez
+  const sig = document.getElementById('pf-sig-drag');
+  if (sig) { sig.style.left = _pfSigPx+'px'; sig.style.top = _pfSigPy+'px'; }
+}
+
+async function _pfCambiarPag(delta) {
+  const nueva = _pfPagina + delta;
+  if (nueva < 1 || nueva > _pfNumPags) return;
+  _pfPagina = nueva;
+  await _pfRenderPagina();
+}
+
+function _pfIniciarDrag() {
+  const sig  = document.getElementById('pf-sig-drag');
+  const wrap = document.getElementById('pf-canvas-wrap');
+  if (!sig || !wrap) return;
+
+  const getXY = e => {
+    const s = e.touches ? e.touches[0] : e;
+    const r = wrap.getBoundingClientRect();
+    return { x: s.clientX - r.left, y: s.clientY - r.top };
+  };
+
+  const startDrag = e => {
+    e.preventDefault();
+    _pfDragging = true; sig.style.cursor='grabbing';
+    const p = getXY(e);
+    _pfDragOx = p.x - sig.offsetLeft;
+    _pfDragOy = p.y - sig.offsetTop;
+  };
+  const moveDrag = e => {
+    if (!_pfDragging) return; e.preventDefault();
+    const p = getXY(e);
+    _pfSigPx = Math.max(0, Math.min(wrap.clientWidth  - _pfSigW, p.x - _pfDragOx));
+    _pfSigPy = Math.max(0, Math.min(wrap.clientHeight - _pfSigH, p.y - _pfDragOy));
+    sig.style.left = _pfSigPx+'px'; sig.style.top = _pfSigPy+'px';
+  };
+  const endDrag = () => { _pfDragging=false; sig.style.cursor='grab'; };
+
+  sig.addEventListener('mousedown', startDrag);
+  wrap.addEventListener('mousemove', moveDrag);
+  wrap.addEventListener('mouseup', endDrag);
+  sig.addEventListener('touchstart', startDrag, {passive:false});
+  wrap.addEventListener('touchmove', moveDrag, {passive:false});
+  wrap.addEventListener('touchend', endDrag);
+}
+
+async function _pfConfirmar(fileId, titulo) {
+  const btn = document.getElementById('btn-pf-firmar');
+  if (btn) { btn.disabled=true; btn.textContent='Firmando…'; }
+
+  try {
+    const canvas = document.getElementById('pf-render');
+    const wrap   = document.getElementById('pf-canvas-wrap');
+    if (!canvas||!wrap) throw new Error('Canvas no encontrado');
+
+    // Calcular escala: px del canvas HTML → puntos del PDF
+    const page    = await _pfPdfDoc.getPage(_pfPagina);
+    const vp1     = page.getViewport({ scale: 1 });
+    const scaleX  = vp1.width  / canvas.width;
+    const scaleY  = vp1.height / canvas.height;
+
+    // PDF-lib: origen abajo-izquierda; HTML: origen arriba-izquierda
+    const pdfX   = _pfSigPx * scaleX;
+    const pdfY   = vp1.height - (_pfSigPy + _pfSigH) * scaleY;
+    const pdfW   = _pfSigW * scaleX;
+    const pdfH   = _pfSigH * scaleY;
+
+    // Cargar PDF con pdf-lib
+    const { PDFDocument } = window.PDFLib;
+    const pdfDoc  = await PDFDocument.load(_pfPdfBytes);
+    const pdfPage = pdfDoc.getPage(_pfPagina - 1); // pdf-lib usa índice 0
+
+    // Embed firma JPEG
+    const sigData  = _pfSigImg.replace(/^data:image\/jpeg;base64,/, '');
+    const sigBytes = Uint8Array.from(atob(sigData), c => c.charCodeAt(0));
+    const sigEmbed = await pdfDoc.embedJpg(sigBytes);
+
+    pdfPage.drawImage(sigEmbed, { x: pdfX, y: pdfY, width: pdfW, height: pdfH });
+
+    const pdfOut  = await pdfDoc.save();
+    const pdfB64  = btoa(String.fromCharCode(...new Uint8Array(pdfOut)));
+
+    // Recuperar nombre original
+    const rNombre = await fetch(GAS_URL, {method:'POST', body:JSON.stringify({
+      action:'OBTENER_PDF_B64', fileId
+    })});
+    const dNombre = await rNombre.json();
+    const nombre  = dNombre.nombre || titulo;
+
+    const r = await fetch(GAS_URL, { method:'POST', body: JSON.stringify({
+      action:'GUARDAR_PDF_FIRMADO_PERSONAL', pdfB64, nombre
+    })});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+
+    closeModal();
+    showToast('PDF firmado guardado correctamente', 'success');
+    // Abrir el PDF firmado en nueva pestaña
+    window.open(d.url, '_blank');
+  } catch(e) {
+    showToast('Error al firmar: '+e.message, 'error');
+    if (btn) { btn.disabled=false; btn.textContent='✍️ Firmar documento'; }
+  }
+}
+
 function documentacionSec() {
   document.getElementById('topbar-actions').innerHTML = '';
 
@@ -7491,12 +7763,18 @@ function documentacionSec() {
   const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
   const misDocs = _parseDocs(miPer?.DOCS_DRIVE);
   const misDocsHtml = misDocs.length
-    ? misDocs.map(d => `
+    ? misDocs.map(d => {
+        const fileId = _driveFileId(d.url);
+        const esPDF  = fileId && (/\.pdf$/i.test(d.titulo) || /drive\.google\.com\/file/.test(d.url));
+        return `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
           <span style="font-size:18px">📄</span>
           <span style="flex:1">${esc(d.titulo)}</span>
           <a href="${esc(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">↗ Abrir</a>
-        </div>`).join('')
+          ${esPDF ? `<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none;cursor:pointer"
+            onclick="modalFirmaPDF('${fileId}','${esc(d.titulo)}')">✍️ Firmar</button>` : ''}
+        </div>`;
+      }).join('')
     : '<p style="color:var(--text3);margin:0">Sin documentos asignados. Contacta con el coordinador.</p>';
 
   // Vista admin: tabla de trabajadores con docs y estado de firmas

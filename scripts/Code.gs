@@ -98,6 +98,10 @@ function doPost(e) {
       result = generarPDFFirmado_(body.firmaId);
     } else if (action === 'ENVIAR_DOCS_ASESORIA') {
       result = enviarDocsAsesoria_();
+    } else if (action === 'OBTENER_PDF_B64') {
+      result = obtenerPdfB64_(body.fileId);
+    } else if (action === 'GUARDAR_PDF_FIRMADO_PERSONAL') {
+      result = guardarPdfFirmadoPersonal_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -977,4 +981,31 @@ function enviarDocsAsesoria_() {
   });
 
   return { ok: true, enviados: attachments.length };
+}
+
+// ===========================================================================
+//  PDF personal: obtener bytes y guardar firmado
+// ===========================================================================
+function obtenerPdfB64_(fileId) {
+  try {
+    var file  = DriveApp.getFileById(fileId);
+    var bytes = file.getBlob().getBytes();
+    return { ok: true, b64: Utilities.base64Encode(bytes), nombre: file.getName() };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+function guardarPdfFirmadoPersonal_(body) {
+  try {
+    var bytes  = Utilities.base64Decode(body.pdfB64);
+    var nombre = String(body.nombre || 'documento_firmado').replace(/\.pdf$/i,'') + '_FIRMADO.pdf';
+    var blob   = Utilities.newBlob(bytes, 'application/pdf', nombre);
+    var folder = _carpetaFirmados_();
+    var file   = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return { ok: true, url: file.getUrl(), fileId: file.getId(), nombre: nombre };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
 }
