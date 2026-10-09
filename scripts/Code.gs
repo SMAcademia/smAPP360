@@ -770,11 +770,19 @@ function generarPDFFirmado_(firmaId) {
   if (!firma) return { ok: false, error: 'Firma no encontrada: ' + firmaId };
 
   var nombre    = firma.NOMBRE    || '';
-  var fecha     = firma.FECHA     || '';
+  var fechaRaw  = firma.FECHA     || '';
   var hora      = firma.HORA      || '';
   var tituloDoc = firma.TITULO_DOC || '';
   var docId     = firma.DOC_ID    || '';
   var rawB64    = String(firma.FIRMA_IMG || '').replace(/^data:image\/[a-z]+;base64,/, '');
+
+  // Normalizar fecha a DD/MM/YYYY para mostrar en el PDF
+  // Acepta ISO (2026-10-09), DD/MM/YYYY (09/10/2026) y DD/MM/YY (09/10/26)
+  var fecha = fechaRaw;
+  var isoMatch = fechaRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    fecha = isoMatch[3] + '/' + isoMatch[2] + '/' + isoMatch[1];
+  }
 
   if (!rawB64) return { ok: false, error: 'Imagen de firma no encontrada' };
 
@@ -795,7 +803,7 @@ function generarPDFFirmado_(firmaId) {
     if (driveFileId) {
       // Copiar el Google Doc original e inyectar la firma
       var copia = DriveApp.getFileById(driveFileId).makeCopy(
-        'Firmado_' + nombre.replace(/\s+/g,'_') + '_' + fecha.replace(/\//g,'-')
+        'Firmado_' + nombre.replace(/\s+/g,'_') + '_' + fechaRaw.replace(/\//g,'-')
       );
       newDoc = DocumentApp.openById(copia.getId());
       var body = newDoc.getBody();
