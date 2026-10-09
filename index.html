@@ -7464,7 +7464,7 @@ function documentacionSec() {
   const protCards = _PROTOCOLOS_EMPRESA.map(p => {
     const firma = misFirmas.find(f => String(f.ID_MONITOR) === miId && f.DOC_ID === p.docId);
     const estadoHtml = firma
-      ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(firma.FECHA)}</span>
+      ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(fmtFecha(firma.FECHA))}</span>
          ${firma.PDF_URL
            ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>`
            : `<button class="btn btn-sm btn-secondary" onclick="regenerarPDF('${esc(firma.ID)}','${esc(p.docId)}')">🔄 Generar PDF</button>`}`
@@ -7677,6 +7677,9 @@ function modalFirmaProtocolo(docId, docTitulo) {
     const canvas = document.getElementById('firma-canvas');
     if (!canvas) return;
     _firmaCtx = canvas.getContext('2d');
+    // Fondo blanco explícito: JPEG no soporta transparencia (quedaría negro)
+    _firmaCtx.fillStyle = '#ffffff';
+    _firmaCtx.fillRect(0, 0, canvas.width, canvas.height);
     _firmaCtx.strokeStyle = '#111';
     _firmaCtx.lineWidth = 2.5;
     _firmaCtx.lineCap = 'round';
@@ -7711,7 +7714,8 @@ function _firmaActualizarBtn() {
 function _firmaLimpiar() {
   const canvas = document.getElementById('firma-canvas');
   if (!canvas || !_firmaCtx) return;
-  _firmaCtx.clearRect(0, 0, canvas.width, canvas.height);
+  _firmaCtx.fillStyle = '#ffffff';
+  _firmaCtx.fillRect(0, 0, canvas.width, canvas.height);
   _firmaTieneTrazos = false;
   _firmaActualizarBtn();
 }
@@ -7723,11 +7727,20 @@ async function guardarFirmaProtocolo(docId, docTitulo) {
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
   const ahora  = new Date();
-  const fecha  = ahora.toLocaleDateString('es-ES');
+  const fecha  = ahora.toISOString().slice(0, 10); // yyyy-MM-dd — evita ambigüedad DD/MM en Sheets
   const hora   = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   const miPer  = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
   const nombre = miPer ? `${miPer.NOMBRE||''} ${miPer.APELLIDOS||''}`.trim() : (currentUser.nombre || currentUser.email || '');
-  const firmaImg = canvas.toDataURL('image/jpeg', 0.85);
+  // Asegurar fondo blanco antes de exportar (JPEG convierte transparencia a negro)
+  const tmpCtx = canvas.getContext('2d');
+  const imgData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const offscreen = document.createElement('canvas');
+  offscreen.width = canvas.width; offscreen.height = canvas.height;
+  const octx = offscreen.getContext('2d');
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, offscreen.width, offscreen.height);
+  octx.putImageData(imgData, 0, 0);
+  const firmaImg = offscreen.toDataURL('image/jpeg', 0.85);
 
   const row = {
     ID_MONITOR: currentUser.id,
