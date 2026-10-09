@@ -5,6 +5,17 @@
 
 var SPREADSHEET_ID = '1oHJIUoyR3V5N0iweWnMagZic_8YkWtVV6CsshXloX4k';
 
+// ---------------------------------------------------------------------------
+// Cuentas de correo de la empresa
+// ---------------------------------------------------------------------------
+var EMAIL_EMPRESA = {
+  direccion:    'direccion@sm-academia.com',          // canal oficial + denuncia
+  director:     'samy.martin@academiasmfutbol.com',   // dirección personal
+  futbol:       'academiasmfutbol@outlook.es',        // academia fútbol
+  extraescolar: 'academiasmextraescolares@outlook.es', // desuso
+  asesoria:     'info@vgasesoria.es',
+};
+
 function ss_() {
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
@@ -619,6 +630,7 @@ function sendFacturaEmail(body) {
   try {
     MailApp.sendEmail({
       to:       to,
+      replyTo:  EMAIL_EMPRESA.direccion,
       name:     'SM Academia',
       subject:  asunto,
       htmlBody: html,
@@ -837,7 +849,8 @@ function enviarDocsAsesoria_() {
     + 'Enviado: ' + new Date().toLocaleDateString('es-ES');
 
   MailApp.sendEmail({
-    to:          'info@vgasesoria.es',
+    to:          EMAIL_EMPRESA.asesoria,
+    replyTo:     EMAIL_EMPRESA.direccion,
     name:        'SM Academia',
     subject:     asunto,
     body:        cuerpo,
