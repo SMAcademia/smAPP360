@@ -680,14 +680,51 @@ function generarPDFFirmado_(firmaId) {
       // Reemplazar placeholder con bloque de firma
       var found = body.findText('\\{\\{FIRMA_TRABAJADOR\\}\\}');
       if (found) {
-        var el = found.getElement().getParent();
-        var idx = body.getChildIndex(el);
-        body.removeChild(el);
-        var pFirma = body.insertParagraph(idx, 'Firmado digitalmente por: ' + nombre);
-        pFirma.setSpacingBefore(6);
-        body.insertParagraph(idx + 1, 'Fecha: ' + fecha + '  ·  Hora: ' + hora);
-        var pImg = body.insertParagraph(idx + 2, '');
-        pImg.appendInlineImage(imgBlob).setWidth(190).setHeight(65);
+        var textEl = found.getElement();
+        var parent = textEl.getParent();
+        var parentType = parent.getType();
+
+        if (parentType === DocumentApp.ElementType.PARAGRAPH &&
+            parent.getParent().getType() === DocumentApp.ElementType.TABLE_CELL) {
+          // Placeholder dentro de celda de tabla
+          var cell     = parent.getParent();
+          var row      = cell.getParent();
+          var table    = row.getParent();
+          var rowIndex = table.getChildIndex(row);
+
+          // Rellenar las demás celdas del row (Nombre | DNI | Fecha | Firma)
+          if (row.getNumCells() >= 4) {
+            var c0 = row.getCell(0); if (!c0.getText().trim()) c0.setText(nombre);
+            var c1 = row.getCell(1); if (!c1.getText().trim()) c1.setText('—');
+            var c2 = row.getCell(2); if (!c2.getText().trim()) c2.setText(fecha + ' ' + hora);
+          } else if (row.getNumCells() >= 1) {
+            row.getCell(0).setText(nombre + '  ·  ' + fecha + ' ' + hora);
+          }
+
+          // Sustituir celda de firma con imagen
+          cell.clear();
+          cell.appendParagraph('').appendInlineImage(imgBlob).setWidth(110).setHeight(42);
+
+          // Eliminar filas vacías que quedan debajo
+          var nRows = table.getNumRows();
+          for (var r = nRows - 1; r > rowIndex; r--) {
+            var testRow = table.getRow(r);
+            var isEmpty = true;
+            for (var c = 0; c < testRow.getNumCells(); c++) {
+              if (testRow.getCell(c).getText().trim()) { isEmpty = false; break; }
+            }
+            if (isEmpty) table.removeRow(r);
+          }
+
+        } else if (parentType === DocumentApp.ElementType.PARAGRAPH) {
+          // Placeholder en párrafo libre del body
+          var idx = body.getChildIndex(parent);
+          body.removeChild(parent);
+          var pFirma = body.insertParagraph(idx, 'Firmado digitalmente por: ' + nombre);
+          pFirma.setSpacingBefore(6);
+          body.insertParagraph(idx + 1, 'Fecha: ' + fecha + '  ·  Hora: ' + hora);
+          body.insertParagraph(idx + 2, '').appendInlineImage(imgBlob).setWidth(190).setHeight(65);
+        }
       } else {
         // Sin placeholder: añadir al final
         body.appendHorizontalRule();
