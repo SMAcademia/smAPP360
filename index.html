@@ -5112,14 +5112,15 @@ function actualizarInscPago2() {
 }
 
 function autorellenarPago2() {
-  const inscId = document.getElementById('p-insc2')?.value;
-  if (!inscId || inscId === 'CUOTA_SOCIO') return;
-  const insc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION||i.ID||'') === inscId);
-  if (!insc) return;
-  const act  = DB.actividades.find(a => String(a.ID||'') === String(insc.ID_ACTIVIDAD||''));
-  const lin  = document.getElementById('p-linea2'); if (lin) lin.value = act?.LINEA||insc.LINEA||'';
-  const srv  = document.getElementById('p-serv2');  if (srv) srv.value = act?.NOMBRE||'';
-  const fct  = document.getElementById('p-fact2');  if (fct) { fct.value = insc.IMPORTE||''; calcNeto2(); }
+  const sel = document.getElementById('p-insc2');
+  if (!sel || !sel.value) return;
+  const o = sel.options[sel.selectedIndex];
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('p-linea2', o.dataset.linea    || '');
+  set('p-serv2',  o.dataset.servicio || '');
+  set('p-fact2',  o.dataset.importe  || '');
+  set('p-desc2',  o.dataset.desc     || '0');
+  calcNeto2();
 }
 
 function calcNeto2() {
