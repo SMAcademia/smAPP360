@@ -271,6 +271,9 @@ function appendRow(sheetName, rowObj) {
     var newRow = headers.map(function(h) {
       var v = (rowObj[h] !== undefined && rowObj[h] !== null) ? rowObj[h] : '';
       if (h.indexOf('HORA') !== -1 && v !== '') return String(v);
+      if (/^(IMPORTE|PRECIO|TOTAL_ESPERADO|TOTAL_RECIBIDO|DESC_EUR|DESCUENTO|CUOTA|PRECIO_ACORDADO)$/.test(h) && v !== '') {
+        var n = parseFloat(v); if (!isNaN(n)) return n;
+      }
       return v;
     });
 
@@ -340,6 +343,9 @@ function appendBatch(sheetName, rows) {
       var newRow = headers.map(function(h) {
         var v = (rowObj[h] !== undefined && rowObj[h] !== null) ? rowObj[h] : '';
         if (h.indexOf('HORA') !== -1 && v !== '') return String(v);
+        if (/^(IMPORTE|PRECIO|TOTAL_ESPERADO|TOTAL_RECIBIDO|DESC_EUR|DESCUENTO|CUOTA|PRECIO_ACORDADO)$/.test(h) && v !== '') {
+          var n = parseFloat(v); if (!isNaN(n)) return n;
+        }
         return v;
       });
       matrix.push(newRow);
@@ -387,6 +393,9 @@ function updateRow(sheetName, id, rowObj) {
         var updatedRow = headers.map(function(h, j) {
           if (rowObj[h] !== undefined) {
             if (h.indexOf('HORA') !== -1 && rowObj[h] !== '') return String(rowObj[h]);
+            if (/^(IMPORTE|PRECIO|TOTAL_ESPERADO|TOTAL_RECIBIDO|DESC_EUR|DESCUENTO|CUOTA|PRECIO_ACORDADO)$/.test(h) && rowObj[h] !== '') {
+              var n = parseFloat(rowObj[h]); if (!isNaN(n)) return n;
+            }
             return rowObj[h];
           }
           return data[i][j];
