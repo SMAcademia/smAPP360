@@ -853,10 +853,10 @@ function generarPDFFirmado_(firmaId) {
 
         } else if (parentType === DocumentApp.ElementType.PARAGRAPH) {
           // Placeholder en párrafo libre del body
+          // No se puede usar removeChild si es el último párrafo — reemplazar texto en su lugar
           var idx = body.getChildIndex(parent);
-          body.removeChild(parent);
-          var pFirma = body.insertParagraph(idx, 'Firmado digitalmente por: ' + nombre);
-          pFirma.setSpacingBefore(6);
+          parent.replaceText('\\{\\{FIRMA_TRABAJADOR\\}\\}', 'Firmado digitalmente por: ' + nombre);
+          parent.setSpacingBefore(6);
           body.insertParagraph(idx + 1, 'Fecha: ' + fecha + '  ·  Hora: ' + hora);
           body.insertParagraph(idx + 2, '').appendInlineImage(imgBlob).setWidth(190).setHeight(65);
         }
