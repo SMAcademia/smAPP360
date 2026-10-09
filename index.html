@@ -7465,7 +7465,9 @@ function documentacionSec() {
     const firma = misFirmas.find(f => String(f.ID_MONITOR) === miId && f.DOC_ID === p.docId);
     const estadoHtml = firma
       ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(firma.FECHA)}</span>
-         ${firma.PDF_URL ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>` : '<span style="font-size:11px;color:var(--text3)">Generando PDF…</span>'}`
+         ${firma.PDF_URL
+           ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>`
+           : `<button class="btn btn-sm btn-secondary" onclick="regenerarPDF('${esc(firma.ID)}','${esc(p.docId)}')">🔄 Generar PDF</button>`}`
       : (p.firmaRequerida ? `<span class="badge badge-red" style="font-size:12px">Pendiente de firma</span>` : '');
     return `
     <div class="card" style="display:flex;gap:16px;align-items:flex-start;padding:20px 24px">
@@ -7599,7 +7601,9 @@ function verDocumento(docId) {
         <div style="font-weight:600;color:#2e7d32;font-size:13px">✓ Firmado digitalmente</div>
         <div style="font-size:12px;color:var(--text2)">${esc(firma.NOMBRE)} · ${esc(firma.FECHA)} ${esc(firma.HORA)}</div>
       </div>
-      ${firma.PDF_URL ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>` : '<span style="font-size:11px;color:var(--text3)">Generando PDF…</span>'}
+      ${firma.PDF_URL
+        ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>`
+        : `<button class="btn btn-sm btn-secondary" onclick="regenerarPDF('${esc(firma.ID)}','${esc(docId)}');closeModal()">🔄 Generar PDF</button>`}
     </div>` : '';
 
   const botonesFooter = firma
@@ -7764,6 +7768,29 @@ async function guardarFirmaProtocolo(docId, docTitulo) {
   } catch(e) {
     if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '✓ Confirmar firma'; }
     showToast('Error al guardar la firma: ' + (e.message||e), 'error');
+  }
+}
+
+async function regenerarPDF(firmaId, docId) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+      action: 'GENERAR_PDF_FIRMADO', firmaId
+    })});
+    const d = await r.json();
+    if (d.ok && d.pdfUrl) {
+      const f = (DB.firmasProtocolo || []).find(f => String(f.ID) === String(firmaId));
+      if (f) { f.PDF_ID = d.pdfId; f.PDF_URL = d.pdfUrl; }
+      showToast('PDF generado correctamente', 'success');
+      documentacionSec();
+    } else {
+      showToast('Error al generar PDF: ' + (d.error || 'desconocido'), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Generar PDF'; }
+    }
+  } catch(e) {
+    showToast('Error de conexión: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Generar PDF'; }
   }
 }
 
