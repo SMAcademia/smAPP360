@@ -2564,7 +2564,7 @@ function inscripciones() {
 function _infoActividad(act) {
   if (!act) return '';
   const t = sinTildes(act.TIPO||'');
-  const esUnico = t.includes('SUELT') || t.includes('ANUAL');
+  const esUnico = t.includes('SUELT') || t.includes('ANUAL') || t.includes('JORNAD');
   const parts = [];
   if (act.NUM_GRUPOS) parts.push('Grupo ' + act.NUM_GRUPOS);
   if (act.PRECIO)     parts.push(fmtEur(act.PRECIO) + (esUnico ? ' pago único' : '/mes'));
@@ -2710,7 +2710,7 @@ function guardarInscripcion(id) {
       DIAS_SEMANA:     dias,
       GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
       HORARIO:         hIni&&hFin ? hIni+'-'+hFin : hIni||hFin||'',
-      TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+      TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
       PRECIO_ACORDADO: act?.PRECIO||'',
     };
   }).filter(Boolean);
@@ -2973,7 +2973,7 @@ async function guardarCambioActividad() {
       GRUPO:           grupo,
       PRECIO_ACORDADO: precio,
       DESCUENTO:       String(descPct),
-      TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+      TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
       DIAS_SEMANA:     actNueva.DIAS_SEMANA || actNueva.DIA_SEMANA || '',
       HORARIO:         actNueva.HORARIO || '',
       FORMA_PAGO:      fPago,
@@ -3352,7 +3352,7 @@ async function guardarRegistroCompleto() {
           DIAS_SEMANA:     act?.DIAS_SEMANA || '',
           GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
           HORARIO:         hIni && hFin ? hIni + '-' + hFin : hIni || hFin || '',
-          TIPO_PRECIO:     (t.includes('SUELT') || t.includes('ANUAL')) ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+          TIPO_PRECIO:     (t.includes('SUELT') || t.includes('ANUAL') || t.includes('JORNAD')) ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
           PRECIO_ACORDADO: act?.PRECIO || '',
           DESCUENTO:       dto,
           FORMA_PAGO:      fpago,
