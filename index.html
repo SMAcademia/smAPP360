@@ -7811,11 +7811,109 @@ async function regenerarPDF(firmaId, docId) {
 let _driveStack = []; // historial de navegación [{id, nombre}]
 let _driveSeleccion = {}; // {id: {nombre, url}} archivos seleccionados
 
-async function abrirExploradorDrive() {
+// Abre el explorador INLINE dentro del modal de personal (sin reemplazar el modal)
+function _driveInlineAbrir() {
+  const panel = document.getElementById('per-drive-panel');
+  if (!panel) return;
   _driveStack = [];
   _driveSeleccion = {};
-  _driveCargar('');
+  panel.style.display = 'block';
+  _driveInlineCargar('');
 }
+
+async function _driveInlineCargar(folderId) {
+  const panel = document.getElementById('per-drive-panel');
+  if (!panel) return;
+
+  const breadcrumb = _driveStack.length
+    ? `<button class="btn btn-sm btn-secondary" onclick="_driveInlineAtras()" style="margin-right:8px">← Volver</button>`
+    : '';
+  const titulo = _driveStack.length ? _driveStack.map(n => n.nombre).join(' › ') : '📁 Mi Drive';
+
+  panel.innerHTML = `
+    <div style="padding:10px 12px;background:var(--bg2);border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:8px">
+      ${breadcrumb}
+      <span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(titulo)}</span>
+      <button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="_driveInlineCerrar()">✕ Cerrar</button>
+    </div>
+    <div id="drive-inline-browser" style="min-height:120px;max-height:300px;overflow-y:auto;padding:8px 12px;display:flex;align-items:center;justify-content:center">
+      <span style="color:var(--text3)">Cargando…</span>
+    </div>
+    <div style="padding:8px 12px;border-top:1px solid var(--border2);display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" id="btn-drive-add"
+        style="background:#2e7d32;color:#fff;border:none;opacity:0.5" disabled
+        onclick="_driveInlineAnadir()">Añadir seleccionados</button>
+    </div>`;
+
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+      action: 'LISTAR_DRIVE', folderId: folderId
+    })});
+    const d = await r.json();
+    const browser = document.getElementById('drive-inline-browser');
+    if (!browser) return;
+    if (!d.ok) { browser.innerHTML = `<span style="color:var(--red)">Error: ${esc(d.error)}</span>`; return; }
+
+    const items = d.items.length ? d.items.map(item => {
+      if (item.tipo === 'carpeta') {
+        return `<div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;cursor:pointer"
+          onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''"
+          onclick="_driveInlineEntrar('${esc(item.id)}','${esc(item.nombre.replace(/'/g,"&#39;"))}')">
+          <span>📁</span>
+          <span style="flex:1;font-size:13px">${esc(item.nombre)}</span>
+          <span style="color:var(--text3)">›</span>
+        </div>`;
+      } else {
+        const sel = _driveSeleccion[item.id];
+        return `<div id="drive-item-${esc(item.id)}" style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;cursor:pointer;background:${sel?'var(--green-light,#e8f5e9)':''}"
+          onmouseover="if(!_driveSeleccion['${esc(item.id)}'])this.style.background='var(--bg2)'" onmouseout="if(!_driveSeleccion['${esc(item.id)}'])this.style.background=''"
+          onclick="_driveToggle('${esc(item.id)}','${esc(item.nombre.replace(/'/g,"&#39;"))}','${esc(item.url)}')">
+          <span>${_driveMime(item.mime)}</span>
+          <span style="flex:1;font-size:13px">${esc(item.nombre)}</span>
+          <span id="drive-check-${esc(item.id)}" style="font-size:16px">${sel ? '✅' : '⬜'}</span>
+        </div>`;
+      }
+    }).join('') : '<p style="color:var(--text3);text-align:center;padding:20px">Carpeta vacía</p>';
+
+    browser.style.justifyContent = '';
+    browser.innerHTML = items;
+    _driveActualizarBoton();
+  } catch(e) {
+    const browser = document.getElementById('drive-inline-browser');
+    if (browser) browser.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`;
+  }
+}
+
+function _driveInlineEntrar(id, nombre) {
+  _driveStack.push({ id, nombre });
+  _driveInlineCargar(id);
+}
+
+function _driveInlineAtras() {
+  _driveStack.pop();
+  const padre = _driveStack.length ? _driveStack[_driveStack.length - 1].id : '';
+  _driveInlineCargar(padre);
+}
+
+function _driveInlineCerrar() {
+  const panel = document.getElementById('per-drive-panel');
+  if (panel) panel.style.display = 'none';
+  _driveSeleccion = {};
+}
+
+function _driveInlineAnadir() {
+  const textarea = document.getElementById('per-docs');
+  if (!textarea) return;
+  const actual = textarea.value.trim();
+  const nuevos = Object.values(_driveSeleccion).map(f => `${f.nombre}|${f.url}`).join(';;');
+  textarea.value = actual ? actual + ';;' + nuevos : nuevos;
+  const n = Object.keys(_driveSeleccion).length;
+  _driveInlineCerrar();
+  showToast(`${n} archivo${n>1?'s':''} añadido${n>1?'s':''}`, 'success');
+}
+
+// Mantenemos abrirExploradorDrive como alias por compatibilidad
+async function abrirExploradorDrive() { _driveInlineAbrir(); }
 
 async function _driveCargar(folderId) {
   const titulo = _driveStack.length
@@ -8164,9 +8262,10 @@ function modalPersonal(p) {
         <label style="display:flex;align-items:center;gap:8px">
           Documentos Drive
           <button type="button" class="btn btn-sm btn-secondary" style="font-size:11px;padding:2px 8px"
-            onclick="abrirExploradorDrive()">📁 Explorar Drive</button>
+            onclick="_driveInlineAbrir()">📁 Explorar Drive</button>
         </label>
         <textarea id="per-docs" style="min-height:60px;font-size:12px;font-family:monospace">${esc(p.DOCS_DRIVE||'')}</textarea>
+        <div id="per-drive-panel" style="display:none;border:1px solid var(--border2);border-radius:8px;margin-top:8px;overflow:hidden"></div>
         <span style="font-size:11px;color:var(--text3)">O pega manualmente: <code>Título|URL;;Título2|URL2</code></span>
       </div>
     </div>`,
