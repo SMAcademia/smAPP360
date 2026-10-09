@@ -757,6 +757,7 @@ function normalizarDB(raw) {
     CATEGORIA: r['CATEGORÍA'] || r.CATEGORIA || '',
   }));
   DB.pagadoresExternos       = raw.pagadoresExternos || [];
+  DB.firmasProtocolo         = raw.firmasProtocolo   || [];
 
   // Cachear PERSONAL para login inmediato sin esperar a GAS en próximas cargas
   try {
@@ -7410,20 +7411,40 @@ function exportarFacturaPDF(f) {
 // ══════════════════════════════════════════════════════════════════════════
 const _PROTOCOLOS_EMPRESA = [
   {
-    titulo:  'Protocolo de Acoso e Igualdad LGTBIQ+',
-    desc:    'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo.',
-    icono:   '🏳️‍🌈',
-    url:     'https://docs.google.com/document/d/17OxjIj8TPfYU5Klhih_nrWWw7YB4_wnooRSaJX-KPtI/edit',
-    etiqueta:'Obligatorio',
-    color:   'badge-blue',
+    docId:      'lgtbiq',
+    fileId:     '1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI',
+    titulo:     'Protocolo de Acoso e Igualdad LGTBIQ+',
+    desc:       'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo. Amparado en la Ley 8/2014 de Canarias, LO 10/2022 y LOPIVI.',
+    icono:      '🏳️‍🌈',
+    previewUrl: 'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/preview',
+    url:        'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/edit',
+    etiqueta:   'Obligatorio',
+    color:      'badge-blue',
+    firmaRequerida: true,
   },
   {
-    titulo:  'Protocolo operativo — CEIP Escaleritas',
-    desc:    'Guía de procedimientos y control horario: fichaje de entrada, pase de lista, cierre de actividad y entrega de menores.',
-    icono:   '📋',
-    url:     'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/view',
-    etiqueta:'Operativo',
-    color:   'badge-green',
+    docId:      'manual-empleado',
+    fileId:     '1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg',
+    titulo:     'Manual del Empleado 2026-2027',
+    desc:       'Protocolo operativo y normativo para centros educativos. Metodología MEC, estructura de sesiones, flujo de trabajo diario y reglas de conducta.',
+    icono:      '📘',
+    previewUrl: 'https://docs.google.com/document/d/1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg/preview',
+    url:        'https://docs.google.com/document/d/1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg/edit',
+    etiqueta:   'Obligatorio',
+    color:      'badge-blue',
+    firmaRequerida: true,
+  },
+  {
+    docId:      'operativo-escaleritas',
+    fileId:     '13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap',
+    titulo:     'Protocolo operativo — CEIP Escaleritas',
+    desc:       'Guía de procedimientos y control horario: fichaje de entrada, pase de lista, cierre de actividad y entrega de menores.',
+    icono:      '📋',
+    previewUrl: 'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/preview',
+    url:        'https://drive.google.com/file/d/13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap/view',
+    etiqueta:   'Operativo',
+    color:      'badge-green',
+    firmaRequerida: true,
   },
 ];
 
@@ -7437,19 +7458,32 @@ function _parseDocs(raw) {
 function documentacionSec() {
   document.getElementById('topbar-actions').innerHTML = '';
 
-  const protCards = _PROTOCOLOS_EMPRESA.map(p => `
+  const misFirmas = DB.firmasProtocolo || [];
+  const miId = String(currentUser.id);
+
+  const protCards = _PROTOCOLOS_EMPRESA.map(p => {
+    const firma = misFirmas.find(f => String(f.ID_MONITOR) === miId && f.DOC_ID === p.docId);
+    const estadoHtml = firma
+      ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(firma.FECHA)}</span>
+         ${firma.PDF_URL ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>` : '<span style="font-size:11px;color:var(--text3)">Generando PDF…</span>'}`
+      : (p.firmaRequerida ? `<span class="badge badge-red" style="font-size:12px">Pendiente de firma</span>` : '');
+    return `
     <div class="card" style="display:flex;gap:16px;align-items:flex-start;padding:20px 24px">
       <div style="font-size:32px;line-height:1">${p.icono}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
           <strong style="font-size:15px">${esc(p.titulo)}</strong>
           <span class="badge ${p.color}">${p.etiqueta}</span>
         </div>
         <p style="margin:0 0 12px;color:var(--text2);font-size:13px">${esc(p.desc)}</p>
-        <a href="${esc(p.url)}" target="_blank" rel="noopener"
-           class="btn btn-sm btn-secondary">↗ Abrir documento</a>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none"
+            onclick="verDocumento('${esc(p.docId)}')">📖 Leer y firmar</button>
+          ${estadoHtml}
+        </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   // Mis documentos personales
   const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
@@ -7463,11 +7497,37 @@ function documentacionSec() {
         </div>`).join('')
     : '<p style="color:var(--text3);margin:0">Sin documentos asignados. Contacta con el coordinador.</p>';
 
-  // Vista admin: tabla de todos los trabajadores con sus docs
+  // Vista admin: tabla de trabajadores con docs y estado de firmas
   let adminDocsHtml = '';
   if (isAdmin()) {
     const trabajadores = DB.personal.filter(p => !['AMPA','FAMILIA'].includes(String(p.ROL||'').toUpperCase()));
-    const filas = trabajadores.map(p => {
+
+    // Tabla de firmas por protocolo
+    const protRequeridos = _PROTOCOLOS_EMPRESA.filter(p => p.firmaRequerida);
+    const thProts = protRequeridos.map(p => `<th style="font-size:11px;white-space:nowrap">${esc(p.titulo.replace('Protocolo ','').replace(' — CEIP Escaleritas',''))}</th>`).join('');
+
+    const filasFirmas = trabajadores.map(p => {
+      const idT = String(p.ID_MONITOR || p.ID || '');
+      const celdas = protRequeridos.map(prot => {
+        const f = misFirmas.find(f => String(f.ID_MONITOR) === idT && f.DOC_ID === prot.docId);
+        return f
+          ? `<td style="text-align:center"><span class="badge badge-green" title="Firmado el ${esc(f.FECHA)} ${esc(f.HORA)}">✓ ${esc(f.FECHA)}</span></td>`
+          : `<td style="text-align:center"><span class="badge badge-red">Pendiente</span></td>`;
+      }).join('');
+      const pdfs = protRequeridos.map(prot => {
+        const f = misFirmas.find(f => String(f.ID_MONITOR) === idT && f.DOC_ID === prot.docId && f.PDF_URL);
+        return f ? `<a href="${esc(f.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px;font-size:11px">📄 ${esc(prot.icono)}</a>` : '';
+      }).join('');
+      return `<tr>
+        <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
+        <td><span class="badge badge-blue">${esc(p.ROL||'—')}</span></td>
+        ${celdas}
+        <td>${pdfs || '<span style="color:var(--text3);font-size:11px">—</span>'}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="${3 + protRequeridos.length}"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
+
+    // Tabla de documentos por trabajador
+    const filasDoc = trabajadores.map(p => {
       const docs = _parseDocs(p.DOCS_DRIVE);
       const docsCell = docs.length
         ? docs.map(d => `<a href="${esc(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px">${esc(d.titulo)}</a>`).join('')
@@ -7480,14 +7540,32 @@ function documentacionSec() {
       </tr>`;
     }).join('') || `<tr><td colspan="4"><div class="empty"><p>Sin trabajadores</p></div></td></tr>`;
 
+    const totalFirmados = misFirmas.filter(f => f.PDF_ID).length;
     adminDocsHtml = `
+      <div class="card" style="padding:14px 20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="card-title" style="margin:0">Estado de firmas</div>
+          <button class="btn btn-sm" onclick="enviarDocsAsesoria()"
+            style="background:#2e7d32;color:#fff;border:none;margin-left:auto"
+            ${totalFirmados ? '' : 'disabled'}>
+            ✉ Enviar documentación a asesoría${totalFirmados ? ' (' + totalFirmados + ' docs)' : ''}
+          </button>
+        </div>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Protocolos obligatorios firmados digitalmente. El botón envía todos los PDFs generados a <strong>info@vgasesoria.es</strong>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Trabajadora</th><th>Rol</th>${thProts}<th>PDF</th></tr></thead>
+            <tbody>${filasFirmas}</tbody>
+          </table>
+        </div>
+      </div>
       <div class="card" style="padding:14px 20px">
         <div class="card-title">Documentos por trabajadora</div>
         <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Para añadir o editar documentos, pulsa "Editar docs" y rellena el campo <em>Documentos Drive</em> con el formato <code>Título|URL;;Título2|URL2</code>.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Trabajadora</th><th>Rol</th><th>Documentos</th><th></th></tr></thead>
-            <tbody>${filas}</tbody>
+            <tbody>${filasDoc}</tbody>
           </table>
         </div>
       </div>`;
@@ -7505,6 +7583,308 @@ function documentacionSec() {
     </div>
     ${adminDocsHtml}
   `);
+}
+
+// ── Visor de documentos + envío a asesoría ───────────────────────────────────
+function verDocumento(docId) {
+  const p = _PROTOCOLOS_EMPRESA.find(x => x.docId === docId);
+  if (!p) return;
+  const misFirmas = DB.firmasProtocolo || [];
+  const firma = misFirmas.find(f => String(f.ID_MONITOR) === String(currentUser.id) && f.DOC_ID === docId);
+
+  const firmaBlock = firma ? `
+    <div style="padding:14px 18px;background:var(--bg2);border-top:2px solid #2e7d32;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <img src="${firma.FIRMA_IMG}" style="height:48px;border:1px solid var(--border);border-radius:4px;background:#fff;padding:3px;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;color:#2e7d32;font-size:13px">✓ Firmado digitalmente</div>
+        <div style="font-size:12px;color:var(--text2)">${esc(firma.NOMBRE)} · ${esc(firma.FECHA)} ${esc(firma.HORA)}</div>
+      </div>
+      ${firma.PDF_URL ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>` : '<span style="font-size:11px;color:var(--text3)">Generando PDF…</span>'}
+    </div>` : '';
+
+  const botonesFooter = firma
+    ? `<div style="margin-top:10px;text-align:right"><button class="btn btn-sm btn-secondary" onclick="closeModal()">Cerrar</button></div>`
+    : `<div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-sm btn-secondary" onclick="closeModal()">Cerrar</button>
+        <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none"
+          onclick="closeModal();modalFirmaProtocolo('${esc(docId)}','${esc(p.titulo)}')">✍ Firmar</button>
+      </div>`;
+
+  openModal(p.titulo, `
+    <div style="display:flex;flex-direction:column">
+      <div style="position:relative;width:100%;padding-top:66%;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#f5f5f5">
+        <iframe src="${esc(p.previewUrl)}"
+          style="position:absolute;inset:0;width:100%;height:100%;border:none"
+          allow="autoplay" loading="lazy"></iframe>
+      </div>
+      ${firmaBlock}
+    </div>
+    ${botonesFooter}
+  `);
+}
+
+async function enviarDocsAsesoria() {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'ENVIAR_DOCS_ASESORIA' }) });
+    const d = await r.json();
+    if (d.ok) {
+      showToast(`Enviados ${d.enviados} documento(s) a info@vgasesoria.es`, 'success');
+    } else {
+      showToast('Error: ' + (d.error || 'desconocido'), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = btn.textContent.replace('Enviando…','Enviar documentación a asesoría'); }
+    }
+  } catch(e) {
+    showToast('Error de conexión: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; }
+  }
+}
+
+// ── Sistema de firma digital ──────────────────────────────────────────────────
+let _firmaCtx = null, _firmaDrawing = false, _firmaTieneTrazos = false;
+
+function modalFirmaProtocolo(docId, docTitulo) {
+  const ya = (DB.firmasProtocolo||[]).find(f =>
+    String(f.ID_MONITOR) === String(currentUser.id) && f.DOC_ID === docId
+  );
+  if (ya) { showToast('Ya has firmado este protocolo (' + ya.FECHA + ')'); return; }
+
+  openModal('Firmar protocolo', `
+    <p style="margin:0 0 6px;font-size:13px;color:var(--text2)">
+      Estás firmando: <strong>${esc(docTitulo)}</strong>
+    </p>
+    <p style="margin:0 0 10px;font-size:12px;color:var(--text3)">
+      Dibuja tu firma con el dedo o el ratón. Al confirmar queda registrada con tu nombre, fecha y hora.
+    </p>
+    <canvas id="firma-canvas" width="500" height="130"
+      style="width:100%;border:2px solid var(--border2);border-radius:8px;background:#fff;cursor:crosshair;touch-action:none;display:block"></canvas>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <button class="btn btn-sm btn-secondary" onclick="_firmaLimpiar()">🗑 Limpiar</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-sm btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-sm" id="btn-confirmar-firma"
+        onclick="guardarFirmaProtocolo('${esc(docId)}','${esc(docTitulo)}')"
+        disabled style="background:var(--green,#2e7d32);color:#fff;border:none;opacity:0.5">✓ Confirmar firma</button>
+    </div>
+  `);
+
+  requestAnimationFrame(() => {
+    const canvas = document.getElementById('firma-canvas');
+    if (!canvas) return;
+    _firmaCtx = canvas.getContext('2d');
+    _firmaCtx.strokeStyle = '#111';
+    _firmaCtx.lineWidth = 2.5;
+    _firmaCtx.lineCap = 'round';
+    _firmaCtx.lineJoin = 'round';
+    _firmaDrawing = false;
+    _firmaTieneTrazos = false;
+
+    const pos = e => {
+      const r = canvas.getBoundingClientRect();
+      const s = e.touches ? e.touches[0] : e;
+      return { x: (s.clientX - r.left) * (canvas.width / r.width),
+               y: (s.clientY - r.top)  * (canvas.height / r.height) };
+    };
+
+    canvas.addEventListener('mousedown',  e => { _firmaDrawing = true; const p = pos(e); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); });
+    canvas.addEventListener('mousemove',  e => { if (!_firmaDrawing) return; const p = pos(e); _firmaCtx.lineTo(p.x, p.y); _firmaCtx.stroke(); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); _firmaTieneTrazos = true; _firmaActualizarBtn(); });
+    canvas.addEventListener('mouseup',    () => { _firmaDrawing = false; });
+    canvas.addEventListener('mouseleave', () => { _firmaDrawing = false; });
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); _firmaDrawing = true; const p = pos(e); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); }, { passive: false });
+    canvas.addEventListener('touchmove',  e => { e.preventDefault(); if (!_firmaDrawing) return; const p = pos(e); _firmaCtx.lineTo(p.x, p.y); _firmaCtx.stroke(); _firmaCtx.beginPath(); _firmaCtx.moveTo(p.x, p.y); _firmaTieneTrazos = true; _firmaActualizarBtn(); }, { passive: false });
+    canvas.addEventListener('touchend',   () => { _firmaDrawing = false; });
+  });
+}
+
+function _firmaActualizarBtn() {
+  const btn = document.getElementById('btn-confirmar-firma');
+  if (!btn) return;
+  btn.disabled = !_firmaTieneTrazos;
+  btn.style.opacity = _firmaTieneTrazos ? '1' : '0.5';
+}
+
+function _firmaLimpiar() {
+  const canvas = document.getElementById('firma-canvas');
+  if (!canvas || !_firmaCtx) return;
+  _firmaCtx.clearRect(0, 0, canvas.width, canvas.height);
+  _firmaTieneTrazos = false;
+  _firmaActualizarBtn();
+}
+
+async function guardarFirmaProtocolo(docId, docTitulo) {
+  const canvas = document.getElementById('firma-canvas');
+  if (!canvas || !_firmaTieneTrazos) return;
+  const btn = document.getElementById('btn-confirmar-firma');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  const ahora  = new Date();
+  const fecha  = ahora.toLocaleDateString('es-ES');
+  const hora   = ahora.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const miPer  = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
+  const nombre = miPer ? `${miPer.NOMBRE||''} ${miPer.APELLIDOS||''}`.trim() : (currentUser.nombre || currentUser.email || '');
+  const firmaImg = canvas.toDataURL('image/jpeg', 0.85);
+
+  const row = {
+    ID_MONITOR: currentUser.id,
+    NOMBRE:     nombre,
+    DOC_ID:     docId,
+    TITULO_DOC: docTitulo,
+    FECHA:      fecha,
+    HORA:       hora,
+    FIRMA_IMG:  firmaImg,
+    PDF_ID:     '',
+    PDF_URL:    '',
+  };
+
+  try {
+    const res = await writeToSheet('FIRMAS_PROTOCOLO', row, null);
+    const newId = res?.id || ('FIRMA-' + Date.now());
+    DB.firmasProtocolo = DB.firmasProtocolo || [];
+    const entry = { ...row, ID: newId };
+    DB.firmasProtocolo.push(entry);
+    closeModal();
+    showToast('Firma registrada. Generando PDF firmado…');
+    documentacionSec();
+
+    // Background: generar PDF firmado en GAS
+    try {
+      const r2 = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+        action: 'GENERAR_PDF_FIRMADO', firmaId: newId
+      })});
+      const d2 = await r2.json();
+      if (d2.ok && d2.pdfUrl) {
+        entry.PDF_ID  = d2.pdfId;
+        entry.PDF_URL = d2.pdfUrl;
+        showToast('PDF firmado listo — disponible para descargar', 'success');
+        documentacionSec();
+      }
+    } catch(_) { /* PDF fallará silenciosamente; la firma ya está guardada */ }
+
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '✓ Confirmar firma'; }
+    showToast('Error al guardar la firma: ' + (e.message||e), 'error');
+  }
+}
+
+// ── Explorador de Google Drive ────────────────────────────────────────────────
+let _driveStack = []; // historial de navegación [{id, nombre}]
+let _driveSeleccion = {}; // {id: {nombre, url}} archivos seleccionados
+
+async function abrirExploradorDrive() {
+  _driveStack = [];
+  _driveSeleccion = {};
+  _driveCargar('');
+}
+
+async function _driveCargar(folderId) {
+  const titulo = _driveStack.length
+    ? _driveStack.map(n => n.nombre).join(' › ')
+    : 'Mi Drive';
+
+  openModal('📁 ' + titulo, `
+    <div id="drive-browser" style="min-height:200px;display:flex;align-items:center;justify-content:center">
+      <span style="color:var(--text3)">Cargando…</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+      <button class="btn btn-sm btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-sm" id="btn-drive-add"
+        style="background:#2e7d32;color:#fff;border:none;opacity:0.5" disabled
+        onclick="_driveAnadir()">Añadir seleccionados</button>
+    </div>
+  `);
+
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+      action: 'LISTAR_DRIVE', folderId: folderId
+    })});
+    const d = await r.json();
+    if (!d.ok) { document.getElementById('drive-browser').innerHTML = `<span style="color:var(--red)">Error: ${esc(d.error)}</span>`; return; }
+
+    const breadcrumb = _driveStack.length
+      ? `<button class="btn btn-sm btn-secondary" onclick="_driveAtras()" style="margin-bottom:10px">← Volver</button>`
+      : '';
+
+    const items = d.items.length ? d.items.map(item => {
+      if (item.tipo === 'carpeta') {
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.1s"
+          onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''"
+          onclick="_driveEntrar('${esc(item.id)}','${esc(item.nombre.replace(/'/g,"&#39;"))}')">
+          <span style="font-size:18px">📁</span>
+          <span style="flex:1;font-size:14px">${esc(item.nombre)}</span>
+          <span style="color:var(--text3);font-size:12px">›</span>
+        </div>`;
+      } else {
+        const sel = _driveSeleccion[item.id];
+        return `<div id="drive-item-${esc(item.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.1s;background:${sel?'var(--green-light, #e8f5e9)':''}"
+          onclick="_driveToggle('${esc(item.id)}','${esc(item.nombre.replace(/'/g,"&#39;"))}','${esc(item.url)}')">
+          <span style="font-size:18px">${_driveMime(item.mime)}</span>
+          <span style="flex:1;font-size:14px">${esc(item.nombre)}</span>
+          <span id="drive-check-${esc(item.id)}" style="font-size:16px">${sel ? '✅' : '⬜'}</span>
+        </div>`;
+      }
+    }).join('') : '<p style="color:var(--text3);text-align:center;padding:20px">Carpeta vacía</p>';
+
+    document.getElementById('drive-browser').innerHTML = breadcrumb + `
+      <div style="max-height:380px;overflow-y:auto">${items}</div>`;
+    _driveActualizarBoton();
+  } catch(e) {
+    document.getElementById('drive-browser').innerHTML = `<span style="color:var(--red)">Error de conexión: ${esc(e.message)}</span>`;
+  }
+}
+
+function _driveMime(mime) {
+  if (!mime) return '📄';
+  if (mime.includes('document'))     return '📝';
+  if (mime.includes('spreadsheet'))  return '📊';
+  if (mime.includes('presentation')) return '📽';
+  if (mime.includes('pdf'))          return '📕';
+  return '📄';
+}
+
+function _driveEntrar(id, nombre) {
+  _driveStack.push({ id, nombre });
+  _driveCargar(id);
+}
+
+function _driveAtras() {
+  _driveStack.pop();
+  const padre = _driveStack.length ? _driveStack[_driveStack.length - 1].id : '';
+  _driveCargar(padre);
+}
+
+function _driveToggle(id, nombre, url) {
+  if (_driveSeleccion[id]) {
+    delete _driveSeleccion[id];
+  } else {
+    _driveSeleccion[id] = { nombre, url };
+  }
+  const el = document.getElementById('drive-item-' + id);
+  const ch = document.getElementById('drive-check-' + id);
+  if (el) el.style.background = _driveSeleccion[id] ? 'var(--green-light, #e8f5e9)' : '';
+  if (ch) ch.textContent      = _driveSeleccion[id] ? '✅' : '⬜';
+  _driveActualizarBoton();
+}
+
+function _driveActualizarBoton() {
+  const btn = document.getElementById('btn-drive-add');
+  const n   = Object.keys(_driveSeleccion).length;
+  if (!btn) return;
+  btn.disabled    = n === 0;
+  btn.style.opacity = n > 0 ? '1' : '0.5';
+  btn.textContent = n > 0 ? `Añadir ${n} archivo${n>1?'s':''}` : 'Añadir seleccionados';
+}
+
+function _driveAnadir() {
+  const textarea = document.getElementById('per-docs');
+  if (!textarea) return;
+  const actual   = textarea.value.trim();
+  const nuevos   = Object.values(_driveSeleccion)
+    .map(f => `${f.nombre}|${f.url}`)
+    .join(';;');
+  textarea.value = actual ? actual + ';;' + nuevos : nuevos;
+  closeModal();
+  showToast(`${Object.keys(_driveSeleccion).length} archivo(s) añadidos`, 'success');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -7740,9 +8120,14 @@ function modalPersonal(p) {
           <option value="SÍ" ${String(p.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
           <option value="NO" ${String(p.ACTIVO||'').toUpperCase()==='NO'?'selected':''}>No</option>
         </select></div>
-      <div class="field span2"><label>Documentos Drive <span style="font-size:11px;color:var(--text3)">(formato: Título|URL;;Título 2|URL2)</span></label>
+      <div class="field span2">
+        <label style="display:flex;align-items:center;gap:8px">
+          Documentos Drive
+          <button type="button" class="btn btn-sm btn-secondary" style="font-size:11px;padding:2px 8px"
+            onclick="abrirExploradorDrive()">📁 Explorar Drive</button>
+        </label>
         <textarea id="per-docs" style="min-height:60px;font-size:12px;font-family:monospace">${esc(p.DOCS_DRIVE||'')}</textarea>
-        <span style="font-size:11px;color:var(--text3)">Pega los enlaces de Drive separados por ;; — ej: Contrato|https://drive.google.com/…;;Nómina oct|https://…</span>
+        <span style="font-size:11px;color:var(--text3)">O pega manualmente: <code>Título|URL;;Título2|URL2</code></span>
       </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
