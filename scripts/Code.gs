@@ -102,6 +102,8 @@ function doPost(e) {
       result = obtenerPdfB64_(body.fileId);
     } else if (action === 'GUARDAR_PDF_FIRMADO_PERSONAL') {
       result = guardarPdfFirmadoPersonal_(body);
+    } else if (action === 'SUBIR_CNDS') {
+      result = subirCNDS_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1052,6 +1054,50 @@ function guardarPdfFirmadoPersonal_(body) {
     var file   = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     return { ok: true, url: file.getUrl(), fileId: file.getId(), nombre: nombre };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+function subirCNDS_(body) {
+  try {
+    var pdfB64    = body.pdfB64;
+    var nombre    = String(body.nombre || 'CNDS.pdf');
+    var monitorId = String(body.monitorId || '');
+
+    if (!pdfB64)    return { ok: false, error: 'Falta el contenido del PDF' };
+    if (!monitorId) return { ok: false, error: 'Falta el ID del monitor' };
+
+    var book     = ss_();
+    var personal = sheetToJSON(book, 'PERSONAL');
+    var monitor  = personal.find(function(p) { return String(p.ID_MONITOR) === monitorId; });
+    if (!monitor) return { ok: false, error: 'Monitor no encontrado (ID: ' + monitorId + ')' };
+
+    var nombreCompleto = [monitor.NOMBRE, monitor.APELLIDOS].filter(Boolean).join(' ').trim();
+
+    function getOrCreate(parent, folderName) {
+      var it = parent.getFoldersByName(folderName);
+      return it.hasNext() ? it.next() : parent.createFolder(folderName);
+    }
+    var fSMAcademia = getOrCreate(DriveApp.getRootFolder(), 'SM Academia');
+    var fExtra      = getOrCreate(fSMAcademia,  'SM Extraescolares');
+    var fContratos  = getOrCreate(fExtra,        'Contratos');
+    var fMonitor    = getOrCreate(fContratos,    nombreCompleto);
+
+    var bytes  = Utilities.base64Decode(pdfB64);
+    var blob   = Utilities.newBlob(bytes, 'application/pdf', nombre);
+    var file   = fMonitor.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    var url    = file.getUrl();
+    var titulo = nombre.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+
+    var oldDocs = String(monitor.DOCS_DRIVE || '').trim();
+    var newDocs = oldDocs ? oldDocs + ';;' + titulo + '|' + url : titulo + '|' + url;
+
+    updateRow('PERSONAL', monitorId, { DOCS_DRIVE: newDocs });
+
+    return { ok: true, url: url, fileId: file.getId(), nombre: nombre, titulo: titulo };
   } catch(e) {
     return { ok: false, error: e.toString() };
   }

@@ -7852,6 +7852,22 @@ function documentacionSec() {
       </div>`;
   }
 
+  const cndsHtml = isMonitor() ? `
+    <div class="card" style="padding:20px 24px;margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:4px">📋 Certificado de No Delitos Sexuales (CNDS)</div>
+      <p style="font-size:12px;color:var(--text3);margin:0 0 14px">Sube tu certificado en formato PDF. Se guardará en la carpeta de tu expediente en Drive y aparecerá en "Mis documentos".</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="file" id="cnds-file" accept=".pdf" style="display:none" onchange="cndsFileSelected(this)">
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cnds-file').click()">📂 Seleccionar PDF</button>
+          <span id="cnds-nombre" style="font-size:13px;color:var(--text2)">Ningún archivo seleccionado</span>
+        </label>
+        <button id="cnds-btn" class="btn btn-sm" style="background:#1565c0;color:#fff;border:none;display:none"
+          onclick="subirCNDS()">⬆ Subir CNDS</button>
+      </div>
+      <div id="cnds-msg" style="margin-top:10px;font-size:13px"></div>
+    </div>` : '';
+
   render(`
     <div class="card" style="padding:20px 24px;margin-bottom:16px">
       <div class="card-title" style="margin-bottom:16px">Protocolos de empresa</div>
@@ -7862,8 +7878,56 @@ function documentacionSec() {
       <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Contratos, documentos informativos y otros documentos personales de tu relación laboral.</p>
       <div>${misDocsHtml}</div>
     </div>
+    ${cndsHtml}
     ${adminDocsHtml}
   `);
+}
+
+// ── Subida de CNDS ───────────────────────────────────────────────────────────
+function cndsFileSelected(input) {
+  const nombre = input.files[0]?.name || '';
+  document.getElementById('cnds-nombre').textContent = nombre || 'Ningún archivo seleccionado';
+  document.getElementById('cnds-btn').style.display  = nombre ? '' : 'none';
+}
+
+async function subirCNDS() {
+  const input = document.getElementById('cnds-file');
+  const file  = input?.files[0];
+  if (!file) return;
+
+  const btn = document.getElementById('cnds-btn');
+  const msg = document.getElementById('cnds-msg');
+  btn.disabled    = true;
+  btn.textContent = '⏳ Subiendo…';
+  msg.textContent = '';
+
+  try {
+    const ab   = await file.arrayBuffer();
+    const b64  = btoa(String.fromCharCode(...new Uint8Array(ab)));
+    const raw  = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'SUBIR_CNDS', pdfB64: b64, nombre: file.name, monitorId: String(currentUser.id) }) });
+    const res  = await raw.json();
+    if (!res.ok) throw new Error(res.error || 'Error desconocido');
+
+    // Update local DB so the new doc appears immediately
+    const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
+    if (miPer) {
+      const oldDocs = (miPer.DOCS_DRIVE || '').trim();
+      miPer.DOCS_DRIVE = oldDocs ? oldDocs + ';;' + res.titulo + '|' + res.url : res.titulo + '|' + res.url;
+    }
+
+    msg.innerHTML = `<span style="color:#2e7d32">✓ CNDS subido correctamente. <a href="${esc(res.url)}" target="_blank" rel="noopener">Abrir en Drive</a></span>`;
+    // Reset file input
+    input.value = '';
+    document.getElementById('cnds-nombre').textContent = 'Ningún archivo seleccionado';
+    btn.style.display = 'none';
+
+    // Refresh the section to show the new doc in Mis documentos
+    documentacionSec();
+  } catch(e) {
+    msg.textContent = '✗ Error: ' + e.message;
+    btn.disabled    = false;
+    btn.textContent = '⬆ Subir CNDS';
+  }
 }
 
 // ── Visor de documentos + envío a asesoría ───────────────────────────────────
