@@ -92,6 +92,8 @@ function doPost(e) {
       result = nuevaPreinscripcion(body);
     } else if (action === 'SEND_FACTURA_EMAIL') {
       result = sendFacturaEmail(body);
+    } else if (action === 'LISTAR_DRIVE') {
+      result = listarDrive_(body.folderId || '');
     } else if (action === 'GENERAR_PDF_FIRMADO') {
       result = generarPDFFirmado_(body.firmaId);
     } else if (action === 'ENVIAR_DOCS_ASESORIA') {
@@ -642,10 +644,69 @@ function sendFacturaEmail(body) {
 }
 
 // ===========================================================================
+//  EXPLORADOR DE GOOGLE DRIVE
+// ===========================================================================
+var MIME_VISIBLES_ = [
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.presentation',
+  'application/vnd.google-apps.spreadsheet',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+];
+
+function listarDrive_(folderId) {
+  var folder;
+  try {
+    folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  } catch(e) {
+    return { ok: false, error: 'Carpeta no accesible: ' + e.message };
+  }
+
+  var items = [];
+
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var f = subs.next();
+    items.push({ tipo: 'carpeta', id: f.getId(), nombre: f.getName() });
+  }
+
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (MIME_VISIBLES_.indexOf(f.getMimeType()) < 0) continue;
+    var id   = f.getId();
+    var mime = f.getMimeType();
+    var url  = f.getUrl();
+    var prev = (mime === 'application/vnd.google-apps.document')
+      ? 'https://docs.google.com/document/d/' + id + '/preview'
+      : 'https://drive.google.com/file/d/' + id + '/preview';
+    items.push({ tipo: 'archivo', id: id, nombre: f.getName(), url: url, previewUrl: prev, mime: mime });
+  }
+
+  items.sort(function(a, b) {
+    if (a.tipo !== b.tipo) return a.tipo === 'carpeta' ? -1 : 1;
+    return a.nombre.localeCompare(b.nombre, 'es');
+  });
+
+  var padre = folderId ? folder.getParents() : null;
+  var padreId = (padre && padre.hasNext()) ? padre.next().getId() : '';
+
+  return {
+    ok:      true,
+    id:      folder.getId(),
+    nombre:  folder.getName(),
+    padreId: padreId,
+    items:   items,
+  };
+}
+
+// ===========================================================================
 //  GENERACIÓN DE PDF FIRMADO
 // ===========================================================================
 var PROTO_GDOC_IDS_ = {
   'lgtbiq':                '1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI',
+  'manual-empleado':       '1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg',
   'operativo-escaleritas': '13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap',
 };
 

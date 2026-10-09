@@ -7423,6 +7423,18 @@ const _PROTOCOLOS_EMPRESA = [
     firmaRequerida: true,
   },
   {
+    docId:      'manual-empleado',
+    fileId:     '1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg',
+    titulo:     'Manual del Empleado 2026-2027',
+    desc:       'Protocolo operativo y normativo para centros educativos. Metodología MEC, estructura de sesiones, flujo de trabajo diario y reglas de conducta.',
+    icono:      '📘',
+    previewUrl: 'https://docs.google.com/document/d/1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg/preview',
+    url:        'https://docs.google.com/document/d/1fE_6Lk2QJhQ8-SG_ytILdqn39g7pBRf0ag_eQmcQMTg/edit',
+    etiqueta:   'Obligatorio',
+    color:      'badge-blue',
+    firmaRequerida: true,
+  },
+  {
     docId:      'operativo-escaleritas',
     fileId:     '13FOWFnuadOOpniQ14TB9wG_Y1LXOgkap',
     titulo:     'Protocolo operativo — CEIP Escaleritas',
@@ -7755,6 +7767,126 @@ async function guardarFirmaProtocolo(docId, docTitulo) {
   }
 }
 
+// ── Explorador de Google Drive ────────────────────────────────────────────────
+let _driveStack = []; // historial de navegación [{id, nombre}]
+let _driveSeleccion = {}; // {id: {nombre, url}} archivos seleccionados
+
+async function abrirExploradorDrive() {
+  _driveStack = [];
+  _driveSeleccion = {};
+  _driveCargar('');
+}
+
+async function _driveCargar(folderId) {
+  const titulo = _driveStack.length
+    ? _driveStack.map(n => n.nombre).join(' › ')
+    : 'Mi Drive';
+
+  openModal('📁 ' + titulo, `
+    <div id="drive-browser" style="min-height:200px;display:flex;align-items:center;justify-content:center">
+      <span style="color:var(--text3)">Cargando…</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+      <button class="btn btn-sm btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-sm" id="btn-drive-add"
+        style="background:#2e7d32;color:#fff;border:none;opacity:0.5" disabled
+        onclick="_driveAnadir()">Añadir seleccionados</button>
+    </div>
+  `);
+
+  try {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+      action: 'LISTAR_DRIVE', folderId: folderId
+    })});
+    const d = await r.json();
+    if (!d.ok) { document.getElementById('drive-browser').innerHTML = `<span style="color:var(--red)">Error: ${esc(d.error)}</span>`; return; }
+
+    const breadcrumb = _driveStack.length
+      ? `<button class="btn btn-sm btn-secondary" onclick="_driveAtras()" style="margin-bottom:10px">← Volver</button>`
+      : '';
+
+    const items = d.items.length ? d.items.map(item => {
+      if (item.tipo === 'carpeta') {
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.1s"
+          onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''"
+          onclick="_driveEntrar('${esc(item.id)}','${esc(item.nombre.replace(/'/g,"&#39;"))}')">
+          <span style="font-size:18px">📁</span>
+          <span style="flex:1;font-size:14px">${esc(item.nombre)}</span>
+          <span style="color:var(--text3);font-size:12px">›</span>
+        </div>`;
+      } else {
+        const sel = _driveSeleccion[item.id];
+        return `<div id="drive-item-${esc(item.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.1s;background:${sel?'var(--green-light, #e8f5e9)':''}"
+          onclick="_driveToggle('${esc(item.id)}','${esc(item.nombre.replace(/'/g,"&#39;"))}','${esc(item.url)}')">
+          <span style="font-size:18px">${_driveMime(item.mime)}</span>
+          <span style="flex:1;font-size:14px">${esc(item.nombre)}</span>
+          <span id="drive-check-${esc(item.id)}" style="font-size:16px">${sel ? '✅' : '⬜'}</span>
+        </div>`;
+      }
+    }).join('') : '<p style="color:var(--text3);text-align:center;padding:20px">Carpeta vacía</p>';
+
+    document.getElementById('drive-browser').innerHTML = breadcrumb + `
+      <div style="max-height:380px;overflow-y:auto">${items}</div>`;
+    _driveActualizarBoton();
+  } catch(e) {
+    document.getElementById('drive-browser').innerHTML = `<span style="color:var(--red)">Error de conexión: ${esc(e.message)}</span>`;
+  }
+}
+
+function _driveMime(mime) {
+  if (!mime) return '📄';
+  if (mime.includes('document'))     return '📝';
+  if (mime.includes('spreadsheet'))  return '📊';
+  if (mime.includes('presentation')) return '📽';
+  if (mime.includes('pdf'))          return '📕';
+  return '📄';
+}
+
+function _driveEntrar(id, nombre) {
+  _driveStack.push({ id, nombre });
+  _driveCargar(id);
+}
+
+function _driveAtras() {
+  _driveStack.pop();
+  const padre = _driveStack.length ? _driveStack[_driveStack.length - 1].id : '';
+  _driveCargar(padre);
+}
+
+function _driveToggle(id, nombre, url) {
+  if (_driveSeleccion[id]) {
+    delete _driveSeleccion[id];
+  } else {
+    _driveSeleccion[id] = { nombre, url };
+  }
+  const el = document.getElementById('drive-item-' + id);
+  const ch = document.getElementById('drive-check-' + id);
+  if (el) el.style.background = _driveSeleccion[id] ? 'var(--green-light, #e8f5e9)' : '';
+  if (ch) ch.textContent      = _driveSeleccion[id] ? '✅' : '⬜';
+  _driveActualizarBoton();
+}
+
+function _driveActualizarBoton() {
+  const btn = document.getElementById('btn-drive-add');
+  const n   = Object.keys(_driveSeleccion).length;
+  if (!btn) return;
+  btn.disabled    = n === 0;
+  btn.style.opacity = n > 0 ? '1' : '0.5';
+  btn.textContent = n > 0 ? `Añadir ${n} archivo${n>1?'s':''}` : 'Añadir seleccionados';
+}
+
+function _driveAnadir() {
+  const textarea = document.getElementById('per-docs');
+  if (!textarea) return;
+  const actual   = textarea.value.trim();
+  const nuevos   = Object.values(_driveSeleccion)
+    .map(f => `${f.nombre}|${f.url}`)
+    .join(';;');
+  textarea.value = actual ? actual + ';;' + nuevos : nuevos;
+  closeModal();
+  showToast(`${Object.keys(_driveSeleccion).length} archivo(s) añadidos`, 'success');
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: PERSONAL
 // ══════════════════════════════════════════════════════════════════════════
@@ -7988,9 +8120,14 @@ function modalPersonal(p) {
           <option value="SÍ" ${String(p.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
           <option value="NO" ${String(p.ACTIVO||'').toUpperCase()==='NO'?'selected':''}>No</option>
         </select></div>
-      <div class="field span2"><label>Documentos Drive <span style="font-size:11px;color:var(--text3)">(formato: Título|URL;;Título 2|URL2)</span></label>
+      <div class="field span2">
+        <label style="display:flex;align-items:center;gap:8px">
+          Documentos Drive
+          <button type="button" class="btn btn-sm btn-secondary" style="font-size:11px;padding:2px 8px"
+            onclick="abrirExploradorDrive()">📁 Explorar Drive</button>
+        </label>
         <textarea id="per-docs" style="min-height:60px;font-size:12px;font-family:monospace">${esc(p.DOCS_DRIVE||'')}</textarea>
-        <span style="font-size:11px;color:var(--text3)">Pega los enlaces de Drive separados por ;; — ej: Contrato|https://drive.google.com/…;;Nómina oct|https://…</span>
+        <span style="font-size:11px;color:var(--text3)">O pega manualmente: <code>Título|URL;;Título2|URL2</code></span>
       </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
