@@ -5418,10 +5418,33 @@ const _CATS_BANCO = [
     kw:['TRANSFERENCIA EMITIDA','ORDEN DE TRANSFERENCIA','BIZUM ENVIADO','TRASPASO A','REINTEGRO'] },
 ];
 
-function _catBanco(concepto) {
+// Map de categorías del sistema banco → grupo análisis
+const _BANCO_CAT_TO_GRUPO = {
+  'NOMINAS':       { id:'nominas',    grupo:'empresa',  label:'Nóminas',                   color:'#1565c0' },
+  'SS':            { id:'ss-cat',     grupo:'empresa',  label:'Seguridad Social',           color:'#1565c0' },
+  'ALQUILER':      { id:'alq',        grupo:'empresa',  label:'Alquiler',                  color:'#1565c0' },
+  'SUMINISTROS':   { id:'sum',        grupo:'empresa',  label:'Suministros empresa',        color:'#1565c0' },
+  'TELEFONIA':     { id:'tel-emp',    grupo:'empresa',  label:'Telefonía empresa',          color:'#1565c0' },
+  'MATERIAL':      { id:'mat',        grupo:'empresa',  label:'Material deportivo',         color:'#1565c0' },
+  'SEGUROS':       { id:'seg',        grupo:'empresa',  label:'Seguros',                   color:'#1565c0' },
+  'SERVICIOS':     { id:'serv',       grupo:'empresa',  label:'Servicios externos',         color:'#1565c0' },
+  'COMISIONES':    { id:'com-b',      grupo:'empresa',  label:'Comisiones bancarias',      color:'#1565c0' },
+  'IMPUESTOS':     { id:'imp',        grupo:'empresa',  label:'Impuestos / AEAT',          color:'#1565c0' },
+  'GASTO_OTROS':   { id:'g-otros',    grupo:'empresa',  label:'Otros gastos empresa',      color:'#1565c0' },
+  'PERSONAL':      { id:'ret-per',    grupo:'ocio',     label:'Retirada autónomo',         color:'#6a1b9a' },
+  'TRANSFERENCIA': { id:'transf-b',   grupo:'transferencia', label:'Transferencia interna',color:'#546e7a' },
+  'SIN_CLASE':     { id:'sin-cat',    grupo:'sin-categorizar', label:'⚠️ Sin categorizar', color:'#9e9e9e' },
+};
+
+function _catBanco(concepto, catExistente) {
+  // 1. Intentar match por keywords en concepto
   const c = sinTildes(String(concepto||'').toUpperCase());
   for (const cat of _CATS_BANCO) {
     if (cat.kw.some(k => c.includes(sinTildes(k)))) return cat;
+  }
+  // 2. Si tiene categoría del sistema banco, usarla
+  if (catExistente && _BANCO_CAT_TO_GRUPO[catExistente]) {
+    return _BANCO_CAT_TO_GRUPO[catExistente];
   }
   return { id:'sin-cat', grupo:'sin-categorizar', label:'⚠️ Sin categorizar', color:'#9e9e9e', kw:[] };
 }
@@ -5441,18 +5464,20 @@ function analisisBancoSec() {
   document.getElementById('topbar-actions').innerHTML = '';
   if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Solo administradores</h2></div>'); return; }
 
-  const movs = DB.movimientosBancarios || [];
+  const movs = DB.bancoHistorico || [];
 
   // ── Filtro mes ────────────────────────────────────────────────────────────
   const mesActivo = _analisisMes || 'todos';
 
+  // En bancoHistorico: IMPORTE negativo = gasto, positivo = ingreso
   const gastos = movs.filter(m => {
-    if (String(m.TIPO||'').toUpperCase() !== 'GASTO') return false;
+    if (parseFloat(m.IMPORTE||0) >= 0) return false;
     if (mesActivo === 'todos') return true;
-    return String(m.FECHA||'').slice(5,7) === mesActivo;
+    const fechaStr = String(m.FECHA || m.MES || '');
+    return fechaStr.slice(5,7) === mesActivo || fechaStr.slice(0,7).slice(5) === mesActivo;
   });
 
-  const totalGastos = gastos.reduce((s,m) => s + (parseFloat(m.IMPORTE)||0), 0);
+  const totalGastos = gastos.reduce((s,m) => s + Math.abs(parseFloat(m.IMPORTE)||0), 0);
 
   // ── Categorizar ───────────────────────────────────────────────────────────
   const porCat   = {};   // catId → { cat, total, items }
@@ -5460,9 +5485,10 @@ function analisisBancoSec() {
   const porProv  = {};   // proveedor → total
 
   gastos.forEach(m => {
-    const cat  = _catBanco(m.CONCEPTO);
-    const imp  = parseFloat(m.IMPORTE)||0;
-    const prov = _extractProveedor(m.CONCEPTO);
+    const catExist = String(m['CATEGORÍA'] || m.CATEGORIA || m.LABEL_CAT || '');
+    const cat  = _catBanco(m.CONCEPTO || '', catExist);
+    const imp  = Math.abs(parseFloat(m.IMPORTE)||0);
+    const prov = _extractProveedor(m.CONCEPTO || '');
 
     if (!porCat[cat.id]) porCat[cat.id] = { cat, total: 0, items: [] };
     porCat[cat.id].total += imp;
@@ -5563,7 +5589,10 @@ function analisisBancoSec() {
     : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text3)">¡Todo categorizado! 🎉</td></tr>`;
 
   // ── Meses para filtro ─────────────────────────────────────────────────────
-  const meses = [...new Set(movs.filter(m=>String(m.TIPO||'').toUpperCase()==='GASTO').map(m=>String(m.FECHA||'').slice(5,7)).filter(Boolean))].sort();
+  const meses = [...new Set(movs.filter(m=>parseFloat(m.IMPORTE||0)<0).map(m=>{
+    const f = String(m.FECHA||m.MES||'');
+    return f.length >= 7 ? f.slice(5,7) : '';
+  }).filter(Boolean))].sort();
   const MNAMES = {
     '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun',
     '07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic'
@@ -5603,7 +5632,7 @@ function analisisBancoSec() {
     <div class="card" style="padding:14px 20px;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
         <div class="card-title" style="margin:0">Análisis de gastos bancarios</div>
-        <span style="margin-left:auto;font-size:13px;color:var(--text3)">${gastos.length} gastos · <strong>${fmtEur(totalGastos)}</strong> total</span>
+        <span style="margin-left:auto;font-size:13px;color:var(--text3)">${gastos.length} gastos · <strong>${fmtEur(totalGastos)}</strong> total <span style="color:var(--text3);font-size:11px">(${movs.length} mov. histórico)</span></span>
       </div>
       ${filtroMesHtml}
     </div>
