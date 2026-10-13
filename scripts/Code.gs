@@ -241,13 +241,18 @@ function sheetToJSON(book, sheetName) {
   var lastCol = sheet.getLastColumn();
   if (lastRow < 2 || lastCol < 1) return [];
 
-  var data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-  var headers = data[0].map(function(h) { return String(h).trim(); });
-  var rows    = [];
+  var range        = sheet.getRange(1, 1, lastRow, lastCol);
+  var data         = range.getValues();
+  var displayData  = range.getDisplayValues();
+  var headers      = data[0].map(function(h) { return String(h).trim(); });
+  // Columnas que deben leerse siempre como texto (listas de IDs separadas por coma)
+  var TEXT_COLS    = { 'ALUMNOS_PRESENTES': true };
+  var rows         = [];
 
   for (var i = 1; i < data.length; i++) {
-    var row     = data[i];
-    var isEmpty = row.every(function(c) { return c === '' || c === null || c === undefined; });
+    var row        = data[i];
+    var displayRow = displayData[i];
+    var isEmpty    = row.every(function(c) { return c === '' || c === null || c === undefined; });
     if (isEmpty) continue;
 
     var obj = {};
@@ -260,6 +265,10 @@ function sheetToJSON(book, sheetName) {
         } else {
           obj[h] = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
         }
+      } else if (TEXT_COLS[h]) {
+        // Leer valor mostrado: locale español convierte "47,12" en número 47.12;
+        // getDisplayValues() devuelve "47,12" respetando el formato regional
+        obj[h] = displayRow[j] || '';
       } else {
         obj[h] = (v !== null && v !== undefined) ? v : '';
       }
@@ -319,11 +328,11 @@ function appendRow(sheetName, rowObj) {
 
     sheet.appendRow(newRow);
 
-    // Forzar columnas HORA a texto plano para evitar que Sheets reinterprete
-    // "17:00" como fracción decimal y pierda la hora por zona horaria
+    // Forzar columnas HORA y ALUMNOS_PRESENTES a texto plano
+    // (evita que Sheets reinterprete "47,12" como número 47.12 en locale español)
     var newRowNum = sheet.getLastRow();
     headers.forEach(function(h, i) {
-      if (h.indexOf('HORA') !== -1) {
+      if (h.indexOf('HORA') !== -1 || h === 'ALUMNOS_PRESENTES') {
         sheet.getRange(newRowNum, i + 1).setNumberFormat('@STRING@');
       }
     });
@@ -395,6 +404,12 @@ function appendBatch(sheetName, rows) {
     if (matrix.length) {
       var startRow = sheet.getLastRow() + 1;
       sheet.getRange(startRow, 1, matrix.length, matrix[0].length).setValues(matrix);
+      // Forzar texto en columnas que no deben ser numéricas (e.g. ALUMNOS_PRESENTES)
+      headers.forEach(function(h, i) {
+        if (h === 'ALUMNOS_PRESENTES' || h.indexOf('HORA') !== -1) {
+          sheet.getRange(startRow, i + 1, matrix.length, 1).setNumberFormat('@STRING@');
+        }
+      });
     }
 
     return { ok: true, count: matrix.length, ids: generatedIds };
