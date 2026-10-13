@@ -12582,10 +12582,9 @@ function portalFamilia() {
 
   const tarjetas = misAlumnos.map(alumno => {
     const aId   = String(alumno.ID_ALUMNO||alumno.ID||'');
-    const inscs     = DB.inscripciones.filter(i =>
+    const inscs = DB.inscripciones.filter(i =>
       String(i.ID_ALUMNO||'')===aId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
     );
-    const todasInscs = DB.inscripciones.filter(i => String(i.ID_ALUMNO||'')===aId);
 
     // Sesiones de fútbol hoy
     const futHoy = DB.asistenciasFutbol.filter(af =>
@@ -12621,10 +12620,7 @@ function portalFamilia() {
     }
     const curso = alumno.CURSO||alumno.CURSO_ESCOLAR||'';
     const tieneHoy = futHoy.length > 0 || extraHoy.length > 0;
-    const tieneFutbol = todasInscs.some(i => {
-      const a = DB.actividades.find(x => String(x.ID||'') === String(i.ID_ACTIVIDAD||''));
-      return a && esFutbol(a.LINEA||'');
-    });
+    const tieneFutbol = esFutbol(alumno.LINEA||'');
     const iconoAlu = tieneFutbol ? '⚽' : '🎒';
 
     const _encuestaKey = (tipo, refId) => `sm_enc_${aId}_${tipo}_${refId}_${today}`;
@@ -12701,13 +12697,8 @@ function portalFamilia() {
   const alumnoIds  = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
   const allInscs   = DB.inscripciones.filter(i=>alumnoIds.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA');
 
-  // Detectar si algún alumno tiene inscripción de fútbol (activa o histórica)
-  const familiaEsFutbol = DB.inscripciones
-    .filter(i => alumnoIds.has(String(i.ID_ALUMNO||'')))
-    .some(i => {
-      const a = DB.actividades.find(x => String(x.ID||'') === String(i.ID_ACTIVIDAD||''));
-      return a && esFutbol(a.LINEA||'');
-    });
+  // Detectar si algún alumno de la familia es de SM Fútbol
+  const familiaEsFutbol = misAlumnos.some(a => esFutbol(a.LINEA||''));
   // Excluir pagos vinculados a facturas ANULADAS (no mostrar errores de facturación al cliente)
   const _facAnuladasIds = new Set(
     DB.facturas
