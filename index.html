@@ -1105,6 +1105,7 @@ function closeSidebar() {
 
 function navigate(page) {
   closeSidebar();
+  if (page !== 'extra-resumen') _extraResMes = null; // resetear selector al salir
   // AMPA no tiene acceso a contabilidad
   if (isAmpa() && ['banco','analisis-banco','gastos','fiscal','presupuesto','pagadores-externos','documentacion'].includes(page)) {
     navigate('extra-resumen');
@@ -10189,6 +10190,8 @@ async function ejecutarCorreccion(idOriginal) {
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: RESUMEN SM EXTRAESCOLARES — Dashboard AMPA
 // ══════════════════════════════════════════════════════════════════════════
+let _extraResMes = null; // mes seleccionado para asistencia (null = auto)
+
 function extraResumen() {
   document.getElementById('topbar-actions').innerHTML = '';
 
@@ -10197,10 +10200,6 @@ function extraResumen() {
   const mesAntK  = new Date(hoy.getFullYear(), hoy.getMonth()-1, 1).toISOString().slice(0,7);
   const añoActK  = String(hoy.getFullYear());
   const colorTasa = t => t===null?'var(--text3)':t>=75?'var(--green)':t>=50?'var(--amber)':'var(--red)';
-  // Mes de referencia para asistencia: el más reciente con registros (fallback: mes anterior)
-  const mesesConAsist = [...new Set(DB.asistenciasExtra.map(a=>String(a.FECHA||'').slice(0,7)).filter(Boolean))].sort().reverse();
-  const mesAsistK = mesesConAsist[0] || mesAntK;
-  const mesAsistLabel = new Date(mesAsistK+'-15').toLocaleDateString('es-ES',{month:'long',year:'numeric'});
   // Actividades de custodia (recogida, temprana, tardía) — no aplica % asistencia
   const esCustodia = nom => { const n=sinTildes(nom||''); return n.includes('RECOGIDA')||n.includes('TEMPRANA')||n.includes('TARDIA'); };
 
@@ -10209,10 +10208,33 @@ function extraResumen() {
     esExtraescolar(a.LINEA||a.NOMBRE||'') && String(a.ACTIVA||'').toUpperCase().startsWith('S')
   );
 
-  // Inscripciones activas extraescolares
-  const insExtras = DB.inscripciones.filter(i =>
-    esExtraescolar(i.LINEA||'') && String(i.ESTADO||'').toUpperCase() === 'ACTIVA'
-  );
+  // Inscripciones activas extraescolares (también incluye via actividad si falta LINEA en inscripción)
+  const actExtrasIds = new Set(actExtras.map(a => String(a.ID)));
+  const insExtras = DB.inscripciones.filter(i => {
+    if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+    if (esExtraescolar(i.LINEA||'')) return true;
+    // Fallback: la actividad es extraescolar aunque la inscripción no tenga LINEA
+    return actExtrasIds.has(String(i.ID_ACTIVIDAD||''));
+  });
+
+  // Meses disponibles con registros de asistencia
+  const mesesConAsist = [...new Set(DB.asistenciasExtra.map(a=>String(a.FECHA||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const mesAsistK = (_extraResMes && mesesConAsist.includes(_extraResMes))
+    ? _extraResMes
+    : (mesesConAsist[0] || mesAntK);
+  if (!_extraResMes) _extraResMes = mesAsistK; // inicializar al auto-detectado
+  const mesAsistLabel = new Date(mesAsistK+'-15').toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+
+  // Deduplicar sesiones por actividad+fecha: quedarse con la de mayor TOTAL_ALUMNOS (más completa)
+  function _dedup(arr) {
+    const map = {};
+    arr.forEach(s => {
+      const k = String(s.ID_ACTIVIDAD||'') + '|' + String(s.FECHA||'');
+      const prev = map[k];
+      if (!prev || (parseInt(s.TOTAL_ALUMNOS)||0) >= (parseInt(prev.TOTAL_ALUMNOS)||0)) map[k] = s;
+    });
+    return Object.values(map);
+  }
 
   // KPI: socios AMPA activos
   const sociosActivos = DB.ampaSocios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO');
@@ -10234,13 +10256,13 @@ function extraResumen() {
   const totalDonutVal = cobradoMes + pendienteMes || 1;
   const pctCobrado = cobradoMes / totalDonutVal;
 
-  // KPI: asistencia por actividad — excluye custodia, usa el mes más reciente con datos
-  const sesRef = DB.asistenciasExtra.filter(a => String(a.FECHA||'').startsWith(mesAsistK));
+  // KPI: asistencia por actividad — excluye custodia, deduplica por actividad+fecha
+  const sesRef = _dedup(DB.asistenciasExtra.filter(a => String(a.FECHA||'').startsWith(mesAsistK)));
   const actExtrasAsist = actExtras.filter(a => !esCustodia(a.NOMBRE||''));
   const asistActIds = new Set(actExtrasAsist.map(a => String(a.ID)));
   const asistActMes = actExtrasAsist.map(act => {
     const aId   = String(act.ID);
-    const sesSel = sesRef.filter(s => String(s.ID_ACTIVIDAD)===aId);
+    const sesSel = sesRef.filter(s => String(s.ID_ACTIVIDAD)===aId && (parseInt(s.TOTAL_ALUMNOS)||0)>0);
     const tp    = sesSel.reduce((s,a) => s+(parseInt(a.TOTAL_PRESENTES)||0), 0);
     const to    = sesSel.reduce((s,a) => s+(parseInt(a.TOTAL_ALUMNOS)||0), 0);
     return {act, tasa: to ? Math.round(tp/to*100) : null};
@@ -10249,13 +10271,14 @@ function extraResumen() {
   const tasaMed = tasasValidas.length
     ? Math.round(tasasValidas.reduce((s,v)=>s+v,0)/tasasValidas.length) : null;
 
-  // Asistencia por alumno — excluye actividades de custodia
+  // Asistencia por alumno — excluye actividades de custodia; solo sesiones válidas (TOTAL_ALUMNOS>0)
   const aluAsistMes = alusExtrasIds.map(aluId => {
     const alu    = DB.alumnos.find(a => String(a.ID_ALUMNO||a.ID)===aluId);
     const actIds = [...new Set(insExtras.filter(i => String(i.ID_ALUMNO)===aluId && asistActIds.has(String(i.ID_ACTIVIDAD))).map(i => String(i.ID_ACTIVIDAD)))];
     let totSes = 0, totPres = 0;
     actIds.forEach(aId => {
-      const sesSel = sesRef.filter(s => String(s.ID_ACTIVIDAD)===aId);
+      // Solo sesiones con al menos 1 alumno registrado (descarta guardados vacíos/duplicados)
+      const sesSel = sesRef.filter(s => String(s.ID_ACTIVIDAD)===aId && (parseInt(s.TOTAL_ALUMNOS)||0)>0);
       totSes += sesSel.length;
       sesSel.forEach(s => {
         const presentes = String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).filter(Boolean);
@@ -10419,11 +10442,20 @@ function extraResumen() {
         </div>
       </div>
 
-      <!-- Tabla asistencia por alumno mes anterior -->
+      <!-- Tabla asistencia por alumno -->
       <div class="card" style="padding:14px 20px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
           <div class="card-title" style="margin:0">Asistencia por alumno — ${mesAsistLabel}</div>
-          ${!isAmpa()?`<button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">Pasar lista hoy</button>`:''}
+          <div style="display:flex;align-items:center;gap:8px">
+            <select style="font-size:12px;padding:3px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text1)"
+              onchange="_extraResMes=this.value;extraResumen()">
+              ${mesesConAsist.map(m => {
+                const lbl = new Date(m+'-15').toLocaleDateString('es-ES',{month:'short',year:'numeric'});
+                return `<option value="${m}" ${m===mesAsistK?'selected':''}>${lbl}</option>`;
+              }).join('')}
+            </select>
+            ${!isAmpa()?`<button class="btn btn-primary btn-sm" onclick="navigate('asistencias-extra')">Pasar lista hoy</button>`:''}
+          </div>
         </div>
         ${kAlertaAsist>0?`<div style="background:var(--amber-l);border:1px solid var(--amber);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
           <strong>⚠ ${kAlertaAsist} alumno${kAlertaAsist>1?'s':''}</strong> con menos del 50% de asistencia en ${mesAsistLabel}.
