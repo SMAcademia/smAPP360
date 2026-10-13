@@ -8845,7 +8845,7 @@ function _generarAccesosFamilias() {
   );
 
   const lista = DB.clientes
-    .filter(c => String(c.ACTIVO||'').toUpperCase().startsWith('S') && c.EMAIL && c.EMAIL.includes('@'))
+    .filter(c => c.EMAIL && String(c.EMAIL).includes('@'))   // sin restricción de ACTIVO
     .map(c => {
       const email = String(c.EMAIL||'').toLowerCase().trim();
       if (yaExisten.has(email)) return null; // ya tiene acceso
@@ -8860,19 +8860,24 @@ function _generarAccesosFamilias() {
     }).filter(Boolean);
 
   if (!lista.length) {
-    showToast('Todas las familias activas con email ya tienen acceso.', 'info'); return;
+    showToast('Todas las familias con email ya tienen acceso configurado.', 'info'); return;
   }
 
-  const filas = lista.map((f,i) => `
-    <tr>
-      <td><strong>${esc((f.nombre+' '+f.apellidos).trim())}</strong></td>
+  const filas = lista.map((f,i) => {
+    const activo = String(f.cli.ACTIVO||'').toUpperCase().startsWith('S');
+    return `<tr>
+      <td>
+        <strong>${esc((f.nombre+' '+f.apellidos).trim())}</strong>
+        ${!activo ? '<span class="badge badge-amber" style="margin-left:4px;font-size:9px">Inactiva</span>' : ''}
+      </td>
       <td style="font-size:12px">${esc(f.email)}</td>
       <td>${esc(f.alu?(f.alu.NOMBRE+' '+f.alu.APELLIDOS||'').trim():'—')}</td>
       <td style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue)">${esc(f.pass)}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   openModal('👨‍👩‍👧 Crear accesos para familias',
-    `<p style="font-size:13px;color:var(--text3);margin-bottom:12px">Se crearán <strong>${lista.length}</strong> accesos nuevos. La contraseña es: <em>iniciales del tutor + DDMM de nacimiento del alumno</em>. Podrán cambiarla desde su portal.</p>
+    `<p style="font-size:13px;color:var(--text3);margin-bottom:12px">Se crearán <strong>${lista.length}</strong> accesos nuevos (incluye familias con inscripciones antiguas). La contraseña es: <em>iniciales del tutor + DDMM de nacimiento del alumno</em>. Podrán cambiarla desde su portal.</p>
     <div class="table-wrap" style="max-height:320px;overflow-y:auto">
       <table style="font-size:12px">
         <thead><tr><th>Familia</th><th>Email / usuario</th><th>Alumno ref.</th><th>Contraseña</th></tr></thead>
@@ -12577,9 +12582,10 @@ function portalFamilia() {
 
   const tarjetas = misAlumnos.map(alumno => {
     const aId   = String(alumno.ID_ALUMNO||alumno.ID||'');
-    const inscs = DB.inscripciones.filter(i =>
+    const inscs     = DB.inscripciones.filter(i =>
       String(i.ID_ALUMNO||'')===aId && String(i.ESTADO||'').toUpperCase()==='ACTIVA'
     );
+    const todasInscs = DB.inscripciones.filter(i => String(i.ID_ALUMNO||'')===aId);
 
     // Sesiones de fútbol hoy
     const futHoy = DB.asistenciasFutbol.filter(af =>
@@ -12615,7 +12621,7 @@ function portalFamilia() {
     }
     const curso = alumno.CURSO||alumno.CURSO_ESCOLAR||'';
     const tieneHoy = futHoy.length > 0 || extraHoy.length > 0;
-    const tieneFutbol = inscs.some(i => {
+    const tieneFutbol = todasInscs.some(i => {
       const a = DB.actividades.find(x => String(x.ID||'') === String(i.ID_ACTIVIDAD||''));
       return a && esFutbol(a.LINEA||'');
     });
@@ -12694,6 +12700,14 @@ function portalFamilia() {
 
   const alumnoIds  = new Set(misAlumnos.map(a=>String(a.ID_ALUMNO||a.ID||'')));
   const allInscs   = DB.inscripciones.filter(i=>alumnoIds.has(String(i.ID_ALUMNO||''))&&String(i.ESTADO||'').toUpperCase()==='ACTIVA');
+
+  // Detectar si algún alumno tiene inscripción de fútbol (activa o histórica)
+  const familiaEsFutbol = DB.inscripciones
+    .filter(i => alumnoIds.has(String(i.ID_ALUMNO||'')))
+    .some(i => {
+      const a = DB.actividades.find(x => String(x.ID||'') === String(i.ID_ACTIVIDAD||''));
+      return a && esFutbol(a.LINEA||'');
+    });
   // Excluir pagos vinculados a facturas ANULADAS (no mostrar errores de facturación al cliente)
   const _facAnuladasIds = new Set(
     DB.facturas
@@ -12716,6 +12730,20 @@ function portalFamilia() {
         <div class="kpi"><div class="kpi-n">${allInscs.length}</div><div class="kpi-l">Actividades activas</div></div>
         <div class="kpi"><div class="kpi-n" style="${pendiente>0?'color:var(--amber)':''}">${fmtEur(pendiente)}</div><div class="kpi-l">Pendiente</div></div>
       </div>
+
+      ${familiaEsFutbol ? `
+      <a href="https://store.sumup.com/smacademiasmfutbol" target="_blank" rel="noopener"
+        style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--black);
+               border-radius:10px;text-decoration:none;margin-bottom:14px;
+               border:2px solid rgba(255,255,255,.08);transition:opacity .15s"
+        onmouseenter="this.style.opacity='.85'" onmouseleave="this.style.opacity='1'">
+        <div style="font-size:32px;flex-shrink:0">⚽</div>
+        <div>
+          <div style="font-weight:700;font-size:14px;color:#fff">Reservar sesión de fútbol</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:2px">Compra días sueltos o bonos de sesiones → SM Tecnificación Fútbol</div>
+        </div>
+        <div style="margin-left:auto;color:rgba(255,255,255,.4);font-size:18px">›</div>
+      </a>` : ''}
 
       <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
         Valoraciones — ${fmtFecha(today)}
