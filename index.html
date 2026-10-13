@@ -8833,10 +8833,14 @@ function _generarAccesosFamilias() {
     return ((nombre||'')+' '+(apellidos||'')).trim()
       .split(/\s+/).map(w=>w[0]||'').join('').toUpperCase();
   }
-  // DDMM desde YYYY-MM-DD
+  // DDMM desde YYYY-MM-DD o DD/MM/YYYY
   function _ddmm(fecha) {
-    const m = String(fecha||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return m ? m[3]+m[2] : '';
+    const s = String(fecha||'');
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return iso[3]+iso[2];
+    const dmy = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (dmy) return dmy[1]+dmy[2];
+    return '';
   }
 
   const yaExisten = new Set(
@@ -8854,9 +8858,12 @@ function _generarAccesosFamilias() {
                   || DB.alumnos.find(a => String(a.ID_CLIENTE)===String(c.ID_CLIENTE));
       const ini  = _iniciales(c.NOMBRE, c.APELLIDOS);
       const ddmm = alu ? _ddmm(alu.FECHA_NAC) : '';
-      const pass = ini + ddmm;
-      if (!pass || pass.length < 4) return null; // datos insuficientes
-      return { cli: c, alu, email, username: email, pass, nombre: c.NOMBRE, apellidos: c.APELLIDOS||'' };
+      // Fallback: primeros 4 chars del email si no hay fecha de nacimiento
+      const passFallback = String(c.EMAIL||'').split('@')[0].slice(0,4).toLowerCase();
+      const pass = (ini + ddmm) || passFallback;
+      if (!pass || pass.length < 2) return null; // datos absolutamente insuficientes
+      const passTemporal = !ddmm; // true si se usó fallback (sin fecha nacimiento)
+      return { cli: c, alu, email, username: email, pass, passTemporal, nombre: c.NOMBRE, apellidos: c.APELLIDOS||'' };
     }).filter(Boolean);
 
   if (!lista.length) {
@@ -8872,7 +8879,9 @@ function _generarAccesosFamilias() {
       </td>
       <td style="font-size:12px">${esc(f.email)}</td>
       <td>${esc(f.alu?(f.alu.NOMBRE+' '+f.alu.APELLIDOS||'').trim():'—')}</td>
-      <td style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue)">${esc(f.pass)}</td>
+      <td style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue)">
+        ${esc(f.pass)}${f.passTemporal ? ' <span style="font-size:9px;color:var(--amber);font-weight:400">(sin f.nac)</span>' : ''}
+      </td>
     </tr>`;
   }).join('');
 
