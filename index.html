@@ -10274,6 +10274,8 @@ function extraResumen() {
   // Asistencia por alumno — excluye actividades de custodia; solo sesiones válidas (TOTAL_ALUMNOS>0)
   const aluAsistMes = alusExtrasIds.map(aluId => {
     const alu    = DB.alumnos.find(a => String(a.ID_ALUMNO||a.ID)===aluId);
+    // IDs posibles para este alumno en ALUMNOS_PRESENTES (cubre errores de nombre de columna)
+    const buscarIds = new Set([aluId, alu ? String(alu.ID_ALUMNO||'') : '', alu ? String(alu.ID||'') : ''].filter(x => x && x !== 'undefined'));
     const actIds = [...new Set(insExtras.filter(i => String(i.ID_ALUMNO)===aluId && asistActIds.has(String(i.ID_ACTIVIDAD))).map(i => String(i.ID_ACTIVIDAD)))];
     let totSes = 0, totPres = 0;
     actIds.forEach(aId => {
@@ -10282,7 +10284,7 @@ function extraResumen() {
       totSes += sesSel.length;
       sesSel.forEach(s => {
         const presentes = String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).filter(Boolean);
-        if (presentes.includes(aluId)) totPres++;
+        if (presentes.some(p => buscarIds.has(p))) totPres++;
       });
     });
     const tasa = totSes ? Math.round(totPres/totSes*100) : null;
@@ -10674,9 +10676,10 @@ function cargarListaExtra() {
           badgeHtml = `<span style="margin-left:auto;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;background:var(--amber);color:#fff" title="${esc(actSuelta?.NOMBRE||'Día suelto')}">Día suelto</span>`;
         }
         const borderColor = esBono ? '#7c3aed' : esSuelto ? 'var(--amber)' : 'var(--border2)';
+        const aluDataId = String(a.ID_ALUMNO||a.ID||''); // ID fiable independientemente del nombre de columna
         return `
-        <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid ${borderColor};font-size:13px;${prevIds.includes(String(a.ID_ALUMNO))?'background:var(--g4)':''}">
-          <input type="checkbox" data-id="${a.ID_ALUMNO}" ${prevIds.includes(String(a.ID_ALUMNO))||!prev?'checked':''} style="width:16px;height:16px">
+        <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border:1px solid ${borderColor};font-size:13px;${prevIds.includes(aluDataId)?'background:var(--g4)':''}">
+          <input type="checkbox" data-id="${aluDataId}" ${prevIds.includes(aluDataId)||!prev?'checked':''} style="width:16px;height:16px">
           <span>${esc(a.NOMBRE)} ${esc(a.APELLIDOS||'')}</span>
           ${badgeHtml}
         </label>`;
