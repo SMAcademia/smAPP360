@@ -388,6 +388,9 @@ tr:hover td{background:#f8f8f8}
         <div class="nav-item" onclick="navigate('fiscal')" data-page="fiscal">
           <span class="nav-icon">📂</span><span>Fiscal</span>
         </div>
+        <div class="nav-item" onclick="navigate('asesoria')" data-page="asesoria">
+          <span class="nav-icon">📋</span><span>Asesoría</span>
+        </div>
         <div class="nav-item" onclick="navigate('presupuesto')" data-page="presupuesto">
           <span class="nav-icon">🧮</span><span>Presupuestos</span>
         </div>
@@ -1048,6 +1051,7 @@ const PAGE_META = {
   'nominas':            { title: 'Nóminas',              sub: 'Histórico mensual por trabajador' },
   'gastos':             { title: 'Gastos',               sub: 'Gastos de empresa y domésticos' },
   'fiscal':             { title: 'Fiscal',               sub: 'Resúmenes trimestrales y anuales' },
+  'asesoria':           { title: 'Asesoría 2026',        sub: 'Listado fiscal de ingresos y gastos para gestoría' },
   'ampa-socios':        { title: 'Socios AMPA',          sub: 'Gestión del padrón de socios' },
   'portal-familia':     { title: 'Portal Familia',       sub: 'Inscripciones, pagos y asistencias' },
   'solicitudes':        { title: 'Solicitudes de cambio', sub: 'Cambios de datos solicitados por familias' },
@@ -1084,6 +1088,7 @@ const MODULES = {
   'pagadores-externos': pagadoresExternosSec,
   'documentacion':      documentacionSec,
   'fiscal':             fiscal,
+  'asesoria':           asesoria2026,
   'ampa-socios':        ampaSocios,
   'portal-familia':     portalFamilia,
   'solicitudes':        solicitudesCambio,
@@ -1107,7 +1112,11 @@ function navigate(page) {
   closeSidebar();
   if (page !== 'extra-resumen') _extraResMes = null; // resetear selector al salir
   // AMPA no tiene acceso a contabilidad
-  if (isAmpa() && ['banco','analisis-banco','gastos','fiscal','presupuesto','pagadores-externos','documentacion'].includes(page)) {
+  if (isAmpa() && ['banco','analisis-banco','gastos','fiscal','asesoria','presupuesto','pagadores-externos','documentacion'].includes(page)) {
+    navigate('extra-resumen');
+    return;
+  }
+  if ((currentUser.rol === 'FAMILIA' || isMonitor() || isEntrenador()) && page === 'asesoria') {
     navigate('extra-resumen');
     return;
   }
@@ -9571,6 +9580,276 @@ function fiscal() {
         </div>` : ''}
       </div>
     </div>`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO: ASESORÍA 2026
+// ══════════════════════════════════════════════════════════════════════════
+let _asesTabActivo = 'ing';
+let _asesData2026  = null; // { facs, gas, bancoG } — para exportar CSV
+
+function asesoria2026() {
+  document.getElementById('topbar-actions').innerHTML = '';
+  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  _asesTabActivo = 'ing';
+  _asesRender();
+}
+
+function _asesRender() {
+  const ANYO = 2026;
+
+  // ── Datos 2026 ──
+  const facs2026 = (DB.facturas||[])
+    .filter(f => String(f.TIPO_FACTURA||'').toUpperCase() !== 'ANULACION')
+    .filter(f => new Date(f.FECHA_EXP||f.FECHA||'').getFullYear() === ANYO)
+    .sort((a,b) => (a.FECHA_EXP||a.FECHA||'').localeCompare(b.FECHA_EXP||b.FECHA||''));
+
+  const gas2026 = (DB.gastos||[])
+    .filter(g => new Date(g.FECHA||'').getFullYear() === ANYO)
+    .sort((a,b) => (a.FECHA||'').localeCompare(b.FECHA||''));
+
+  const banco2026 = (DB.bancoHistorico||[]).filter(r => _bancoMesDe(r).startsWith(String(ANYO)));
+  const bancoIng  = banco2026.filter(r => r.TIPO === 'I');
+  const bancoGas  = banco2026.filter(r => r.TIPO === 'G').sort((a,b)=>(b.FECHA||'').localeCompare(a.FECHA||''));
+
+  // ── KPIs ──
+  const totalFacs   = facs2026.reduce((s,f)=>s+(parseFloat(f.TOTAL)||0), 0);
+  const totalGasDB  = gas2026.reduce((s,g)=>s+(parseFloat(g.TOTAL)||0), 0);
+  const totalBancoG = Math.abs(bancoGas.reduce((s,r)=>s+parseFloat(r.IMPORTE||0), 0));
+  const totalBancoI = bancoIng.reduce((s,r)=>s+parseFloat(r.IMPORTE||0), 0);
+  const resultado   = totalFacs - totalGasDB;
+
+  // ── Gaps en numeración ──
+  const nums = facs2026.map(f=>parseInt(f.NUMERO||0)).filter(n=>n>0).sort((a,b)=>a-b);
+  const gaps = [];
+  for (let i=1;i<nums.length;i++) {
+    if (nums[i]-nums[i-1]>1) for (let g=nums[i-1]+1;g<nums[i];g++) gaps.push(g);
+  }
+
+  _asesData2026 = { facs: facs2026, gas: gas2026, bancoG: bancoGas };
+
+  // ── Tabla INGRESOS ──
+  const rowsIng = facs2026.length ? facs2026.map(f => {
+    const n     = parseInt(f.NUMERO||0);
+    const serie = String(f.SERIE||'SM');
+    const numLabel = (serie === 'SM' && n > 0)
+      ? `SM-${String(n).padStart(3,'0')}`
+      : n > 0 ? `${serie}-${n}` : (f.ID_FACTURA||'?');
+    const est = String(f.ESTADO_AEAT||'EMITIDA').toUpperCase();
+    const badgeC = est==='COBRADA'?'badge-green':est==='ANULADA'?'badge-red':'badge-amber';
+    return `<tr data-num="${n}">
+      <td style="font-size:12px;color:var(--text3)">${fmtFecha(f.FECHA_EXP||f.FECHA)}</td>
+      <td><strong class="mono">${numLabel}</strong></td>
+      <td>${esc(f.CLIENTE_NOMBRE||'—')}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${fmtEur(f.TOTAL)}</td>
+      <td><span class="badge ${badgeC}" style="font-size:10px">${est}</span></td>
+      <td><span id="drv-fac-${n}" class="badge badge-gray" style="font-size:10px" title="Comprobando Drive…">⏳</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty"><div class="empty-icon">📄</div><p>Sin facturas en ${ANYO}</p></div></td></tr>`;
+
+  // ── Tabla GASTOS manuales ──
+  const rowsGas = gas2026.length ? gas2026.map(g => `<tr>
+    <td style="font-size:12px;color:var(--text3)">${fmtFecha(g.FECHA)}</td>
+    <td>${esc(g.CONCEPTO||'—')}</td>
+    <td>${esc(g.PROVEEDOR||'—')}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--red)">${fmtEur(g.TOTAL)}</td>
+    <td><span class="badge badge-gray" style="font-size:10px">${esc(g['CATEGORÍA']||g.CATEGORIA||'—')}</span></td>
+    <td>${g.FACTURA_REF?`<a href="${esc(g.FACTURA_REF)}" target="_blank" class="btn btn-sm btn-secondary">📎</a>`:'—'}</td>
+  </tr>`).join('') : `<tr><td colspan="6"><div class="empty"><div class="empty-icon">📉</div><p>Sin gastos manuales en ${ANYO}</p></div></td></tr>`;
+
+  // ── Tabla GASTOS banco ──
+  const rowsBancoG = bancoGas.length ? bancoGas.map(r => {
+    const catObj = _BANCO_CATS.find(c=>c.id===(r.CATEGORIA||_bancoCatAuto(r.CONCEPTO||'',false)));
+    return `<tr>
+      <td style="font-size:12px;color:var(--text3)">${r.FECHA||'—'}</td>
+      <td>${esc(r.CONCEPTO||'—')}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--amber)">${fmtEur(parseFloat(r.IMPORTE||0))}</td>
+      <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${(catObj?.color||'#ccc')}22;color:${catObj?.color||'#888'};border:1px solid ${(catObj?.color||'#ccc')}44">${catObj?.label||r.LABEL_CAT||'—'}</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4"><div class="empty"><div class="empty-icon">🏦</div><p>Sin gastos banco ${ANYO}</p></div></td></tr>`;
+
+  const alertas = [
+    ...(gaps.length ? [`⚠️ <strong>${gaps.length} hueco${gaps.length>1?'s':''} en numeración</strong>: ${gaps.map(g=>`<strong>${g}</strong>`).join(', ')}`] : []),
+    ...(bancoIng.length && totalBancoI > totalFacs * 1.1 ? [`📊 Ingresos banco (${fmtEur(totalBancoI)}) supera lo facturado (${fmtEur(totalFacs)}) — posibles facturas sin registrar`] : []),
+  ];
+
+  const ingActive = _asesTabActivo === 'ing';
+
+  render(`
+    <div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="kpi-n">${fmtEur(totalFacs)}</div><div class="kpi-l">Ingresos ${ANYO}</div><div class="kpi-sub">${facs2026.length} facturas</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--text3)">${fmtEur(totalBancoI)}</div><div class="kpi-l">Ingresos banco</div><div class="kpi-sub">${bancoIng.length} movimientos</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--red)">${fmtEur(totalGasDB)}</div><div class="kpi-l">Gastos facturados</div><div class="kpi-sub">${gas2026.length} registros</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:var(--amber)">${fmtEur(totalBancoG)}</div><div class="kpi-l">Gastos banco</div><div class="kpi-sub">${bancoGas.length} movimientos</div></div>
+      <div class="kpi"><div class="kpi-n" style="color:${resultado>=0?'var(--g2)':'var(--red)'}">${fmtEur(resultado)}</div><div class="kpi-l">Resultado neto</div><div class="kpi-sub">Ingresos − Gastos</div></div>
+    </div>
+
+    ${alertas.length ? `<div style="background:var(--amber-l);border:1px solid #fde68a;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.9">${alertas.join('<br>')}</div>` : ''}
+
+    <div id="ases-tabs" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn ${ingActive?'btn-primary':'btn-secondary'}" onclick="_asesSetTab('ing')">📥 Ingresos (${facs2026.length})</button>
+      <button class="btn ${!ingActive?'btn-primary':'btn-secondary'}" onclick="_asesSetTab('gas')">📤 Gastos (${gas2026.length + bancoGas.length})</button>
+      <button class="btn btn-secondary" style="margin-left:auto" onclick="_asesPrepDrive()" id="btn-prep-drive">📁 Organizar en Drive</button>
+      <button class="btn btn-secondary" onclick="_asesExportarCSV()">⬇ CSV</button>
+    </div>
+
+    <div id="ases-tab-ing" style="display:${ingActive?'block':'none'}">
+      <div class="card" style="padding:0">
+        <div style="padding:12px 20px 10px;display:flex;align-items:center;gap:12px">
+          <div class="card-title" style="margin:0">Facturas emitidas ${ANYO}</div>
+          <span id="ases-drv-label" style="font-size:11px;color:var(--text3)">Comprobando Drive…</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tbl" id="tbl-ases-ing">
+            <thead><tr><th>Fecha</th><th>Factura</th><th>Cliente</th><th style="text-align:right">Total</th><th>Estado</th><th>Drive PDF</th></tr></thead>
+            <tbody>${rowsIng}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="ases-tab-gas" style="display:${!ingActive?'block':'none'}">
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div style="padding:12px 20px 10px"><div class="card-title">Gastos registrados ${ANYO}</div></div>
+        <div style="overflow-x:auto">
+          <table class="tbl" id="tbl-ases-gas">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Proveedor</th><th style="text-align:right">Total</th><th>Categoría</th><th>PDF</th></tr></thead>
+            <tbody>${rowsGas}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <div style="padding:12px 20px 10px"><div class="card-title">Gastos banco ${ANYO}</div></div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Importe</th><th>Categoría</th></tr></thead>
+            <tbody>${rowsBancoG}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="ases-drive-msg" style="margin-top:16px"></div>
+  `);
+
+  _asesCargarDrive(facs2026);
+}
+
+function _asesSetTab(tab) {
+  _asesTabActivo = tab;
+  const ing = document.getElementById('ases-tab-ing');
+  const gas = document.getElementById('ases-tab-gas');
+  if (!ing || !gas) return;
+  ing.style.display = tab === 'ing' ? 'block' : 'none';
+  gas.style.display = tab === 'gas' ? 'block' : 'none';
+  const btns = document.querySelectorAll('#ases-tabs button');
+  if (btns[0]) btns[0].className = `btn ${tab==='ing'?'btn-primary':'btn-secondary'}`;
+  if (btns[1]) btns[1].className = `btn ${tab==='gas'?'btn-primary':'btn-secondary'}`;
+}
+
+async function _asesCargarDrive(facs) {
+  const lbl = document.getElementById('ases-drv-label');
+  try {
+    const res  = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'GET_FACTURAS_DRIVE' }) });
+    const data = await res.json().catch(()=>({}));
+    if (!data.ok || !data.files) {
+      if (lbl) lbl.textContent = '⚠️ Drive no disponible';
+      return;
+    }
+    const files = data.files;
+
+    function numDePDF(nombre) {
+      // "Factura SM-001.pdf" → 1; "Factura_112_Cliente.pdf" → 112
+      const m = nombre.match(/SM[-_]?\s*0*(\d+)/i) || nombre.match(/Factura[_\s]+0*(\d+)/i);
+      return m ? parseInt(m[1]) : null;
+    }
+
+    let encontradas = 0;
+    facs.forEach(f => {
+      const n = parseInt(f.NUMERO||0);
+      if (!n) return;
+      const match = files.find(file => numDePDF(file.nombre) === n);
+      const badge = document.getElementById(`drv-fac-${n}`);
+      if (!badge) return;
+      if (match) {
+        badge.className = 'badge badge-green';
+        badge.textContent = '✓ PDF';
+        badge.title = match.nombre;
+        encontradas++;
+      } else {
+        badge.className = 'badge badge-red';
+        badge.textContent = '✗ Sin PDF';
+        badge.title = 'No encontrado en Drive';
+      }
+    });
+
+    if (lbl) lbl.textContent = `Drive: ${encontradas}/${facs.length} PDFs verificados`;
+
+    // PDFs en Drive sin factura en DB
+    const numsFacs = new Set(facs.map(f=>parseInt(f.NUMERO||0)).filter(n=>n>0));
+    const huerfanos = files.filter(file => {
+      const n = numDePDF(file.nombre);
+      return n !== null && !numsFacs.has(n);
+    });
+    if (huerfanos.length) {
+      const msg = document.getElementById('ases-drive-msg');
+      if (msg) msg.innerHTML = `<div style="background:var(--amber-l);border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:13px">
+        ⚠️ <strong>${huerfanos.length} PDF${huerfanos.length>1?'s':''} en Drive sin factura en la base de datos:</strong>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+          ${huerfanos.map(f=>`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(0,0,0,.06)">${esc(f.nombre)}</span>`).join('')}
+        </div>
+      </div>`;
+    }
+  } catch(e) {
+    if (lbl) lbl.textContent = '⚠️ Error al conectar con Drive';
+  }
+}
+
+async function _asesPrepDrive() {
+  const btn = document.getElementById('btn-prep-drive');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparando…'; }
+  try {
+    const res  = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'PREPARAR_ASESORIA_DRIVE', anyo: 2026 }) });
+    const data = await res.json().catch(()=>({}));
+    if (data.ok) {
+      const msg = document.getElementById('ases-drive-msg');
+      if (msg) msg.innerHTML = `<div class="card" style="padding:14px 20px;background:var(--green-l);border:1px solid #a5d6a7">
+        <strong>✓ Carpeta preparada en Drive</strong><br>
+        <span style="font-size:13px;color:var(--text2)">${esc(data.nombre||'')}</span><br>
+        <span style="font-size:12px;color:var(--text3);display:block;margin-top:4px">📥 ${data.ingresosCopiadas||0} ingresos · 📤 ${data.gastosCopiadas||0} gastos · ⏭ ${data.duplicadosSaltados||0} duplicados saltados</span>
+        <a href="${esc(data.url||'')}" target="_blank" class="btn btn-secondary" style="margin-top:10px;display:inline-flex;align-items:center;gap:4px">Abrir en Drive ↗</a>
+      </div>`;
+      showToast(`Carpeta asesoría preparada: ${data.ingresosCopiadas||0} ingresos, ${data.gastosCopiadas||0} gastos`, 'success');
+    } else {
+      showToast(`Error al preparar Drive: ${data.error||'desconocido'}`, 'error');
+    }
+  } catch(e) {
+    showToast('No se pudo conectar con Drive para preparar la carpeta', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📁 Organizar en Drive'; }
+  }
+}
+
+function _asesExportarCSV() {
+  if (!_asesData2026) return;
+  const { facs, gas, bancoG } = _asesData2026;
+  let csv = 'TIPO;FECHA;NUMERO;CLIENTE_PROVEEDOR;CONCEPTO;TOTAL;ESTADO\n';
+  facs.forEach(f => {
+    const n   = parseInt(f.NUMERO||0);
+    const num = (f.SERIE && n) ? `${f.SERIE}-${String(n).padStart(3,'0')}` : (f.ID_FACTURA||'');
+    csv += `INGRESO;${f.FECHA_EXP||f.FECHA||''};${num};${(f.CLIENTE_NOMBRE||'').replace(/;/g,' ')};${(f.CONCEPTO||'').replace(/;/g,' ')};${f.TOTAL||0};${f.ESTADO_AEAT||'EMITIDA'}\n`;
+  });
+  gas.forEach(g => {
+    csv += `GASTO;${g.FECHA||''};—;${(g.PROVEEDOR||'').replace(/;/g,' ')};${(g.CONCEPTO||'').replace(/;/g,' ')};${g.TOTAL||0};MANUAL\n`;
+  });
+  bancoG.forEach(r => {
+    csv += `GASTO_BANCO;${r.FECHA||''};—;—;${(r.CONCEPTO||'').replace(/;/g,' ')};${r.IMPORTE||0};BANCO\n`;
+  });
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: 'Asesoria_2026_SM_Academia.csv' });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

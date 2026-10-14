@@ -98,6 +98,10 @@ function doPost(e) {
       result = generarPDFFirmado_(body.firmaId);
     } else if (action === 'ENVIAR_DOCS_ASESORIA') {
       result = enviarDocsAsesoria_();
+    } else if (action === 'GET_FACTURAS_DRIVE') {
+      result = getFacturasDrive_();
+    } else if (action === 'PREPARAR_ASESORIA_DRIVE') {
+      result = prepararAsesoriaEnDrive_(body.anyo || 2026);
     } else if (action === 'OBTENER_PDF_B64') {
       result = obtenerPdfB64_(body.fileId);
     } else if (action === 'GUARDAR_PDF_FIRMADO_PERSONAL') {
@@ -1002,6 +1006,102 @@ function _carpetaFirmados_() {
   var name = 'SM Academia — Documentos Firmados';
   var it   = DriveApp.getFoldersByName(name);
   return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+// ===========================================================================
+//  ASESORÍA — LISTADO DE PDFs Y PREPARACIÓN DE CARPETA DRIVE
+// ===========================================================================
+var DRIVE_FAC_EMITIDAS_  = '1PqKU6DfAElQigDPDkBLnuNEklSZplRBn'; // carpeta FACTURAS
+var DRIVE_FAC_RECIBIDAS_ = '1i09bvwehgbDlaywAu1ED_M0J-V_j3Oqv'; // carpeta PROOVEDORES FACTURAS
+var DRIVE_SM_ROOT_       = '1cnL0es8vW8wpb-Dcv0BrYyc5FkkgQCH7'; // carpeta SM ACADEMIA
+
+function getFacturasDrive_() {
+  try {
+    var folder = DriveApp.getFolderById(DRIVE_FAC_EMITIDAS_);
+    var files  = folder.getFiles();
+    var list   = [];
+    while (files.hasNext()) {
+      var f = files.next();
+      list.push({
+        id:     f.getId(),
+        nombre: f.getName(),
+        fecha:  Utilities.formatDate(f.getDateCreated(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+        url:    f.getUrl(),
+        bytes:  f.getSize()
+      });
+    }
+    list.sort(function(a,b){ return a.nombre.localeCompare(b.nombre,'es'); });
+    return { ok: true, files: list };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+function prepararAsesoriaEnDrive_(anyo) {
+  anyo = parseInt(anyo) || 2026;
+  try {
+    var raiz   = DriveApp.getFolderById(DRIVE_SM_ROOT_);
+    var nombre = 'Asesoría ' + anyo + ' · SM Academia';
+    var dest   = _goc_(raiz, nombre);
+
+    // ── Ingresos ──
+    var ingF  = _goc_(dest, '📥 INGRESOS – Facturas emitidas');
+    var tiFs  = [
+      _goc_(ingF, 'T1 · Enero–Marzo'),
+      _goc_(ingF, 'T2 · Abril–Junio'),
+      _goc_(ingF, 'T3 · Julio–Septiembre'),
+      _goc_(ingF, 'T4 · Octubre–Diciembre'),
+    ];
+    var facF     = DriveApp.getFolderById(DRIVE_FAC_EMITIDAS_);
+    var fFiles   = facF.getFiles();
+    var nIng = 0, nDupes = 0;
+    var vistos = {};
+    while (fFiles.hasNext()) {
+      var ff      = fFiles.next();
+      var created = ff.getDateCreated();
+      if (created.getFullYear() !== anyo) continue;
+      var n = ff.getName();
+      if (vistos[n]) { nDupes++; continue; }
+      vistos[n] = true;
+      var mes = created.getMonth() + 1;
+      var ti  = Math.min(3, Math.floor((mes - 1) / 3));
+      ff.makeCopy(n, tiFs[ti]);
+      nIng++;
+    }
+
+    // ── Gastos ──
+    var gasF   = _goc_(dest, '📤 GASTOS – Facturas recibidas');
+    var provF  = DriveApp.getFolderById(DRIVE_FAC_RECIBIDAS_);
+    var provIt = provF.getFolders();
+    var nGas   = 0;
+    while (provIt.hasNext()) {
+      var pf    = provIt.next();
+      var dest2 = _goc_(gasF, pf.getName());
+      var pFils = pf.getFiles();
+      while (pFils.hasNext()) {
+        var pf2 = pFils.next();
+        if (pf2.getDateCreated().getFullYear() !== anyo) continue;
+        pf2.makeCopy(pf2.getName(), dest2);
+        nGas++;
+      }
+    }
+
+    return {
+      ok:             true,
+      url:            dest.getUrl(),
+      nombre:         nombre,
+      ingresosCopiadas: nIng,
+      gastosCopiadas:   nGas,
+      duplicadosSaltados: nDupes
+    };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+function _goc_(parent, name) {
+  var it = parent.getFoldersByName(name);
+  return it.hasNext() ? it.next() : parent.createFolder(name);
 }
 
 // ===========================================================================
