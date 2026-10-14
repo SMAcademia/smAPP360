@@ -9689,6 +9689,7 @@ function _asesRender() {
     <div id="ases-tabs" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn ${ingActive?'btn-primary':'btn-secondary'}" onclick="_asesSetTab('ing')">📥 Ingresos (${facs2026.length})</button>
       <button class="btn ${!ingActive?'btn-primary':'btn-secondary'}" onclick="_asesSetTab('gas')">📤 Gastos (${gas2026.length + bancoGas.length})</button>
+      <button class="btn btn-secondary" onclick="_asesImportarPanel()" id="btn-import-ant">📥 Importar antiguas</button>
       <button class="btn btn-secondary" style="margin-left:auto" onclick="_asesPrepDrive()" id="btn-prep-drive">📁 Organizar en Drive</button>
       <button class="btn btn-secondary" onclick="_asesExportarCSV()">⬇ CSV</button>
     </div>
@@ -9827,6 +9828,145 @@ async function _asesPrepDrive() {
     showToast('No se pudo conectar con Drive para preparar la carpeta', 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📁 Organizar en Drive'; }
+  }
+}
+
+// ── Panel de importación de facturas históricas (serie ANT) ──────────────
+let _asesDrvMeta = null; // cache de metadatos Drive
+
+async function _asesImportarPanel() {
+  const btn = document.getElementById('btn-import-ant');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Cargando…'; }
+
+  let data;
+  try {
+    const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'GET_DRIVE_FACTURAS_METADATA' }) });
+    data = await res.json().catch(()=>({}));
+  } catch(e) {
+    showToast('Error al conectar con Drive', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '📥 Importar antiguas'; }
+    return;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '📥 Importar antiguas'; }
+  if (!data.ok) { showToast('Error: ' + (data.error||'desconocido'), 'error'); return; }
+
+  // Números ya en DB.facturas (cualquier serie)
+  const numsEnDB = new Set((DB.facturas||[]).map(f => parseInt(f.NUMERO||0)).filter(n=>n>0));
+
+  // Filtrar: solo los que NO están ya en DB Y no están ya importados (serie ANT en GAS)
+  const pendientes = data.files.filter(f => !f.yaImportada && !numsEnDB.has(f.numero));
+  const yaEnSistema = data.files.filter(f => f.yaImportada || numsEnDB.has(f.numero));
+
+  _asesDrvMeta = data.files;
+
+  // Mostrar panel
+  const panel = document.getElementById('ases-drive-msg');
+  if (!panel) return;
+
+  if (!pendientes.length) {
+    panel.innerHTML = `<div style="background:var(--green-l);border:1px solid #a5d6a7;border-radius:6px;padding:12px 16px;font-size:13px">
+      ✅ Todos los PDFs de Drive ya están registrados en el sistema (${yaEnSistema.length} archivos).
+    </div>`;
+    return;
+  }
+
+  const rows = pendientes.map((f, i) => `<tr>
+    <td style="padding:6px 8px">
+      <input type="checkbox" class="ases-imp-chk" data-i="${i}" checked style="width:16px;height:16px;cursor:pointer">
+    </td>
+    <td style="padding:6px 8px;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap">
+      <a href="${esc(f.url)}" target="_blank" style="color:var(--green)" title="Abrir PDF en Drive">${f.numero}</a>
+    </td>
+    <td style="padding:6px 4px">
+      <input type="text" class="ases-inp ases-cli-${i}" value="${esc(f.cliente||'')}" placeholder="Nombre cliente"
+        style="width:100%;padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
+    </td>
+    <td style="padding:6px 4px">
+      <input type="date" class="ases-inp ases-fec-${i}" value="${esc(f.fecha)}"
+        style="padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
+    </td>
+    <td style="padding:6px 4px">
+      <input type="number" class="ases-inp ases-tot-${i}" placeholder="0.00" step="0.01" min="0"
+        style="width:90px;padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:right">
+    </td>
+  </tr>`).join('');
+
+  panel.innerHTML = `
+    <div class="card" style="padding:0;margin-top:4px">
+      <div style="padding:14px 20px 10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="card-title" style="margin:0">Importar facturas históricas de Drive</div>
+        <span style="font-size:12px;color:var(--text3)">${pendientes.length} sin registrar · ${yaEnSistema.length} ya en sistema</span>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-secondary" style="font-size:12px" onclick="_asesSelAll(true)">Seleccionar todo</button>
+          <button class="btn btn-secondary" style="font-size:12px" onclick="_asesSelAll(false)">Deseleccionar</button>
+          <button class="btn btn-primary" id="btn-confirmar-imp" onclick="_asesConfirmarImport(${JSON.stringify(pendientes.map((f,i)=>({...f,_i:i})))})">
+            ✓ Importar seleccionadas
+          </button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);padding:0 20px 10px">
+        Se registrarán como serie <strong>ANT</strong> (histórico). La fecha viene de Drive — ajústala si no es correcta. Introduce el importe de cada factura (puedes dejarlo en 0 y editarlo después).
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--bg2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">
+              <th style="padding:8px 8px;width:36px"></th>
+              <th style="padding:8px 8px;text-align:left">Nº</th>
+              <th style="padding:8px 4px;text-align:left">Cliente (editable)</th>
+              <th style="padding:8px 4px;text-align:left">Fecha Drive</th>
+              <th style="padding:8px 4px;text-align:right">Total (€)</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="padding:10px 20px;font-size:12px;color:var(--text3);border-top:1px solid var(--border2)">
+        💡 La fecha tomada de Drive es la de creación del PDF — puede no coincidir exactamente con la fecha de emisión. Revisa y corrige si es necesario.
+      </div>
+    </div>`;
+}
+
+function _asesSelAll(checked) {
+  document.querySelectorAll('.ases-imp-chk').forEach(chk => chk.checked = checked);
+}
+
+async function _asesConfirmarImport(pendientes) {
+  const btn = document.getElementById('btn-confirmar-imp');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando…'; }
+
+  const filas = [];
+  pendientes.forEach(f => {
+    const chk = document.querySelector(`.ases-imp-chk[data-i="${f._i}"]`);
+    if (!chk || !chk.checked) return;
+    const cli = document.querySelector(`.ases-cli-${f._i}`)?.value.trim() || f.cliente;
+    const fec = document.querySelector(`.ases-fec-${f._i}`)?.value || f.fecha;
+    const tot = parseFloat(document.querySelector(`.ases-tot-${f._i}`)?.value) || 0;
+    filas.push({ numero: f.numero, cliente: cli, fecha: fec, total: tot, driveId: f.id, url: f.url });
+  });
+
+  if (!filas.length) {
+    showToast('No hay filas seleccionadas', 'info');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Importar seleccionadas'; }
+    return;
+  }
+
+  try {
+    const res  = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'IMPORTAR_FACTURAS_HISTORICAS', filas }) });
+    const data = await res.json().catch(()=>({}));
+    if (data.ok) {
+      showToast(`${data.count} facturas históricas importadas correctamente`, 'success');
+      // Recargar datos y refrescar la página
+      showToast('Recargando datos…', 'info');
+      await loadAllData();
+      _asesRender();
+    } else {
+      showToast('Error al importar: ' + (data.error||'desconocido'), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Importar seleccionadas'; }
+    }
+  } catch(e) {
+    showToast('Error de conexión al importar', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Importar seleccionadas'; }
   }
 }
 

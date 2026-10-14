@@ -100,6 +100,10 @@ function doPost(e) {
       result = enviarDocsAsesoria_();
     } else if (action === 'GET_FACTURAS_DRIVE') {
       result = getFacturasDrive_();
+    } else if (action === 'GET_DRIVE_FACTURAS_METADATA') {
+      result = getDriveFacturasMetadata_();
+    } else if (action === 'IMPORTAR_FACTURAS_HISTORICAS') {
+      result = importarFacturasHistoricas_(body.filas || []);
     } else if (action === 'PREPARAR_ASESORIA_DRIVE') {
       result = prepararAsesoriaEnDrive_(body.anyo || 2026);
     } else if (action === 'OBTENER_PDF_B64') {
@@ -1102,6 +1106,125 @@ function prepararAsesoriaEnDrive_(anyo) {
 function _goc_(parent, name) {
   var it = parent.getFoldersByName(name);
   return it.hasNext() ? it.next() : parent.createFolder(name);
+}
+
+// ---------------------------------------------------------------------------
+//  Metadatos de PDFs de Drive + detección de ya importados
+// ---------------------------------------------------------------------------
+function getDriveFacturasMetadata_() {
+  try {
+    var folder = DriveApp.getFolderById(DRIVE_FAC_EMITIDAS_);
+    var files  = folder.getFiles();
+
+    // Números ya en la hoja FACTURAS (serie ANT = importadas antes)
+    var sheet    = ss_().getSheetByName('FACTURAS');
+    var yaEnDB   = {};
+    if (sheet && sheet.getLastRow() > 1) {
+      var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+      var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      var iSerie = hdrs.indexOf('SERIE');
+      var iNum   = hdrs.indexOf('NUMERO');
+      if (iSerie >= 0 && iNum >= 0) {
+        vals.forEach(function(r) {
+          if (String(r[iSerie]).toUpperCase() === 'ANT') {
+            yaEnDB[parseInt(r[iNum]) || 0] = true;
+          }
+        });
+      }
+    }
+
+    var list = [];
+    while (files.hasNext()) {
+      var f = files.next();
+      if (f.getMimeType() !== 'application/pdf') continue;
+      var nombre = f.getName();
+
+      // Extraer número: "Factura_NNN_NOMBRE.pdf" ó "Factura NNN.pdf" ó "Factura NNN NOMBRE.pdf"
+      var mNum = nombre.match(/Factura[_ ](\d+)/i);
+      if (!mNum) continue;
+      var num = parseInt(mNum[1]);
+      if (!num) continue;
+
+      // Extraer cliente: texto después del número, sin extensión
+      var mCli = nombre.match(/Factura[_ ]\d+[_ ](.+?)\.pdf$/i);
+      var cliente = mCli ? mCli[1].replace(/_/g, ' ').trim() : '';
+
+      var fechaCreada = f.getDateCreated();
+      list.push({
+        id:         f.getId(),
+        nombre:     nombre,
+        numero:     num,
+        cliente:    cliente,
+        fecha:      Utilities.formatDate(fechaCreada, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+        url:        f.getUrl(),
+        yaImportada: yaEnDB[num] === true
+      });
+    }
+
+    list.sort(function(a, b) { return a.numero - b.numero; });
+    return { ok: true, files: list };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Importación masiva de facturas históricas (serie ANT)
+// ---------------------------------------------------------------------------
+function importarFacturasHistoricas_(filas) {
+  try {
+    var sheet = ss_().getSheetByName('FACTURAS');
+    if (!sheet) return { ok: false, error: 'Hoja FACTURAS no encontrada' };
+
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var count = 0;
+
+    filas.forEach(function(fila) {
+      var num     = parseInt(fila.numero) || 0;
+      var cliente = String(fila.cliente || '').trim();
+      var fecha   = String(fila.fecha   || '').trim();
+      var total   = parseFloat(fila.total) || 0;
+      var driveId = String(fila.driveId  || '').trim();
+      var urlDrv  = String(fila.url      || '').trim();
+      if (!num || !fecha) return;
+
+      var idFac = 'ANT-' + String(num).padStart(3, '0');
+
+      var row = {};
+      row['ID_FACTURA']     = idFac;
+      row['FECHA_EXP']      = fecha;
+      row['SERIE']          = 'ANT';
+      row['NUMERO']         = num;
+      row['TOTAL']          = total;
+      row['BASE_IMPONIBLE'] = total;
+      row['CLIENTE_NOMBRE'] = cliente;
+      row['CONCEPTO']       = 'Servicio academia (histórico)';
+      row['ESTADO_AEAT']    = 'COBRADA';
+      row['TIPO_FACTURA']   = 'ORIGINAL';
+      row['TIPO_IMPUESTO']  = 'EXENTO';
+      row['CUOTA_IMPUESTO'] = 0;
+      row['NOMBRE_EMISOR']  = 'SM ACADEMIA';
+      row['NIF_EMISOR']     = '';
+      row['HASH_ANTERIOR']  = '';
+      row['HASH_ACTUAL']    = '';
+      row['URL_PDF_DRIVE']  = urlDrv;
+
+      // Construir fila en el orden de cabeceras existentes
+      var newRow = hdrs.map(function(h) {
+        return row[h] !== undefined ? row[h] : '';
+      });
+      // Si URL_PDF_DRIVE no existe en cabeceras, añadir columna
+      if (hdrs.indexOf('URL_PDF_DRIVE') === -1 && urlDrv) {
+        newRow.push(urlDrv);
+      }
+      sheet.appendRow(newRow);
+      count++;
+    });
+
+    return { ok: true, count: count };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
 }
 
 // ===========================================================================
