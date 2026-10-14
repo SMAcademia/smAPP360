@@ -102,6 +102,8 @@ function doPost(e) {
       result = getFacturasDrive_();
     } else if (action === 'GET_DRIVE_FACTURAS_METADATA') {
       result = getDriveFacturasMetadata_();
+    } else if (action === 'GET_OLD_DB_FACTURAS') {
+      result = getOldDBFacturas_();
     } else if (action === 'IMPORTAR_FACTURAS_HISTORICAS') {
       result = importarFacturasHistoricas_(body.filas || []);
     } else if (action === 'PREPARAR_ASESORIA_DRIVE') {
@@ -1017,6 +1019,7 @@ function _carpetaFirmados_() {
 // ===========================================================================
 var DRIVE_FAC_EMITIDAS_  = '1PqKU6DfAElQigDPDkBLnuNEklSZplRBn'; // carpeta FACTURAS
 var DRIVE_FAC_RECIBIDAS_ = '1i09bvwehgbDlaywAu1ED_M0J-V_j3Oqv'; // carpeta PROOVEDORES FACTURAS
+var OLD_SS_ID_           = '1nx1wbPyUKDvjsvGUSKaDjClF526S46WDGfyZXkLc4Hc'; // app anterior
 var DRIVE_SM_ROOT_       = '1cnL0es8vW8wpb-Dcv0BrYyc5FkkgQCH7'; // carpeta SM ACADEMIA
 
 function getFacturasDrive_() {
@@ -1163,6 +1166,64 @@ function getDriveFacturasMetadata_() {
 
     list.sort(function(a, b) { return a.numero - b.numero; });
     return { ok: true, files: list };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Lectura del spreadsheet antiguo para cruzar importes
+// ---------------------------------------------------------------------------
+function getOldDBFacturas_() {
+  try {
+    var ss     = SpreadsheetApp.openById(OLD_SS_ID_);
+    var sheets = ss.getSheets();
+    var hojas  = sheets.map(function(s) { return s.getName(); });
+    var result = [];
+
+    sheets.forEach(function(sheet) {
+      if (sheet.getLastRow() < 2) return;
+      var vals = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+      var hdrs = vals[0].map(function(h) { return String(h || '').trim().toUpperCase(); });
+
+      // Detectar columnas relevantes
+      var colNum = -1, colTotal = -1, colCli = -1, colFecha = -1;
+      hdrs.forEach(function(h, i) {
+        if (colNum   < 0 && /N[ÚU]MERO|^NUM$|^N[º°]$|FACTURA/.test(h)) colNum   = i;
+        if (colTotal < 0 && /TOTAL|IMPORTE|PRECIO|CUOTA|COBRADO/.test(h) && !/DESC/.test(h)) colTotal = i;
+        if (colCli   < 0 && /CLIENTE|NOMBRE|ALUMNO|FAMILIA|TITULAR/.test(h)) colCli = i;
+        if (colFecha < 0 && /FECHA/.test(h)) colFecha = i;
+      });
+
+      if (colTotal < 0) return; // sin columna de importe → ignorar hoja
+
+      for (var i = 1; i < vals.length; i++) {
+        var row   = vals[i];
+        var total = parseFloat(String(row[colTotal]).replace(',', '.')) || 0;
+        if (!total) continue;
+
+        var num = null;
+        if (colNum >= 0) {
+          var raw = String(row[colNum] || '').replace(/[^\d]/g, '');
+          num = raw ? (parseInt(raw) || null) : null;
+        }
+        var fecha = '';
+        if (colFecha >= 0 && row[colFecha]) {
+          fecha = row[colFecha] instanceof Date
+            ? Utilities.formatDate(row[colFecha], Session.getScriptTimeZone(), 'yyyy-MM-dd')
+            : String(row[colFecha]).substring(0, 10);
+        }
+        result.push({
+          hoja:    sheet.getName(),
+          numero:  num,
+          cliente: colCli >= 0 ? String(row[colCli] || '').trim() : '',
+          fecha:   fecha,
+          total:   total
+        });
+      }
+    });
+
+    return { ok: true, registros: result, hojas: hojas };
   } catch(e) {
     return { ok: false, error: e.toString() };
   }

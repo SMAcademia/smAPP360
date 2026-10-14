@@ -9838,28 +9838,47 @@ async function _asesImportarPanel() {
   const btn = document.getElementById('btn-import-ant');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Cargando…'; }
 
-  let data;
+  // Llamadas paralelas: metadatos Drive + BD antigua
+  let drvData, oldData;
   try {
-    const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'GET_DRIVE_FACTURAS_METADATA' }) });
-    data = await res.json().catch(()=>({}));
+    [drvData, oldData] = await Promise.all([
+      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'GET_DRIVE_FACTURAS_METADATA' }) }).then(r => r.json()).catch(()=>({})),
+      fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'GET_OLD_DB_FACTURAS' }) }).then(r => r.json()).catch(()=>({})),
+    ]);
   } catch(e) {
-    showToast('Error al conectar con Drive', 'error');
+    showToast('Error al conectar', 'error');
     if (btn) { btn.disabled = false; btn.textContent = '📥 Importar antiguas'; }
     return;
   }
   if (btn) { btn.disabled = false; btn.textContent = '📥 Importar antiguas'; }
-  if (!data.ok) { showToast('Error: ' + (data.error||'desconocido'), 'error'); return; }
+  if (!drvData.ok) { showToast('Error Drive: ' + (drvData.error||'desconocido'), 'error'); return; }
+
+  // Construir lookup de BD antigua por número de factura y por nombre normalizado
+  const oldByNum  = {}; // numero → [{ total, cliente, fecha, hoja }]
+  const oldByNom  = {}; // nombre_norm → [{ total, cliente, fecha, hoja }]
+  const normNom   = s => String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+
+  if (oldData.ok && oldData.registros) {
+    oldData.registros.forEach(r => {
+      if (r.numero) {
+        if (!oldByNum[r.numero]) oldByNum[r.numero] = [];
+        oldByNum[r.numero].push(r);
+      }
+      const k = normNom(r.cliente);
+      if (k) {
+        if (!oldByNom[k]) oldByNom[k] = [];
+        oldByNom[k].push(r);
+      }
+    });
+  }
 
   // Números ya en DB.facturas (cualquier serie)
   const numsEnDB = new Set((DB.facturas||[]).map(f => parseInt(f.NUMERO||0)).filter(n=>n>0));
 
-  // Filtrar: solo los que NO están ya en DB Y no están ya importados (serie ANT en GAS)
-  const pendientes = data.files.filter(f => !f.yaImportada && !numsEnDB.has(f.numero));
-  const yaEnSistema = data.files.filter(f => f.yaImportada || numsEnDB.has(f.numero));
+  const pendientes   = drvData.files.filter(f => !f.yaImportada && !numsEnDB.has(f.numero));
+  const yaEnSistema  = drvData.files.filter(f =>  f.yaImportada ||  numsEnDB.has(f.numero));
+  _asesDrvMeta = drvData.files;
 
-  _asesDrvMeta = data.files;
-
-  // Mostrar panel
   const panel = document.getElementById('ases-drive-msg');
   if (!panel) return;
 
@@ -9870,59 +9889,101 @@ async function _asesImportarPanel() {
     return;
   }
 
-  const rows = pendientes.map((f, i) => `<tr>
-    <td style="padding:6px 8px">
-      <input type="checkbox" class="ases-imp-chk" data-i="${i}" checked style="width:16px;height:16px;cursor:pointer">
-    </td>
-    <td style="padding:6px 8px;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap">
-      <a href="${esc(f.url)}" target="_blank" style="color:var(--green)" title="Abrir PDF en Drive">${f.numero}</a>
-    </td>
-    <td style="padding:6px 4px">
-      <input type="text" class="ases-inp ases-cli-${i}" value="${esc(f.cliente||'')}" placeholder="Nombre cliente"
-        style="width:100%;padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
-    </td>
-    <td style="padding:6px 4px">
-      <input type="date" class="ases-inp ases-fec-${i}" value="${esc(f.fecha)}"
-        style="padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
-    </td>
-    <td style="padding:6px 4px">
-      <input type="number" class="ases-inp ases-tot-${i}" placeholder="0.00" step="0.01" min="0"
-        style="width:90px;padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px;text-align:right">
-    </td>
-  </tr>`).join('');
+  // Estadísticas del cruce
+  let nCruzados = 0, nSugeridos = 0, nSinDato = 0;
+
+  const rows = pendientes.map((f, i) => {
+    // 1. Cruzar por número exacto
+    let matchTotal = null, matchFecha = f.fecha, matchConf = 'manual', matchTooltip = '';
+    const porNum = oldByNum[f.numero];
+    if (porNum && porNum.length) {
+      // Sumar todos los registros con ese número (puede haber varios conceptos)
+      const totalSum = porNum.reduce((s, r) => s + r.total, 0);
+      matchTotal = totalSum;
+      if (porNum[0].fecha) matchFecha = porNum[0].fecha;
+      matchConf  = 'exacto';
+      matchTooltip = `BD antigua · hoja: ${porNum[0].hoja}`;
+      nCruzados++;
+    } else {
+      // 2. Cruzar por nombre normalizado del cliente (extraído del PDF)
+      const k = normNom(f.cliente);
+      const porNom = k ? oldByNom[k] : null;
+      if (porNom && porNom.length === 1) {
+        matchTotal   = porNom[0].total;
+        if (porNom[0].fecha) matchFecha = porNom[0].fecha;
+        matchConf  = 'nombre';
+        matchTooltip = `Sugerido por nombre · hoja: ${porNom[0].hoja}`;
+        nSugeridos++;
+      } else {
+        nSinDato++;
+      }
+    }
+
+    const badgeConf = matchConf === 'exacto'
+      ? `<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7" title="${matchTooltip}">✓ BD</span>`
+      : matchConf === 'nombre'
+      ? `<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:#fffbeb;color:#b45309;border:1px solid #fde68a" title="${matchTooltip}">≈ nombre</span>`
+      : '';
+
+    return `<tr style="border-bottom:1px solid var(--border2)">
+      <td style="padding:5px 8px">
+        <input type="checkbox" class="ases-imp-chk" data-i="${i}" checked style="width:15px;height:15px;cursor:pointer">
+      </td>
+      <td style="padding:5px 8px;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap">
+        <a href="${esc(f.url)}" target="_blank" style="color:var(--green)">${f.numero}</a>
+      </td>
+      <td style="padding:5px 4px;min-width:200px">
+        <input type="text" class="ases-cli-${i}" value="${esc(f.cliente||'')}" placeholder="Nombre cliente"
+          style="width:100%;padding:3px 7px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
+      </td>
+      <td style="padding:5px 4px;white-space:nowrap">
+        <input type="date" class="ases-fec-${i}" value="${esc(matchFecha)}"
+          style="padding:3px 7px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
+      </td>
+      <td style="padding:5px 4px;white-space:nowrap">
+        <input type="number" class="ases-tot-${i}" value="${matchTotal !== null ? matchTotal.toFixed(2) : ''}"
+          placeholder="0.00" step="0.01" min="0"
+          style="width:90px;padding:3px 7px;border:1.5px solid ${matchConf==='exacto'?'#a5d6a7':matchConf==='nombre'?'#fde68a':'var(--border)'};border-radius:4px;font-size:12px;text-align:right">
+        ${badgeConf}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const oldInfo = oldData.ok
+    ? `<span style="color:var(--g2)">✓ BD antigua conectada</span> · ${oldData.registros?.length||0} registros en ${oldData.hojas?.length||0} hojas · <strong style="color:var(--g2)">${nCruzados} exactos</strong> · <span style="color:var(--amber)">${nSugeridos} por nombre</span> · <span style="color:var(--red)">${nSinDato} sin dato</span>`
+    : `<span style="color:var(--red)">⚠️ BD antigua no disponible</span>`;
 
   panel.innerHTML = `
     <div class="card" style="padding:0;margin-top:4px">
       <div style="padding:14px 20px 10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div class="card-title" style="margin:0">Importar facturas históricas de Drive</div>
         <span style="font-size:12px;color:var(--text3)">${pendientes.length} sin registrar · ${yaEnSistema.length} ya en sistema</span>
-        <div style="margin-left:auto;display:flex;gap:8px">
-          <button class="btn btn-secondary" style="font-size:12px" onclick="_asesSelAll(true)">Seleccionar todo</button>
-          <button class="btn btn-secondary" style="font-size:12px" onclick="_asesSelAll(false)">Deseleccionar</button>
+        <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary" style="font-size:12px" onclick="_asesSelAll(true)">Todo</button>
+          <button class="btn btn-secondary" style="font-size:12px" onclick="_asesSelAll(false)">Ninguno</button>
           <button class="btn btn-primary" id="btn-confirmar-imp" onclick="_asesConfirmarImport(${JSON.stringify(pendientes.map((f,i)=>({...f,_i:i})))})">
             ✓ Importar seleccionadas
           </button>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--text3);padding:0 20px 10px">
-        Se registrarán como serie <strong>ANT</strong> (histórico). La fecha viene de Drive — ajústala si no es correcta. Introduce el importe de cada factura (puedes dejarlo en 0 y editarlo después).
-      </div>
+      <div style="padding:4px 20px 10px;font-size:11px;color:var(--text3)">${oldInfo}</div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:var(--bg2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">
-              <th style="padding:8px 8px;width:36px"></th>
-              <th style="padding:8px 8px;text-align:left">Nº</th>
-              <th style="padding:8px 4px;text-align:left">Cliente (editable)</th>
-              <th style="padding:8px 4px;text-align:left">Fecha Drive</th>
-              <th style="padding:8px 4px;text-align:right">Total (€)</th>
+              <th style="padding:7px 8px;width:30px"></th>
+              <th style="padding:7px 8px;text-align:left">Nº</th>
+              <th style="padding:7px 4px;text-align:left">Cliente</th>
+              <th style="padding:7px 4px;text-align:left">Fecha</th>
+              <th style="padding:7px 4px;text-align:right">Total</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <div style="padding:10px 20px;font-size:12px;color:var(--text3);border-top:1px solid var(--border2)">
-        💡 La fecha tomada de Drive es la de creación del PDF — puede no coincidir exactamente con la fecha de emisión. Revisa y corrige si es necesario.
+      <div style="padding:10px 20px;font-size:11px;color:var(--text3);border-top:1px solid var(--border2);line-height:1.7">
+        🟢 <strong>BD exacto</strong> = importe cruzado por número de factura · 🟡 <strong>≈ nombre</strong> = sugerido por nombre de cliente (verificar) · sin badge = introducir manualmente<br>
+        Las facturas se importan con serie <strong>ANT</strong>. Puedes editarlas después desde la sección Facturas.
       </div>
     </div>`;
 }
