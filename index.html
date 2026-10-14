@@ -7371,17 +7371,30 @@ async function _enviarAvisoFactura(numFac, total, clienteNombre, esExterno, pago
       emailDest = fam?.EMAIL || fam?.CORREO || '';
     }
   }
-  if (!emailDest) return;
-  await fetch(GAS_URL, {
-    method: 'POST',
-    body: JSON.stringify({
-      action: 'SEND_FACTURA_EMAIL',
-      email:  emailDest,
-      nombre: clienteNombre,
-      numFac: numFac,
-      total:  total.toFixed(2),
-    }),
-  });
+  if (!emailDest) {
+    showToast(`Factura ${numFac} creada · Sin email de contacto (no se envió aviso)`, 'info');
+    return;
+  }
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'SEND_FACTURA_EMAIL',
+        email:  emailDest,
+        nombre: clienteNombre,
+        numFac: numFac,
+        total:  total.toFixed(2),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data.ok === false) {
+      showToast(`Factura ${numFac} creada · Error al enviar aviso: ${data.error||'desconocido'}`, 'error');
+    } else {
+      showToast(`Aviso de factura ${numFac} enviado a ${emailDest}`, 'success');
+    }
+  } catch(e) {
+    showToast(`Factura ${numFac} creada · No se pudo enviar el aviso por email`, 'info');
+  }
 }
 
 async function saveFactura(isNew, id) {
