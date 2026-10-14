@@ -6827,6 +6827,17 @@ async function _bancoConcilConfirmar() {
 }
 
 function analisisIngresos() {
+  // Botón privacidad en topbar
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn btn-sm btn-secondary" onclick="_analPrivacy=!_analPrivacy;analisisIngresos()" title="Ocultar importes">
+      ${_analPrivacy ? '👁 Mostrar' : '🙈 Ocultar'}
+    </button>`;
+
+  // Helper: oculta importes si modo privacidad activo
+  const amt = v => _analPrivacy
+    ? '<span style="color:var(--text3);letter-spacing:3px;font-weight:600">••••</span>'
+    : fmtEur(v);
+
   const hoy    = new Date();
   const anoAct = hoy.getFullYear();
   const mesAct = hoy.getMonth() + 1; // 1-12
@@ -6860,9 +6871,8 @@ function analisisIngresos() {
     const estado = String(p.ESTADO||'').toUpperCase();
     const esp    = parseFloat(p.TOTAL_ESPERADO||p.IMPORTE) || 0;
     const rec    = parseFloat(p.TOTAL_RECIBIDO||p.TOTAL_ESPERADO||p.IMPORTE) || 0;
-    if (estado === 'PAGADO')    { byMes[k].cobrado   += rec; byMes[k].esperado += esp; }
+    if (estado === 'PAGADO')         { byMes[k].cobrado   += rec; byMes[k].esperado += rec; }
     else if (estado === 'PENDIENTE') { byMes[k].pendiente += esp; byMes[k].esperado += esp; }
-    else                             { byMes[k].esperado  += esp; }
   }
 
   // KPIs
@@ -6874,15 +6884,16 @@ function analisisIngresos() {
   const cobradoMesAct= (byMes[mesActKey]?.cobrado||0);
   const pendienteMes = (byMes[mesActKey]?.pendiente||0);
 
-  // Proyección recurrente: sum de inscripciones ACTIVAS con MENSUALIDAD
-  const proyeccion = DB.inscripciones
-    .filter(i => String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
-                 String(i.TIPO_PAGO||i.FORMA_PAGO||'').toUpperCase().includes('MENSUAL'))
-    .reduce((s,i) => {
-      const precio = parseFloat(i.PRECIO_ACORDADO||0) || 0;
-      const dto    = parseFloat(i.DESCUENTO||0) || 0;
-      return s + precio * (1 - dto/100);
-    }, 0);
+  // Proyección recurrente: sum de inscripciones ACTIVAS con TIPO_PRECIO=MENSUALIDAD
+  const inscMensuales = DB.inscripciones.filter(i =>
+    String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
+    String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO'
+  );
+  const proyeccion = inscMensuales.reduce((s,i) => {
+    const precio = parseFloat(i.PRECIO_ACORDADO||0) || 0;
+    const dto    = parseFloat(i.DESCUENTO||0) || 0;
+    return s + precio * (1 - dto/100);
+  }, 0);
 
   // Desglose por línea (meses actuales)
   const byLinea = {};
@@ -6944,9 +6955,9 @@ function analisisIngresos() {
     const isAct  = k === mesActKey;
     return `<tr style="${isAct?'font-weight:600;background:var(--accent)10':''}" >
       <td style="padding:6px 8px;font-size:13px">${labelMesLargo(k)}${isAct?' <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 5px;border-radius:9px;margin-left:4px">actual</span>':''}</td>
-      <td style="padding:6px 8px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums">${fmtEur(d.esperado)}</td>
-      <td style="padding:6px 8px;text-align:right;font-size:13px;color:var(--green);font-variant-numeric:tabular-nums">${fmtEur(d.cobrado)}</td>
-      <td style="padding:6px 8px;text-align:right;font-size:13px;color:var(--amber);font-variant-numeric:tabular-nums">${d.pendiente>0?fmtEur(d.pendiente):'—'}</td>
+      <td style="padding:6px 8px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums">${amt(d.esperado)}</td>
+      <td style="padding:6px 8px;text-align:right;font-size:13px;color:var(--green);font-variant-numeric:tabular-nums">${amt(d.cobrado)}</td>
+      <td style="padding:6px 8px;text-align:right;font-size:13px;color:var(--amber);font-variant-numeric:tabular-nums">${d.pendiente>0?amt(d.pendiente):'—'}</td>
       <td style="padding:6px 8px;text-align:right">
         <span style="font-size:12px;font-weight:700;color:${color}">${tasa}%</span>
       </td>
@@ -6959,7 +6970,7 @@ function analisisIngresos() {
     return `<div style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
         <span style="font-weight:600">${esc(lin)}</span>
-        <span style="color:var(--text2)">${fmtEur(tot)} · ${pct.toFixed(1)}%</span>
+        <span style="color:var(--text2)">${amt(tot)} · ${pct.toFixed(1)}%</span>
       </div>
       <div style="height:7px;background:var(--bg2);border-radius:4px;overflow:hidden">
         <div style="height:100%;width:${pct.toFixed(1)}%;background:var(--accent);border-radius:4px;transition:width .4s"></div>
@@ -6970,23 +6981,23 @@ function analisisIngresos() {
   render(`
     <div class="kpis" style="margin-bottom:20px">
       <div class="kpi">
-        <div class="kpi-n" style="color:var(--green)">${fmtEur(cobradoMesAct)}</div>
+        <div class="kpi-n" style="color:var(--green)">${amt(cobradoMesAct)}</div>
         <div class="kpi-l">Cobrado este mes</div>
       </div>
       <div class="kpi">
-        <div class="kpi-n" style="color:${pendienteMes>0?'var(--amber)':'var(--text1)'}">${fmtEur(pendienteMes)}</div>
+        <div class="kpi-n" style="color:${pendienteMes>0?'var(--amber)':'var(--text1)'}">${amt(pendienteMes)}</div>
         <div class="kpi-l">Pendiente este mes</div>
       </div>
       <div class="kpi">
-        <div class="kpi-n">${fmtEur(Math.round(mediaUlt6))}</div>
+        <div class="kpi-n">${amt(Math.round(mediaUlt6))}</div>
         <div class="kpi-l">Media últimos 6 meses</div>
       </div>
       <div class="kpi">
-        <div class="kpi-n" style="color:var(--accent)">${fmtEur(Math.round(proyeccion))}</div>
+        <div class="kpi-n" style="color:var(--accent)">${amt(Math.round(proyeccion))}</div>
         <div class="kpi-l">Proyección recurrente</div>
       </div>
       ${mejorMes ? `<div class="kpi">
-        <div class="kpi-n" style="font-size:15px;color:var(--green)">${fmtEur(Math.round(mejorMes[1].cobrado))}</div>
+        <div class="kpi-n" style="font-size:15px;color:var(--green)">${amt(Math.round(mejorMes[1].cobrado))}</div>
         <div class="kpi-l">Mejor mes (${labelMesLargo(mejorMes[0])})</div>
       </div>` : ''}
     </div>
@@ -7009,13 +7020,13 @@ function analisisIngresos() {
       </div>
       <div class="card" style="padding:18px 20px">
         <div style="font-size:13px;font-weight:700;margin-bottom:14px">Proyección recurrente mensual</div>
-        <p style="font-size:12px;color:var(--text2);margin-bottom:14px">Basada en inscripciones activas con pago mensual.</p>
-        <div style="font-size:28px;font-weight:800;color:var(--accent);margin-bottom:6px">${fmtEur(Math.round(proyeccion))}</div>
-        <div style="font-size:12px;color:var(--text2)">${DB.inscripciones.filter(i=>String(i.ESTADO||'').toUpperCase()==='ACTIVA'&&String(i.TIPO_PAGO||i.FORMA_PAGO||'').toUpperCase().includes('MENSUAL')).length} inscripciones activas de tipo mensual</div>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:14px">Suma de mensualidades de inscripciones activas.</p>
+        <div style="font-size:28px;font-weight:800;color:var(--accent);margin-bottom:6px">${amt(Math.round(proyeccion))}</div>
+        <div style="font-size:12px;color:var(--text2)">${inscMensuales.length} inscripciones activas de pago mensual</div>
         ${mediaUlt6 > 0 ? `<div style="margin-top:12px;padding:10px;background:var(--bg2);border-radius:6px;font-size:12px">
           <div style="color:var(--text2);margin-bottom:3px">Diferencia proyección vs. media real</div>
           <div style="font-weight:700;color:${proyeccion>=mediaUlt6?'var(--green)':'var(--red)'}">
-            ${proyeccion>=mediaUlt6?'▲ +':'▼ '}${fmtEur(Math.abs(Math.round(proyeccion-mediaUlt6)))}
+            ${proyeccion>=mediaUlt6?'▲ +':'▼ '}${amt(Math.abs(Math.round(proyeccion-mediaUlt6)))}
           </div>
         </div>` : ''}
       </div>
@@ -10203,7 +10214,8 @@ async function ejecutarCorreccion(idOriginal) {
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: RESUMEN SM EXTRAESCOLARES — Dashboard AMPA
 // ══════════════════════════════════════════════════════════════════════════
-let _extraResMes = null; // mes seleccionado para asistencia (null = auto)
+let _extraResMes  = null; // mes seleccionado para asistencia (null = auto)
+let _analPrivacy  = false; // modo privacidad en análisis de ingresos
 
 function extraResumen() {
   document.getElementById('topbar-actions').innerHTML = '';
