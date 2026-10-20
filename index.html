@@ -594,7 +594,15 @@ async function writeToSheet(sheetName, rowObj, id) {
     try {
       const res  = await fetch(GAS_URL, { method: 'POST', body: payload, signal: ctrl.signal });
       clearTimeout(timer);
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch(_) {
+        // GAS devolvió HTML (error de autorización o cuota)
+        const e = new Error('El servidor no respondió correctamente. Puede necesitar reautorización en Apps Script.');
+        e._gasError = true;
+        throw e;
+      }
       if (!data.ok) {
         const e = new Error(data.error || 'Error al guardar');
         e._gasError = true;
@@ -12904,6 +12912,7 @@ function modalAusencia(a) {
         </select></div>
       <div class="field" style="grid-column:span 2"><label>Justificación / observaciones</label>
         <input id="aus-just" value="${esc(a.JUSTIFICACION||'')}"></div>
+      <div id="aus-error" style="grid-column:span 2;display:none;padding:8px 12px;background:var(--red-soft,#ffeaea);border:1px solid var(--red,#e53935);border-radius:6px;color:var(--red,#c62828);font-size:13px"></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="saveAusencia(${isNew},${JSON.stringify(a.ID||null)})">${isNew?'Registrar':'Guardar'}</button>`);
@@ -12933,9 +12942,21 @@ function saveAusencia(isNew, id) {
     JUSTIFICACION: document.getElementById('aus-just')?.value.trim()||'',
     ESTADO:        document.getElementById('aus-estado')?.value||'SOLICITADA',
   };
+  const btnGuardar = document.querySelector('#modal-footer .btn-primary');
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando…'; }
   writeToSheet('AUSENCIAS', row, isNew ? null : id)
-    .then(()=>{ showToast(isNew?'Ausencia registrada':'Ausencia actualizada'); closeModal(); loadAllData().then(ausencias); })
-    .catch(err=>showToast('Error: '+err.message,'error'));
+    .then(async () => {
+      closeModal();
+      showToast(isNew ? 'Ausencia registrada' : 'Ausencia actualizada');
+      try { await loadAllData(); ausencias(); }
+      catch(_) { showToast('Guardado. Recarga la página para ver el cambio.', 'info'); }
+    })
+    .catch(err => {
+      if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = isNew ? 'Registrar' : 'Guardar'; }
+      const errBox = document.getElementById('aus-error');
+      if (errBox) { errBox.textContent = 'No se pudo guardar: ' + err.message; errBox.style.display = 'block'; }
+      showToast('Error al guardar ausencia: ' + err.message, 'error');
+    });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
