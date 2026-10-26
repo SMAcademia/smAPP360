@@ -1288,6 +1288,9 @@ function _mesNorm(m) {
 }
 function esFutbol(l)       { const u=sinTildes(l); return u.includes('FUTBOL'); }
 function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
+// "Día suelto genérico": actividad cuyo nombre contiene DIA SUELTO, SUELTO, JORNAD o similar.
+// Los eventos puntuales (ej. Fiesta Halloween) usan PAGO_ÚNICO pero NO son día suelto genérico.
+function esDiaSueltoGenerico(nombre) { const n = sinTildes(nombre||'').toUpperCase(); return n.includes('SUELT') || n.includes('JORNAD'); }
 function esBonoUsos(nombre, insc){ const n=sinTildes(nombre||''); const porNombre = n.includes('BONO'); const porObs = insc && /USOS:\d+/i.test(String(insc.OBSERVACIONES||'')); return porNombre || porObs; }
 function bonoCapacidad(nombre){ const m=sinTildes(nombre||'').match(/(\d+)/); return m?parseInt(m[1]):10; }
 function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:(\d+)/i); return m?parseInt(m[1]):0; }
@@ -11008,7 +11011,39 @@ function asistenciasExtra() {
   // Historial de asistencias registradas hoy (para mostrar las ya completadas)
   const yaHoy = DB.asistenciasExtra.filter(a => String(a.FECHA)===today);
 
+  // Detectar inscripciones de eventos puntuales incorrectamente dados de baja
+  // (PAGO_ÚNICO en actividad que NO es "día suelto genérico", con ESTADO=BAJA)
+  const inscEventosBajaErrónea = isAdmin() ? DB.inscripciones.filter(i => {
+    if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') return false;
+    if (String(i.ESTADO||'').toUpperCase() !== 'BAJA') return false;
+    const act = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+    if (!act) return false;
+    if (esDiaSueltoGenerico(act.NOMBRE||'')) return false; // día suelto real → baja correcta
+    if (!esExtraescolar(act.LINEA||'')) return false;      // solo extraescolares
+    if (String(act.ACTIVA||'').toUpperCase().startsWith('S') === false) return false; // actividad activa
+    return true;
+  }) : [];
+
+  const repairBanner = inscEventosBajaErrónea.length ? `
+    <div class="card" style="border:2px solid var(--amber);margin-bottom:16px">
+      <div class="card-title" style="color:var(--amber)">⚠️ Inscripciones dadas de baja por error (${inscEventosBajaErrónea.length})</div>
+      <p style="font-size:13px;margin-bottom:10px">Estos alumnos fueron dados de baja automáticamente al guardar el pase de lista de otra actividad, cuando no debían. Puedes reactivarlos:</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        ${inscEventosBajaErrónea.map(i => {
+          const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
+          const act = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+          return `<span style="background:var(--bg2);border:1px solid var(--amber);border-radius:6px;padding:3px 8px;font-size:12px">
+            ${esc((alu?.NOMBRE||'?')+' '+(alu?.APELLIDOS||''))} — ${esc(act?.NOMBRE||i.ID_ACTIVIDAD)}
+            <span style="color:var(--text3)"> (baja ${fmtFecha(i.FECHA_BAJA||'')})</span>
+          </span>`;
+        }).join('')}
+      </div>
+      <button class="btn btn-primary" onclick="_repararInscEventos()">Reactivar todas</button>
+    </div>` : '';
+
   render(`
+    <div style="display:grid;gap:16px">
+    ${repairBanner}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="card">
         <div class="card-title">Pasar lista — ${fmtFecha(today)}</div>
@@ -11059,7 +11094,34 @@ function asistenciasExtra() {
           </table>
         </div>
       </div>
+    </div>
     </div>`);
+}
+
+async function _repararInscEventos() {
+  const btn = document.querySelector('[onclick="_repararInscEventos()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reactivando…'; }
+  const candidatas = DB.inscripciones.filter(i => {
+    if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') return false;
+    if (String(i.ESTADO||'').toUpperCase() !== 'BAJA') return false;
+    const act = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+    if (!act) return false;
+    if (esDiaSueltoGenerico(act.NOMBRE||'')) return false;
+    if (!esExtraescolar(act.LINEA||'')) return false;
+    if (String(act.ACTIVA||'').toUpperCase().startsWith('S') === false) return false;
+    return true;
+  });
+  let ok = 0;
+  for (const i of candidatas) {
+    try {
+      await writeToSheet('INSCRIPCIONES', { ESTADO: 'ACTIVA', FECHA_BAJA: '' }, i.ID_INSCRIPCION || i.ID);
+      i.ESTADO = 'ACTIVA'; i.FECHA_BAJA = '';
+      ok++;
+    } catch(_) {}
+  }
+  showToast(`${ok} inscripción${ok!==1?'es':''} reactivada${ok!==1?'s':''}`);
+  await loadAllData();
+  asistenciasExtra();
 }
 
 function cargarListaExtra() {
@@ -11116,6 +11178,8 @@ function cargarListaExtra() {
   // de la actividad, que puede estar vacío o con cualquier valor en el catálogo).
   // Extraescolares → aparecen en cualquier lista extraescolar (actividades + recogidas).
   // Fútbol/Tecnificación → solo en listas de fútbol.
+  // IMPORTANTE: solo inscripciones de actividades "día suelto genérico" (nombre contiene SUELT/JORNAD).
+  // Los eventos puntuales (ej. Fiesta Halloween) con PAGO_ÚNICO NO deben aparecer como día suelto cruzado.
   const inscsSueltas = DB.inscripciones.filter(i => {
     if (!activaEnFecha(i)) return false;
     if (idsDirectos.has(String(i.ID_ALUMNO))) return false;
@@ -11123,6 +11187,7 @@ function cargarListaExtra() {
     if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') return false;
     if (String(i.ID_ACTIVIDAD) === actId) return false; // ya en grupo 1
     const actInsc = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+    if (!esDiaSueltoGenerico(actInsc?.NOMBRE||'')) return false; // solo día suelto genérico
     return mundoAct(actInsc) === mundoSel;
   });
   // actsSueltas sigue disponible para el badge visual
@@ -11350,6 +11415,8 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
         if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
         if (String(i.TIPO_PRECIO||'').toUpperCase() !== 'PAGO_ÚNICO') return false;
         const aInsc = DB.actividades.find(a => String(a.ID) === String(i.ID_ACTIVIDAD));
+        // Solo dar BAJA a inscripciones de día suelto genérico, no a eventos puntuales (halloween, etc.)
+        if (!esDiaSueltoGenerico(aInsc?.NOMBRE||'')) return false;
         return (esFutbol(aInsc?.LINEA||aInsc?.NOMBRE||'') ? 'FUTBOL' : 'EXTRA') === mundo2;
       });
     }
