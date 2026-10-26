@@ -150,6 +150,19 @@ tr:hover td{background:#f8f8f8}
 .badge-blue{background:var(--blue-l);color:var(--blue)}
 .badge-gray{background:#eeeeee;color:var(--gray-d)}
 
+/* ── Stat mini ──────────────────────────────────────────────────────────── */
+.stat-mini{display:flex;flex-direction:column;align-items:center;padding:8px 16px;background:var(--surface2);border-radius:8px;min-width:80px;border-top:3px solid var(--sc,var(--blue))}
+.stat-mini-val{font-size:22px;font-weight:700;color:var(--sc,var(--text));line-height:1.1}
+.stat-mini-lbl{font-size:11px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+
+/* ── Tabs bar ────────────────────────────────────────────────────────────── */
+.tabs-bar{display:flex;gap:4px;flex-wrap:wrap;border-bottom:2px solid var(--border);padding-bottom:0}
+.tab-btn{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:6px 14px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border-radius:4px 4px 0 0;transition:color .15s,border-color .15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:700}
+.tab-count{display:inline-block;background:var(--surface3,#e0e0e0);color:var(--text2);border-radius:10px;font-size:11px;padding:0 6px;margin-left:4px}
+.tab-btn.active .tab-count{background:var(--blue-l);color:var(--blue)}
+
 /* ── Forms ──────────────────────────────────────────────────────────────── */
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .form-grid.cols-3{grid-template-columns:1fr 1fr 1fr}
@@ -963,7 +976,7 @@ function applyRoleVisibility() {
     'nav-general':      rol !== 'FAMILIA',
     'nav-futbol':       futbolLike,
     'nav-extra':        extraLike || ampaRole,
-    'nav-personal':     adminLike || ['MONITOR','ENTRENADOR'].includes(rol),
+    'nav-personal':     adminLike || ['MONITOR','ENTRENADOR','AMPA'].includes(rol),
     'nav-contabilidad': adminLike,
     'nav-ampa':         ampaLike,
     'nav-familia':      rol === 'FAMILIA',
@@ -990,9 +1003,9 @@ function applyRoleVisibility() {
     });
   }
 
-  // Para MONITOR: solo registro-horario en nav-personal; ocultar gestión en nav-general
+  // Para MONITOR: puede ver ausencias propias y registro-horario
   if (rol === 'MONITOR') {
-    ['personal','ausencias','nominas'].forEach(page => {
+    ['personal','nominas'].forEach(page => {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
     });
@@ -1005,9 +1018,9 @@ function applyRoleVisibility() {
       });
   }
 
-  // Para ENTRENADOR: solo registro-horario en nav-personal
+  // Para ENTRENADOR: puede ver ausencias propias y registro-horario
   if (rol === 'ENTRENADOR') {
-    ['personal','ausencias','nominas'].forEach(page => {
+    ['personal','nominas'].forEach(page => {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
     });
@@ -1029,6 +1042,11 @@ function applyRoleVisibility() {
     if (elAsistExt) elAsistExt.style.display = 'none';
     const elCq = document.querySelector('[data-page="cuadrante"]');
     if (elCq) elCq.style.display = 'none';
+    // AMPA ve ausencias pero no personal ni nóminas ni registro-horario
+    ['personal','nominas','registro-horario'].forEach(page => {
+      const el = document.querySelector(`[data-page="${page}"]`);
+      if (el) el.style.display = 'none';
+    });
   }
 }
 
@@ -12917,52 +12935,153 @@ async function _guardarListaEnModal(sesionId, fecha) {
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: AUSENCIAS (personal)
 // ══════════════════════════════════════════════════════════════════════════
-function ausencias() {
+let _ausFiltr = 'TODAS';
+let _ausTrab  = '';
+
+function ausencias(filtr, trabFiltro) {
   document.getElementById('topbar-actions').innerHTML = '';
-  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores.</p></div>'); return; }
-  topbarBtn('+ Registrar ausencia', () => modalAusencia());
-  const rows = DB.ausencias.map(a => {
+  const canEdit = isAdmin();
+  const canView = canEdit || isAmpa() || isMonitor() || isEntrenador();
+  if (!canView) {
+    render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>Solo administradores y trabajadores.</p></div>');
+    return;
+  }
+
+  if (filtr !== undefined) _ausFiltr = filtr;
+  if (trabFiltro !== undefined) _ausTrab = trabFiltro;
+
+  // Determinar qué ausencias mostrar
+  const canSeeAll = canEdit || isAmpa();
+  const miId = (!canSeeAll) ? String(currentUser.id || '') : null;
+
+  if (canEdit) topbarBtn('+ Registrar ausencia', () => modalAusencia());
+  else if (isMonitor() || isEntrenador()) topbarBtn('+ Solicitar ausencia', () => modalAusencia(null, miId));
+  const base = miId
+    ? DB.ausencias.filter(a => String(a.ID_MONITOR) === miId)
+    : DB.ausencias;
+
+  // Hoy para comparar
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const enCurso = a => {
+    if (!a.FECHA_INICIO) return false;
+    const fi = new Date(a.FECHA_INICIO); fi.setHours(0,0,0,0);
+    const ff = a.FECHA_FIN ? new Date(a.FECHA_FIN) : fi; ff.setHours(23,59,59,999);
+    return fi <= hoy && ff >= hoy;
+  };
+
+  // Aplicar filtros
+  let lista = base.slice().sort((a,b) => (b.FECHA_INICIO||'') > (a.FECHA_INICIO||'') ? 1 : -1);
+  if (_ausTrab) lista = lista.filter(a => String(a.ID_MONITOR) === _ausTrab);
+  if (_ausFiltr === 'EN_CURSO')   lista = lista.filter(enCurso);
+  if (_ausFiltr === 'PENDIENTES') lista = lista.filter(a => String(a.ESTADO||'').toUpperCase() === 'SOLICITADA');
+
+  // Estadísticas resumen (solo admin)
+  let statsHtml = '';
+  if (canEdit) {
+    const activas   = base.filter(enCurso);
+    const pendientes = base.filter(a => String(a.ESTADO||'').toUpperCase() === 'SOLICITADA');
+    const diasMes   = base.filter(a => {
+      const m = (a.FECHA_INICIO||'').slice(0,7);
+      const hoyM = hoy.toISOString().slice(0,7);
+      return m === hoyM;
+    }).reduce((s,a) => s + (parseInt(a.DIAS)||0), 0);
+    statsHtml = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="stat-mini"><span class="stat-mini-val">${base.length}</span><span class="stat-mini-lbl">Total</span></div>
+      <div class="stat-mini" style="--sc:var(--green)"><span class="stat-mini-val">${activas.length}</span><span class="stat-mini-lbl">En curso hoy</span></div>
+      <div class="stat-mini" style="--sc:var(--amber)"><span class="stat-mini-val">${pendientes.length}</span><span class="stat-mini-lbl">Pendientes</span></div>
+      <div class="stat-mini"><span class="stat-mini-val">${diasMes}</span><span class="stat-mini-lbl">Días este mes</span></div>
+    </div>`;
+  }
+
+  // Filtro de trabajador (solo quien ve todo)
+  let trabSelectHtml = '';
+  if (canSeeAll) {
+    const trabsConAus = [...new Set(base.map(a => a.ID_MONITOR))];
+    const opts = trabsConAus.map(tid => {
+      const p = DB.personal.find(p => String(p.ID_MONITOR) === String(tid));
+      const nom = p ? `${p.NOMBRE||''} ${p.APELLIDOS||''}`.trim() : tid;
+      return `<option value="${esc(tid)}" ${_ausTrab===String(tid)?'selected':''}>${esc(nom)}</option>`;
+    }).join('');
+    trabSelectHtml = `<select class="search-input" style="width:auto;min-width:160px" onchange="_ausTrab=this.value;ausencias()">
+      <option value="">Todos los trabajadores</option>${opts}</select>`;
+  }
+
+  // Tabs de filtro
+  const tabs = [
+    { k:'TODAS',     l:'Todas',     n: base.length },
+    { k:'EN_CURSO',  l:'En curso',  n: base.filter(enCurso).length },
+    { k:'PENDIENTES',l:'Pendientes',n: base.filter(a=>String(a.ESTADO||'').toUpperCase()==='SOLICITADA').length },
+  ];
+  const tabsHtml = `<div class="tabs-bar" style="margin-bottom:12px">
+    ${tabs.map(t=>`<button class="tab-btn${_ausFiltr===t.k?' active':''}" onclick="ausencias('${t.k}')">${t.l}${t.n>0?` <span class="tab-count">${t.n}</span>`:''}</button>`).join('')}
+  </div>`;
+
+  // Filas de tabla
+  const rows = lista.map(a => {
     const trab = DB.personal.find(p=>String(p.ID_MONITOR)===String(a.ID_MONITOR));
+    const nom  = trab ? `${trab.NOMBRE||''} ${trab.APELLIDOS||''}`.trim() : (a.NOMBRE_MONITOR || a.ID_MONITOR || '—');
     const tipo = String(a.TIPO||'').toUpperCase();
     const tipoBadge = tipo==='BAJA_LABORAL' ? 'badge-red' : tipo==='VACACIONES' ? 'badge-blue' : 'badge-amber';
     const est  = String(a.ESTADO||'SOLICITADA').toUpperCase();
     const estBadge = est==='APROBADA'||est==='ACTIVA' ? 'badge-green' : est==='RECHAZADA' ? 'badge-red' : 'badge-amber';
-    return `<tr>
-      <td class="mono">${esc(a.ID||'')}</td>
-      <td><strong>${esc(trab ? (trab.NOMBRE+' '+(trab.APELLIDOS||'')).trim() : a.ID_MONITOR||'—')}</strong></td>
-      <td><span class="badge ${tipoBadge}">${esc(a.TIPO||'—')}</span></td>
+    const activa = enCurso(a);
+    const rowStyle = activa ? ' style="background:var(--green-soft,rgba(76,175,80,.08))"' : '';
+    const editBtn  = canEdit
+      ? `<button class="btn btn-sm btn-secondary" onclick='modalAusencia(${JSON.stringify(a)})'>Editar</button>`
+      : '';
+    return `<tr${rowStyle}>
+      <td class="mono" style="font-size:11px">${esc(a.ID||'')}</td>
+      ${canSeeAll ? `<td><strong>${esc(nom)}</strong></td>` : ''}
+      <td><span class="badge ${tipoBadge}">${esc((a.TIPO||'—').replace('_',' '))}</span></td>
       <td>${fmtFecha(a.FECHA_INICIO)}</td>
       <td>${fmtFecha(a.FECHA_FIN)}</td>
       <td style="text-align:center">${esc(a.DIAS||'—')}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.JUSTIFICACION||'—')}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text2)">${esc(a.JUSTIFICACION||'—')}</td>
       <td><span class="badge ${estBadge}">${esc(est)}</span></td>
-      <td><button class="btn btn-sm btn-secondary" onclick='modalAusencia(${JSON.stringify(a)})'>Editar</button></td>
+      <td>${editBtn}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📅</div><p>Sin ausencias registradas</p></div></td></tr>`;
+  }).join('') || `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📅</div><p>Sin ausencias${_ausFiltr!=='TODAS'?' en este filtro':''}</p></div></td></tr>`;
+
+  const thTrab = canSeeAll ? '<th>Trabajador</th>' : '';
   render(`
     <div class="card" style="padding:14px 20px">
+      ${statsHtml}
+      ${tabsHtml}
       <div class="table-toolbar">
         <input class="search-input" id="q-aus" placeholder="Buscar…" oninput="filterTable('q-aus','tbl-aus')">
-        <span class="text-muted">${DB.ausencias.length} registros</span>
+        ${trabSelectHtml}
+        <span class="text-muted">${lista.length} registro${lista.length!==1?'s':''}</span>
       </div>
       <div class="table-wrap">
         <table id="tbl-aus">
-          <thead><tr><th>ID</th><th>Trabajador</th><th>Tipo</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Justificación</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th>${thTrab}<th>Tipo</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Justificación</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
     </div>`);
 }
 
-function modalAusencia(a) {
+function modalAusencia(a, fixedMonitorId) {
   a = a || {};
   const isNew = !a.ID;
-  const trabajadores = DB.personal.filter(p=>String(p.ACTIVO||'').toUpperCase().startsWith('S') && !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase()))
-    .map(p=>`<option value="${esc(p.ID_MONITOR)}" ${String(a.ID_MONITOR)===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
-  openModal(isNew ? 'Registrar ausencia' : 'Editar ausencia', `
+  // fixedMonitorId: cuando el que abre el modal es el propio trabajador
+  const selfId = fixedMonitorId || (isNew && !isAdmin() && !isAmpa() ? String(currentUser.id||'') : null);
+  const trabajadores = DB.personal
+    .filter(p => String(p.ACTIVO||'').toUpperCase().startsWith('S') && !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase()))
+    .map(p => `<option value="${esc(p.ID_MONITOR)}" ${(selfId ? String(selfId) : String(a.ID_MONITOR||''))===String(p.ID_MONITOR)?'selected':''}>${esc(p.NOMBRE||'')} ${esc(p.APELLIDOS||'')}</option>`).join('');
+  const trabField = selfId
+    ? `<div class="field"><label>Trabajador</label>
+        <select id="aus-trab" disabled>${trabajadores}</select>
+        <input type="hidden" id="aus-trab-hidden" value="${esc(selfId)}"></div>`
+    : `<div class="field"><label>Trabajador <span class="req">*</span></label>
+        <select id="aus-trab">${trabajadores}</select></div>`;
+  // Estado: monitores solo pueden poner SOLICITADA
+  const estadoOpts = isAdmin()
+    ? ['SOLICITADA','APROBADA','ACTIVA','RECHAZADA','FINALIZADA']
+    : ['SOLICITADA'];
+  openModal(isNew ? (selfId?'Solicitar ausencia':'Registrar ausencia') : 'Editar ausencia', `
     <div class="form-grid">
-      <div class="field"><label>Trabajador <span class="req">*</span></label>
-        <select id="aus-trab">${trabajadores}</select></div>
+      ${trabField}
       <div class="field"><label>Tipo <span class="req">*</span></label>
         <select id="aus-tipo">
           ${['BAJA_LABORAL','VACACIONES','PERMISO','OTROS'].map(t=>`<option value="${t}" ${(a.TIPO||'')===t?'selected':''}>${t.replace('_',' ')}</option>`).join('')}
@@ -12974,15 +13093,15 @@ function modalAusencia(a) {
       <div class="field"><label>Días</label>
         <input type="number" id="aus-dias" value="${esc(a.DIAS||'')}" min="1"></div>
       <div class="field"><label>Estado</label>
-        <select id="aus-estado">
-          ${['SOLICITADA','APROBADA','ACTIVA','RECHAZADA','FINALIZADA'].map(e=>`<option value="${e}" ${(a.ESTADO||'SOLICITADA')===e?'selected':''}>${e}</option>`).join('')}
+        <select id="aus-estado" ${!isAdmin()?'disabled':''}>
+          ${estadoOpts.map(e=>`<option value="${e}" ${(a.ESTADO||'SOLICITADA')===e?'selected':''}>${e}</option>`).join('')}
         </select></div>
       <div class="field" style="grid-column:span 2"><label>Justificación / observaciones</label>
         <input id="aus-just" value="${esc(a.JUSTIFICACION||'')}"></div>
       <div id="aus-error" style="grid-column:span 2;display:none;padding:8px 12px;background:var(--red-soft,#ffeaea);border:1px solid var(--red,#e53935);border-radius:6px;color:var(--red,#c62828);font-size:13px"></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="saveAusencia(${isNew},${JSON.stringify(a.ID||null)})">${isNew?'Registrar':'Guardar'}</button>`);
+     <button class="btn btn-primary" onclick="saveAusencia(${isNew},${JSON.stringify(a.ID||null)})">${isNew?(selfId?'Enviar solicitud':'Registrar'):'Guardar'}</button>`);
 }
 
 function calcDiasAus() {
@@ -12995,8 +13114,9 @@ function calcDiasAus() {
 }
 
 function saveAusencia(isNew, id) {
-  const trabId = document.getElementById('aus-trab')?.value||'';
-  const fi     = document.getElementById('aus-fi')?.value||'';
+  const trabEl  = document.getElementById('aus-trab');
+  const trabId  = (trabEl?.disabled ? document.getElementById('aus-trab-hidden')?.value : trabEl?.value) || '';
+  const fi      = document.getElementById('aus-fi')?.value||'';
   if (!trabId||!fi) { showToast('Trabajador y fecha de inicio son obligatorios','error'); return; }
   const trab = DB.personal.find(p=>String(p.ID_MONITOR)===trabId)||{};
   const row = {
