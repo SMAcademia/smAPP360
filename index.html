@@ -13036,7 +13036,8 @@ function ausencias(filtr, trabFiltro) {
       <td>${fmtFecha(a.FECHA_INICIO)}</td>
       <td>${fmtFecha(a.FECHA_FIN)}</td>
       <td style="text-align:center">${esc(a.DIAS||'—')}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text2)">${esc(a.JUSTIFICACION||'—')}</td>
+      <td style="text-align:center">${String(a.JUSTIFICADA||'').toUpperCase().startsWith('S') ? '<span class="badge badge-green" style="font-size:10px">Sí</span>' : '<span class="badge badge-gray" style="font-size:10px">No</span>'}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text2)">${esc(a.MOTIVO||'—')}</td>
       <td><span class="badge ${estBadge}">${esc(est)}</span></td>
       <td>${editBtn}</td>
     </tr>`;
@@ -13054,7 +13055,7 @@ function ausencias(filtr, trabFiltro) {
       </div>
       <div class="table-wrap">
         <table id="tbl-aus">
-          <thead><tr><th>ID</th>${thTrab}<th>Tipo</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Justificación</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>ID</th>${thTrab}<th>Tipo</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Just.</th><th>Motivo</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -13096,8 +13097,13 @@ function modalAusencia(a, fixedMonitorId) {
         <select id="aus-estado" ${!isAdmin()?'disabled':''}>
           ${estadoOpts.map(e=>`<option value="${e}" ${(a.ESTADO||'SOLICITADA')===e?'selected':''}>${e}</option>`).join('')}
         </select></div>
-      <div class="field" style="grid-column:span 2"><label>Justificación / observaciones</label>
-        <input id="aus-just" value="${esc(a.JUSTIFICACION||'')}"></div>
+      <div class="field"><label>Justificada</label>
+        <select id="aus-justificada">
+          <option value="N" ${!String(a.JUSTIFICADA||'').toUpperCase().startsWith('S')?'selected':''}>No</option>
+          <option value="S" ${String(a.JUSTIFICADA||'').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
+        </select></div>
+      <div class="field" style="grid-column:span 2"><label>Motivo / observaciones</label>
+        <input id="aus-just" value="${esc(a.MOTIVO||'')}"></div>
       <div id="aus-error" style="grid-column:span 2;display:none;padding:8px 12px;background:var(--red-soft,#ffeaea);border:1px solid var(--red,#e53935);border-radius:6px;color:var(--red,#c62828);font-size:13px"></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -13126,7 +13132,8 @@ function saveAusencia(isNew, id) {
     FECHA_INICIO:  fi,
     FECHA_FIN:     document.getElementById('aus-ff')?.value||'',
     DIAS:          parseInt(document.getElementById('aus-dias')?.value)||1,
-    JUSTIFICACION: document.getElementById('aus-just')?.value.trim()||'',
+    JUSTIFICADA:   document.getElementById('aus-justificada')?.value||'N',
+    MOTIVO:        document.getElementById('aus-just')?.value.trim()||'',
     ESTADO:        document.getElementById('aus-estado')?.value||'SOLICITADA',
   };
   const btnGuardar = document.querySelector('#modal-footer .btn-primary');
