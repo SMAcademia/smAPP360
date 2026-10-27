@@ -11447,9 +11447,8 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
     } catch(e) { /* best-effort */ }
   }
 
-  const todoIds = checks.map(c => c.dataset.id);
   let nBajas = 0;
-  for (const aluId of todoIds) {
+  for (const aluId of presentes) {
     let insc = DB.inscripciones.find(i =>
       String(i.ID_ALUMNO) === aluId && String(i.ID_ACTIVIDAD) === actId &&
       String(i.TIPO_PRECIO||'').toUpperCase() === 'PAGO_ÚNICO' &&
