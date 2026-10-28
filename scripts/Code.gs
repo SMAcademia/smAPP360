@@ -58,6 +58,10 @@ function doGet(e) {
         result = deleteRow(e.parameter.sheet, e.parameter.id);
         break;
 
+      case 'GET_NOMINA_PDF':
+        result = getNominaPdf_(e.parameter.fileId);
+        break;
+
       default:
         result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1399,5 +1403,24 @@ function subirCNDS_(body) {
     return { ok: true, url: url, fileId: file.getId(), nombre: nombre, titulo: titulo };
   } catch(e) {
     return { ok: false, error: e.toString() };
+  }
+}
+
+// ===========================================================================
+//  NÓMINAS — PROXY DE DESCARGA DE PDF DESDE DRIVE
+// ===========================================================================
+function getNominaPdf_(fileId) {
+  if (!fileId) return { ok: false, error: 'fileId requerido' };
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var blob = file.getBlob();
+    return {
+      ok:       true,
+      nombre:   file.getName(),
+      mimeType: blob.getContentType() || 'application/pdf',
+      data:     Utilities.base64Encode(blob.getBytes())
+    };
+  } catch(e) {
+    return { ok: false, error: 'Archivo no accesible: ' + e.message };
   }
 }

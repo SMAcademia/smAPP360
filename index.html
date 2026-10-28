@@ -1003,9 +1003,9 @@ function applyRoleVisibility() {
     });
   }
 
-  // Para MONITOR: puede ver ausencias propias y registro-horario
+  // Para MONITOR: puede ver ausencias propias, registro-horario y sus nóminas
   if (rol === 'MONITOR') {
-    ['personal','nominas'].forEach(page => {
+    ['personal'].forEach(page => {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
     });
@@ -1018,9 +1018,9 @@ function applyRoleVisibility() {
       });
   }
 
-  // Para ENTRENADOR: puede ver ausencias propias y registro-horario
+  // Para ENTRENADOR: puede ver ausencias propias, registro-horario y sus nóminas
   if (rol === 'ENTRENADOR') {
-    ['personal','nominas'].forEach(page => {
+    ['personal'].forEach(page => {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
     });
@@ -9141,9 +9141,47 @@ function guardarPersonal(id) {
 // ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: NÓMINAS
 // ══════════════════════════════════════════════════════════════════════════
+
+function _driveFileId(url) {
+  if (!url) return null;
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m2 ? m2[1] : null;
+}
+
+async function verNominaPDF(url, titulo) {
+  const fileId = _driveFileId(url);
+  openModal(titulo || 'Nómina', '<div style="text-align:center;padding:48px 20px;color:var(--text3)">Cargando PDF…</div>',
+    '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>', 'xl');
+
+  if (!fileId) {
+    document.getElementById('modal-body').innerHTML = '<div class="alert alert-error">No se pudo extraer el ID del archivo Drive.</div>';
+    return;
+  }
+  try {
+    const resp = await gasRequest('GET_NOMINA_PDF', { fileId }, 45000);
+    if (!resp.ok) throw new Error(resp.error || 'Error al obtener el archivo');
+    const bytes = Uint8Array.from(atob(resp.data), c => c.charCodeAt(0));
+    const blob  = new Blob([bytes], { type: resp.mimeType || 'application/pdf' });
+    const blobUrl = URL.createObjectURL(blob);
+    document.getElementById('modal-body').innerHTML =
+      `<iframe src="${blobUrl}" width="100%" height="560" style="border:none;border-radius:4px;display:block"></iframe>`;
+    document.getElementById('modal-footer').innerHTML =
+      `<a href="${blobUrl}" download="${esc(resp.nombre||'nomina.pdf')}" class="btn btn-primary">⬇ Descargar PDF</a>
+       <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>`;
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML =
+      `<div style="padding:20px;color:var(--red)">No se pudo cargar el PDF: ${esc(e.message)}</div>`;
+  }
+}
+
 function nominas() {
   document.getElementById('topbar-actions').innerHTML = '';
-  if (!isAdmin()) { render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return; }
+  if (!isAdmin()) {
+    if (isMonitor() || isEntrenador()) { nominasPropia(); return; }
+    render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return;
+  }
   topbarBtn('+ Añadir nómina', () => modalNomina());
 
   // Agrupar por trabajador
@@ -9158,7 +9196,7 @@ function nominas() {
       <td><strong>${fmtEur(n.NETO)}</strong></td>
       <td>${fmtEur(n.SS_EMPRESA)}</td>
       <td>${fmtEur(n.COSTE_TOTAL)}</td>
-      <td>${n.PDF_DRIVE ? `<a href="${esc(n.PDF_DRIVE)}" target="_blank" class="btn btn-sm btn-secondary">📎 Ver</a>` : '—'}</td>
+      <td>${n.PDF_DRIVE ? `<button class="btn btn-sm btn-secondary" onclick='verNominaPDF(${JSON.stringify(n.PDF_DRIVE)},${JSON.stringify((p?p.NOMBRE+' '+(p.APELLIDOS||''):'')+' — '+(n.MES||'')+" "+(n['AÑO']||''))})'>📄 Ver PDF</button>` : '—'}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalNomina(${JSON.stringify(n)})'>Editar</button></td>
     </tr>`;
   }).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">💶</div><p>Sin nóminas registradas</p></div></td></tr>`;
@@ -9230,6 +9268,48 @@ function guardarNomina(id) {
   writeToSheet('NOMINAS', row, id)
     .then(()=>{ showToast('Nómina guardada'); closeModal(); loadAllData().then(nominas); })
     .catch(err=>showToast('Error: '+err.message,'error'));
+}
+
+function nominasPropia() {
+  document.getElementById('topbar-actions').innerHTML = '';
+  const miId = String(currentUser?.id || '');
+  const meses = { enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,octubre:10,noviembre:11,diciembre:12 };
+  const lista = DB.nominas
+    .filter(n => String(n.ID_MONITOR) === miId)
+    .slice().sort((a,b) => {
+      const ay = Number(a['AÑO']||0), by_ = Number(b['AÑO']||0);
+      if (ay !== by_) return by_ - ay;
+      return (meses[String(b.MES||'').toLowerCase()]||0) - (meses[String(a.MES||'').toLowerCase()]||0);
+    });
+
+  const rows = lista.map(n => {
+    const per = `${n.MES||'—'} ${n['AÑO']||''}`.trim();
+    const titulo = `Nómina ${per}`;
+    return `<tr>
+      <td><strong>${esc(per)}</strong></td>
+      <td>${fmtEur(n.BRUTO)}</td>
+      <td>${fmtEur(n.SS_TRABAJADOR)}</td>
+      <td>${fmtEur(n.IRPF)}</td>
+      <td><strong style="color:var(--g2)">${fmtEur(n.NETO)}</strong></td>
+      <td>${n.PDF_DRIVE
+        ? `<button class="btn btn-sm btn-primary" onclick='verNominaPDF(${JSON.stringify(n.PDF_DRIVE)},${JSON.stringify(titulo)})'>📄 Ver / Descargar</button>`
+        : '<span style="color:var(--text3);font-size:12px">Sin PDF</span>'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6"><div class="empty"><div class="empty-icon">💶</div><p>No hay nóminas registradas aún</p></div></td></tr>`;
+
+  render(`
+    <div class="card" style="padding:14px 20px">
+      <div class="table-toolbar">
+        <span style="font-weight:600;color:var(--text1)">${esc(currentUser?.nombre||'')}</span>
+        <span class="text-muted">${lista.length} nómina${lista.length!==1?'s':''}</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Período</th><th>Bruto</th><th>SS Trabajador</th><th>IRPF</th><th>Neto</th><th>PDF</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
