@@ -4840,7 +4840,15 @@ function facturaDesdePago(p) {
   let cliNombre = '';
 
   if (esExterno) {
-    cliNombre = (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'').trim();
+    const peExt = p.ID_PAGADOR_EXT
+      ? (DB.pagadoresExternos||[]).find(x => String(x.ID) === String(p.ID_PAGADOR_EXT))
+      : null;
+    if (peExt) {
+      cliId    = 'PE:' + peExt.ID;
+      cliNombre = peExt.RAZON_SOCIAL || peExt.NOMBRE || '';
+    } else {
+      cliNombre = (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'').trim();
+    }
   } else {
     let cli = p.ID_CLIENTE
       ? DB.clientes.find(c => String(c.ID_CLIENTE||c.ID) === String(p.ID_CLIENTE))
@@ -4890,7 +4898,7 @@ function facturaDesdePago(p) {
     FORMA_PAGO:     metodosMap[p.MÉTODO||''] || '',
     ESTADO_AEAT:    'EMITIDA',
     _fromPagoId:    pagoIds,
-    _cliLibre:      esExterno ? cliNombre : '',
+    _cliLibre:      (esExterno && !cliId) ? cliNombre : '',
   });
 }
 
@@ -7254,12 +7262,22 @@ function modalFactura(f) {
   const fromPagoId = f._fromPagoId || '';
   const cliLibre   = f._cliLibre   || '';
 
+  const _cliIdEsPE = String(f.ID_CLIENTE||'').startsWith('PE:');
   const clientes = DB.clientes.map(c => {
-    const sel = f.ID_CLIENTE
-      ? String(f.ID_CLIENTE) === String(c.ID_CLIENTE||c.ID)
-      : (f.CLIENTE_NOMBRE && (`${c.NOMBRE||''} ${c.APELLIDOS||''}`.trim() === f.CLIENTE_NOMBRE));
-    return `<option value="${esc(c.ID_CLIENTE||c.ID)}" ${sel?'selected':''}>${esc(c.NOMBRE||'')} ${esc(c.APELLIDOS||'')}</option>`;
+    const val = c.ID_CLIENTE||c.ID;
+    const sel = !_cliIdEsPE && (f.ID_CLIENTE
+      ? String(f.ID_CLIENTE) === String(val)
+      : (f.CLIENTE_NOMBRE && (`${c.NOMBRE||''} ${c.APELLIDOS||''}`.trim() === f.CLIENTE_NOMBRE)));
+    return `<option value="${esc(val)}" ${sel?'selected':''}>${esc(c.NOMBRE||'')} ${esc(c.APELLIDOS||'')}</option>`;
   }).join('');
+  const _peOpts = (DB.pagadoresExternos||[]).map(pe => {
+    const val = 'PE:' + pe.ID;
+    const sel = _cliIdEsPE
+      ? String(f.ID_CLIENTE) === val
+      : (!f.ID_CLIENTE && f.CLIENTE_NOMBRE && (pe.RAZON_SOCIAL||pe.NOMBRE||'').trim() === (f.CLIENTE_NOMBRE||'').trim());
+    return `<option value="${esc(val)}" ${sel?'selected':''}>${esc(pe.RAZON_SOCIAL||pe.NOMBRE||'')}${pe.CIF?' ('+esc(pe.CIF)+')':''}</option>`;
+  }).join('');
+  const clientesOpts = clientes + (_peOpts ? `<optgroup label="── Pagadores externos">${_peOpts}</optgroup>` : '');
 
   const pagoIds    = fromPagoId ? fromPagoId.split(',').filter(Boolean) : [];
   const bannerPago = pagoIds.length > 0
@@ -7276,14 +7294,13 @@ function modalFactura(f) {
         <input type="date" id="fac-fecha" value="${esc(f.FECHA_EXP||new Date().toISOString().slice(0,10))}"></div>
       <div class="field"><label>Serie</label>
         <input id="fac-serie" class="upper" value="${esc(f.SERIE||'SM')}" style="width:80px"></div>
-      ${cliLibre
-        ? `<div class="field span2"><label>Nombre del pagador <span class="req">*</span></label>
-            <input id="fac-cli-libre" value="${esc(cliLibre)}" placeholder="Nombre completo del pagador">
-            <input type="hidden" id="fac-cli" value=""></div>`
-        : `<div class="field"><label>Cliente <span class="req">*</span></label>
-            <select id="fac-cli">${clientes}</select></div>
-           <div class="field"><label>NIF / DNI receptor</label>
-            <input id="fac-nif-rec" class="upper" value="${esc(f.CLIENTE_NIF||f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>`}
+      <div class="field"><label>Cliente <span class="req">*</span></label>
+        <select id="fac-cli" onchange="_facCliChange(this)">${clientesOpts}</select></div>
+      <div class="field"><label>NIF / DNI receptor</label>
+        <input id="fac-nif-rec" class="upper" value="${esc(f.CLIENTE_NIF||f.NIF_RECEPTOR||'')}" placeholder="Opcional"></div>
+      ${cliLibre && !_cliIdEsPE && !(DB.pagadoresExternos||[]).some(pe=>(pe.RAZON_SOCIAL||pe.NOMBRE||'').trim()===cliLibre.trim())
+        ? `<div class="field span2" style="font-size:12px;color:var(--amber)">⚠ Pagador "<strong>${esc(cliLibre)}</strong>" no está en el catálogo. Selecciona uno de la lista o créalo en <em>Pagadores externos</em>.</div>`
+        : ''}
       <div class="field span2"><label>Concepto <span class="req">*</span></label>
         <input id="fac-desc" value="${esc(f.CONCEPTO||'')}"></div>
       <div class="field"><label>Base imponible (€) <span class="req">*</span></label>
@@ -7318,6 +7335,15 @@ function modalFactura(f) {
   if (serEl) serEl.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
 }
 
+function _facCliChange(sel) {
+  const val = sel.value;
+  if (!val.startsWith('PE:')) return;
+  const pe = (DB.pagadoresExternos||[]).find(x => 'PE:'+String(x.ID) === val);
+  if (!pe) return;
+  const nifEl = document.getElementById('fac-nif-rec');
+  if (nifEl && !nifEl.value) nifEl.value = pe.CIF || '';
+}
+
 function calcTotalFac() {
   const base     = parseFloat(document.getElementById('fac-base')?.value||0)||0;
   const desc     = parseFloat(document.getElementById('fac-descuento')?.value||0)||0;
@@ -7343,6 +7369,7 @@ async function _autoCrearFactura(pago, pagoId, pago2, pagoId2) {
   let cliId = '', clienteNombre = '', clienteNif = '';
   if (esExterno) {
     const pe = (DB.pagadoresExternos||[]).find(x => String(x.ID) === String(pago.ID_PAGADOR_EXT||''));
+    if (pe) cliId = 'PE:' + pe.ID;
     clienteNombre = pe ? (pe.RAZON_SOCIAL || pe.NOMBRE || '') : '';
     clienteNif    = pe?.CIF || '';
   } else {
@@ -7495,8 +7522,10 @@ async function saveFactura(isNew, id) {
     showToast('Rellena todos los campos obligatorios','error'); return;
   }
 
-  const cli = DB.clientes.find(c=>String(c.ID_CLIENTE||c.ID)===cliId)||{};
-  const clienteNombre = cliLibre || `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim();
+  const _isPE = String(cliId).startsWith('PE:');
+  const pe  = _isPE ? (DB.pagadoresExternos||[]).find(x => 'PE:'+String(x.ID) === cliId) : null;
+  const cli = !_isPE ? (DB.clientes.find(c=>String(c.ID_CLIENTE||c.ID)===cliId)||{}) : {};
+  const clienteNombre = cliLibre || (pe ? (pe.RAZON_SOCIAL||pe.NOMBRE||'') : `${cli.NOMBRE||''} ${cli.APELLIDOS||''}`.trim());
 
   const nextNum = isNew
     ? Math.max(0, ...DB.facturas.map(f=>parseInt(f.NUMERO)||0)) + 1
