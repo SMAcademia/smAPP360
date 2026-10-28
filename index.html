@@ -7327,7 +7327,7 @@ function modalFactura(f) {
         </select></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" onclick="saveFactura(${JSON.stringify(isNew)},${JSON.stringify(f.ID_FACTURA||null)})">${isNew?'Crear factura':'Guardar cambios'}</button>`);
+     <button class="btn btn-primary" onclick='saveFactura(${JSON.stringify(isNew)},${JSON.stringify(f.ID_FACTURA||null)})'>${isNew?'Crear factura':'Guardar cambios'}</button>`);
   calcTotalFac();
   const nifEl = document.getElementById('fac-nif-rec');
   if (nifEl) nifEl.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
