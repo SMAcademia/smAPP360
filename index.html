@@ -7666,7 +7666,7 @@ async function confirmarAnulacion(originalId) {
 }
 
 // ── Exportar factura individual como PDF ─────────────────────────────────
-function exportarFacturaPDF(f) {
+async function exportarFacturaPDF(f) {
   const numFac    = String(f.ID_FACTURA||`${f.SERIE||'SM'}-${String(f.NUMERO||'').padStart(3,'0')}`||'—');
   const fechaISO  = f.FECHA_EXP||'';
   const fecha     = fmtFecha(fechaISO);
@@ -7696,6 +7696,18 @@ function exportarFacturaPDF(f) {
   const aeatQuery = `nif=${encodeURIComponent(nifEmisor)}&numfac=${encodeURIComponent(numFac)}&fecha=${encodeURIComponent(fechaISO)}&importe=${total.toFixed(2)}&huella=${encodeURIComponent(hashActual.slice(0,16))}`;
   const qrCadena  = `${aeatBase}?${aeatQuery}`;
   const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&margin=4&data=${encodeURIComponent(qrCadena)}`;
+
+  // Pre-cargar el QR como data URL para que esté disponible al imprimir sin esperar red
+  let qrDataUrl = '';
+  try {
+    const resp = await fetch(qrUrl);
+    if (resp.ok) {
+      const blob = await resp.blob();
+      qrDataUrl = await new Promise(res => {
+        const fr = new FileReader(); fr.onload = e => res(e.target.result); fr.readAsDataURL(blob);
+      });
+    }
+  } catch(_) {}
 
   // Logo inline SVG
   const logo = `<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
@@ -7765,7 +7777,7 @@ function exportarFacturaPDF(f) {
 .vf-mono{font-family:'Courier New',monospace;word-break:break-all;font-size:8px;color:#444}
 .vf-qr img{border:1px solid #e0e0e0;border-radius:4px;display:block}
 .vf-qr .qr-label{font-size:8px;color:#aaa;text-align:center;margin-top:4px}
-@media print{.inv{max-width:100%}@page{margin:.8cm;size:A4}}
+@media print{.inv{max-width:100%}@page{margin:.8cm;size:A4}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
 </style>
 
 <div class="inv">
@@ -7855,11 +7867,9 @@ function exportarFacturaPDF(f) {
         <div><span class="vf-key">Hash anterior</span><span class="vf-mono">${esc(hashAnt)}</span></div>
       </div>
       <div class="vf-qr">
-        <img src="${qrUrl}" width="110" height="110" alt="QR VeriFactu"
-          onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-        <div style="display:none;width:110px;height:110px;border:1px solid #ddd;border-radius:4px;display:none;align-items:center;justify-content:center;font-size:9px;color:#aaa;text-align:center;padding:10px">
-          QR no disponible sin conexión
-        </div>
+        ${qrDataUrl
+          ? `<img src="${qrDataUrl}" width="110" height="110" alt="QR VeriFactu" style="border:1px solid #e0e0e0;border-radius:4px;display:block">`
+          : `<div style="width:110px;height:110px;border:1px solid #ddd;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#aaa;text-align:center;padding:10px">QR no disponible sin conexión</div>`}
         <div class="qr-label">Verificación VeriFactu</div>
       </div>
     </div>
@@ -7874,7 +7884,7 @@ function exportarFacturaPDF(f) {
 .page{background:#fff;max-width:800px;margin:0 auto;padding:28px;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.12)}
 @media print{body{background:#fff;padding:0}.page{box-shadow:none;border-radius:0;padding:20px}@page{margin:.8cm;size:A4}}</style>
 </head><body><div class="page">${body}</div>
-<script>setTimeout(()=>window.print(),600)<\/script></body></html>`);
+<script>window.print()<\/script></body></html>`);
   win.document.close();
 }
 
