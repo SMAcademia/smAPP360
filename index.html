@@ -11414,19 +11414,20 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
   const nuevos  = presentes.filter(id => !prevIds.includes(id));
 
   for (const aluId of nuevos) {
-    const directInsc = DB.inscripciones.find(i =>
+    // Buscar siempre la inscripción de bono primero (tiene prioridad para descontar usos).
+    // Una inscripción mensual directa a la misma actividad NO bloquea el bono.
+    const bonoInsc = DB.inscripciones.find(i => {
+      if (String(i.ID_ALUMNO) !== aluId) return false;
+      if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+      const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
+      return a && esBonoUsos(a.NOMBRE||'');
+    });
+    // Solo si no hay bono, mirar si la actividad asistida en sí es un bono
+    const directInsc = !bonoInsc ? DB.inscripciones.find(i =>
       String(i.ID_ALUMNO)===aluId && String(i.ID_ACTIVIDAD)===actId &&
       String(i.ESTADO||'').toUpperCase()==='ACTIVA'
-    );
-    const bonoInsc = !directInsc
-      ? DB.inscripciones.find(i => {
-          if (String(i.ID_ALUMNO) !== aluId) return false;
-          if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
-          const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
-          return a && esBonoUsos(a.NOMBRE||'');
-        })
-      : null;
-    const insc = directInsc || bonoInsc;
+    ) : null;
+    const insc = bonoInsc || directInsc;
     if (!insc) continue;
     const inscAct = DB.actividades.find(a => String(a.ID) === String(insc.ID_ACTIVIDAD));
     if (!inscAct || !esBonoUsos(inscAct.NOMBRE||'')) continue;
@@ -11437,14 +11438,19 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
       continue;
     }
     if (bonoFechasRaw(insc).includes(fecha+':'+actId)) continue;
+    const inscId = insc.ID_INSCRIPCION || insc.ID;
+    if (!inscId) { showToast('⚠ No se pudo descontar bono: falta ID de inscripción', 'warn'); continue; }
     const nuevaObs = bonoObsActualizada(insc, usos + 1, fecha, actId);
+    const aluNombre = DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId;
     try {
-      await writeToSheet('INSCRIPCIONES', {OBSERVACIONES:nuevaObs}, insc.ID_INSCRIPCION||insc.ID);
+      await writeToSheet('INSCRIPCIONES', {OBSERVACIONES:nuevaObs}, inscId);
       insc.OBSERVACIONES = nuevaObs;
       const restantes = cap - (usos+1);
       if (restantes <= 2)
-        showToast(`⚠ Bono: quedan ${restantes} uso${restantes===1?'':'s'} — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`, 'warn');
-    } catch(e) { /* best-effort */ }
+        showToast(`⚠ Bono: quedan ${restantes} uso${restantes===1?'':'s'} — ${aluNombre}`, 'warn');
+      else
+        showToast(`🎫 Bono descontado (${usos+1}/${cap}) — ${aluNombre}`, 'info');
+    } catch(e) { showToast(`⚠ Error al descontar bono de ${aluNombre}: ${e.message||e}`, 'warn'); }
   }
 
   let nBajas = 0;
