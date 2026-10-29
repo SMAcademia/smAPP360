@@ -9176,19 +9176,18 @@ function _parsearPaginaNomina(texto) {
   const netoM = t.match(/L[IÍ]QUIDO\s+A\s+PERCIBIR\s+([\d,]+)/i);
   const neto  = pn(netoM?.[1]);
 
-  // Coste empresa: "COSTE EMPRESA: 238,75"
-  const costeM = t.match(/COSTE\s+EMPRESA:\s*([\d,]+)/i);
+  // Coste empresa: el PDF coloca el valor entre "IBAN:" y "SWIFT/BIC:" en el flujo de texto
+  const costeM = t.match(/IBAN:\s+([\d,]+)\s+SWIFT/i);
   const coste  = pn(costeM?.[1]);
 
-  // Bruto: "T. DEVENGADO" y "T. A DEDUCIR" encabezan la fila resumen.
-  // Los números de esa fila vienen todos seguidos después de los headers.
-  // El primero es REM.TOTAL (= bruto), el último es T.A DEDUCIR (= total deducido)
-  const summaryM = t.match(/T\.\s*A\s*DEDUCIR((?:\s+[\d,]+)+)\s*\*/i);
+  // Fila resumen: "BASE A.T. Y DES.  180,66 180,66 ... 11,74"
+  // El primer número = bruto (= BASE S.S. = T.DEVENGADO); el último = T. A DEDUCIR (total deducido)
+  const summaryM = t.match(/BASE\s+A\.T\.\s+Y\s+DES\.\s+((?:[\d,]+\s*)+)/i);
   let bruto = 0, totalDeduccion = 0;
   if (summaryM) {
-    const nums = (summaryM[1].match(/[\d,]+/g) || []).map(pn).filter(Boolean);
-    if (nums.length >= 2) { bruto = nums[0]; totalDeduccion = nums[nums.length-1]; }
-    else if (nums.length === 1) { totalDeduccion = nums[0]; }
+    const nums = (summaryM[1].match(/[\d,]+/g) || []).map(pn).filter(n => n > 0);
+    if (nums.length >= 2) { bruto = nums[0]; totalDeduccion = nums[nums.length - 1]; }
+    else if (nums.length === 1) { bruto = nums[0]; }
   }
   if (!bruto) bruto = neto && totalDeduccion ? Math.round((neto + totalDeduccion) * 100) / 100 : 0;
 
