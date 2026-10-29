@@ -9335,7 +9335,6 @@ async function _subirNominasCargar(file) {
         const page = await pdfJsDoc.getPage(i + 1);
         const tc   = await page.getTextContent();
         const txt  = tc.items.map(x => x.str).join(' ');
-        console.log('[Nómina pág ' + (i+1) + ']', txt);
         const p    = _parsearPaginaNomina(txt);
         if (p.mes) parsed = { ...parsed, ...p };
       } catch(_) {}
