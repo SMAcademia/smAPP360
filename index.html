@@ -9448,6 +9448,25 @@ async function _subirNominasProcesar() {
       errores++;
     }
   }
+  // Enviar avisos por email a las trabajadoras con email registrado
+  if (ok > 0) {
+    const avisos = asignaciones
+      .map(a => {
+        const p = DB.personal.find(x => String(x.ID_MONITOR) === a.monitorId);
+        return p && p.EMAIL ? { email: p.EMAIL, nombre: (p.NOMBRE||'').trim(), mes: a.mes, anyo: a.anyo } : null;
+      })
+      .filter(Boolean);
+    if (avisos.length) {
+      try {
+        const ac = new AbortController();
+        setTimeout(() => ac.abort(), 30000);
+        const r = await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action:'ENVIAR_AVISOS_NOMINAS', avisos }), signal: ac.signal });
+        const rd = await r.json();
+        if (rd.enviados) showToast(`Aviso enviado a ${rd.enviados} trabajadora${rd.enviados!==1?'s':''}`, 'success');
+      } catch(_) {}
+    }
+  }
+
   btn.textContent = 'Cerrar'; btn.disabled = false;
   btn.onclick = () => { closeModal(); loadAllData().then(nominas); };
   showToast(`${ok} nómina${ok!==1?'s':''} procesada${ok!==1?'s':''}${errores?' · '+errores+' con error':''}`, errores?'warn':'success');

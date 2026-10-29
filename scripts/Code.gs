@@ -120,6 +120,8 @@ function doPost(e) {
       result = subirCNDS_(body);
     } else if (action === 'SUBIR_NOMINA_PDF') {
       result = subirNominaPdf_(body);
+    } else if (action === 'ENVIAR_AVISOS_NOMINAS') {
+      result = enviarAvisosNominas_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1446,4 +1448,46 @@ function _carpetaNominas_() {
   var name = 'SM Academia — Nóminas';
   var it   = DriveApp.getFoldersByName(name);
   return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+// ---------------------------------------------------------------------------
+// Avisos de nóminas por email
+// ---------------------------------------------------------------------------
+function enviarAvisosNominas_(body) {
+  var avisos = body.avisos || [];
+  if (!avisos.length) return { ok: true, enviados: 0 };
+  var APP_URL = 'https://smacademia.github.io/smAPP360/';
+  var enviados = 0, errores = [];
+  for (var i = 0; i < avisos.length; i++) {
+    var a = avisos[i];
+    if (!a.email) continue;
+    try {
+      var nombre = a.nombre || 'Trabajadora';
+      var mes    = (a.mes || '').charAt(0).toUpperCase() + (a.mes || '').slice(1);
+      var anyo   = a.anyo || '';
+      var asunto = 'Nómina de ' + mes + ' ' + anyo + ' disponible — SM Academia';
+      var html   =
+        '<div style="font-family:sans-serif;max-width:520px;margin:0 auto">' +
+        '<p>Hola <strong>' + nombre + '</strong>,</p>' +
+        '<p>Ya está disponible tu nómina de <strong>' + mes + ' ' + anyo + '</strong>.</p>' +
+        '<p>Puedes consultarla y descargarla directamente desde la app:</p>' +
+        '<p><a href="' + APP_URL + '" style="display:inline-block;background:#22c55e;color:#fff;' +
+        'padding:11px 22px;border-radius:7px;text-decoration:none;font-weight:bold;font-size:15px">' +
+        'Abrir SM Academia 360</a></p>' +
+        '<p style="color:#999;font-size:12px;margin-top:28px">SM Academia · ' +
+        '<a href="' + APP_URL + '" style="color:#999">' + APP_URL + '</a></p>' +
+        '</div>';
+      MailApp.sendEmail({
+        to:       a.email,
+        subject:  asunto,
+        htmlBody: html,
+        name:     'SM Academia',
+        replyTo:  EMAIL_EMPRESA.director
+      });
+      enviados++;
+    } catch(e) {
+      errores.push(a.email + ': ' + e.message);
+    }
+  }
+  return { ok: true, enviados: enviados, errores: errores };
 }
