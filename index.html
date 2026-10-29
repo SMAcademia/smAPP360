@@ -713,7 +713,37 @@ function loadAllData() {
     normalizarDB(raw);
     _arLastTs = new Date();
     _arUpdateChip();
+    _activarInscripcionesPendientes();
   });
+}
+
+async function _activarInscripcionesPendientes() {
+  const hoy = new Date().toISOString().slice(0,10);
+  const pendientes = DB.inscripciones.filter(i =>
+    String(i.ESTADO||'').toUpperCase() === 'PENDIENTE' &&
+    i.FECHA_ALTA && String(i.FECHA_ALTA).slice(0,10) <= hoy
+  );
+  if (!pendientes.length) return;
+  let activadas = 0;
+  for (const p of pendientes) {
+    try {
+      await writeToSheet('INSCRIPCIONES', { ...p, ESTADO: 'ACTIVA' }, p.ID_INSCRIPCION);
+      activadas++;
+      const antiguas = DB.inscripciones.filter(i =>
+        String(i.ID_ALUMNO) === String(p.ID_ALUMNO) &&
+        String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
+        i.FECHA_BAJA && String(i.FECHA_BAJA).slice(0,10) <= hoy &&
+        String(i.ID_INSCRIPCION) !== String(p.ID_INSCRIPCION)
+      );
+      for (const ant of antiguas) {
+        await writeToSheet('INSCRIPCIONES', { ...ant, ESTADO: 'BAJA' }, ant.ID_INSCRIPCION);
+      }
+    } catch(_) {}
+  }
+  if (activadas) {
+    await gasRequest('GET_ALL', {}, 30000).then(raw => { if (raw.ok) normalizarDB(raw); });
+    showToast(`${activadas} cambio${activadas>1?'s':''} de actividad activado${activadas>1?'s':''}`, 'success');
+  }
 }
 
 function normalizarDB(raw) {
@@ -2569,6 +2599,7 @@ function inscripciones() {
     const totFut  = DB.inscripciones.filter(i=>esFutbol(i.LINEA||'')).length;
     const totExt  = DB.inscripciones.filter(i=>esExtraescolar(i.LINEA||'')).length;
     const totAct  = DB.inscripciones.filter(i=>String(i.ESTADO||'').toUpperCase()==='ACTIVA').length;
+    const totPend = DB.inscripciones.filter(i=>String(i.ESTADO||'').toUpperCase()==='PENDIENTE').length;
 
     const rows = lista.map(i => {
       const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
@@ -2583,7 +2614,7 @@ function inscripciones() {
         <td class="mono">${fmtEur(i.PRECIO_ACORDADO)}<br><span style="font-size:11px;color:var(--text3)">${i.TIPO_PRECIO==='PAGO_ÚNICO'?'Único':'Mens.'}${i.DESCUENTO&&i.DESCUENTO!=='0'?' −'+i.DESCUENTO+'%':''}</span></td>
         <td>${esc(i.FORMA_PAGO||'—')}</td>
         <td>${fmtFecha(i.FECHA_ALTA)}</td>
-        <td>${badgeEstado(i.ESTADO)}</td>
+        <td>${badgeEstado(i.ESTADO)}${String(i.ESTADO||'').toUpperCase()==='ACTIVA'&&i.FECHA_BAJA?`<br><span style="font-size:10px;color:var(--amber)">→ cambio ${fmtFecha(i.FECHA_BAJA)}</span>`:''}</td>
         <td style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-sm btn-secondary" onclick='modalInscripcion(${JSON.stringify(i)})'>Editar</button>
           ${String(i.ESTADO||'').toUpperCase()==='ACTIVA'?`<button class="btn btn-sm" style="background:var(--amber,#f59e0b);color:#fff" onclick="modalCambioActividad('${esc(String(i.ID_ALUMNO))}','${esc(String(i.ID_INSCRIPCION))}')">🔄 Cambio</button>`:''}
@@ -2596,6 +2627,7 @@ function inscripciones() {
         <div class="kpis" style="margin-bottom:0">
           <div class="kpi"><div class="kpi-n">${DB.inscripciones.length}</div><div class="kpi-l">Total</div></div>
           <div class="kpi"><div class="kpi-n" style="color:var(--green)">${totAct}</div><div class="kpi-l">Activas</div></div>
+          ${totPend?`<div class="kpi"><div class="kpi-n" style="color:var(--amber)">${totPend}</div><div class="kpi-l">⏳ Pendientes</div></div>`:''}
           <div class="kpi"><div class="kpi-n">${totFut}</div><div class="kpi-l">⚽ SM Fútbol</div></div>
           <div class="kpi"><div class="kpi-n">${totExt}</div><div class="kpi-l">🎒 Extraescolares</div></div>
         </div>
@@ -2609,6 +2641,7 @@ function inscripciones() {
             </select>
             <select id="fl-est" style="padding:8px 12px;border:1.5px solid var(--border2);border-radius:6px">
               <option value="ACTIVA">Activas</option>
+              <option value="PENDIENTE">⏳ Pendientes</option>
               <option value="BAJA">Bajas</option>
               <option value="TODAS">Todas</option>
             </select>
@@ -2927,6 +2960,10 @@ function modalCambioActividad(aluId, inscId) {
           ${['DOMICILIACIÓN','BIZUM','TRANSFERENCIA','EFECTIVO','OTROS'].map(m=>`<option value="${m}" ${m===fpagoInit?'selected':''}>${m}</option>`).join('')}
         </select>
       </div>
+      <div class="field">
+        <label>Fecha de efectividad</label>
+        <input id="ca-fecha-ef" type="date" value="${new Date().toISOString().slice(0,10)}" min="${new Date().toISOString().slice(0,10)}" onchange="_caActualizarNeto()">
+      </div>
     </div>
     <div id="ca-resumen" style="font-size:12px;color:var(--text3);background:var(--bg2);border-radius:6px;padding:8px 12px;margin-top:4px">
       La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).
@@ -2977,13 +3014,18 @@ function _caGetDto() {
 }
 
 function _caActualizarNeto() {
+  const hoy2   = new Date().toISOString().slice(0,10);
   const precio = parseFloat(document.getElementById('ca-precio')?.value || 0);
   const dto    = _caGetDto();
   const neto   = Math.round(precio * (1 - dto/100) * 100) / 100;
+  const fechaEf = document.getElementById('ca-fecha-ef')?.value || hoy2;
+  const esFut  = fechaEf > hoy2;
   const res    = document.getElementById('ca-resumen');
-  if (res) res.innerHTML = dto > 0
-    ? `Neto a cobrar: <strong>${neto.toFixed(2)} €</strong> (${precio.toFixed(2)} € − ${dto}% dto)<br>La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).`
+  let txt = dto > 0 ? `Neto a cobrar: <strong>${neto.toFixed(2)} €</strong> (${precio.toFixed(2)} € − ${dto}% dto)<br>` : '';
+  txt += esFut
+    ? `La inscripción actual seguirá <strong>ACTIVA</strong> hasta el <strong>${fmtFecha(fechaEf)}</strong>. La nueva quedará en estado <strong>PENDIENTE</strong> hasta esa fecha.`
     : `La inscripción actual pasará a estado <strong>BAJA</strong> (fecha de hoy).`;
+  if (res) res.innerHTML = txt;
 }
 
 function _caActualizarPrecio() {
@@ -3018,7 +3060,9 @@ async function guardarCambioActividad() {
   const btn = document.getElementById('ca-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy     = new Date().toISOString().slice(0,10);
+  const fechaEf = document.getElementById('ca-fecha-ef')?.value || hoy;
+  const esFutura = fechaEf > hoy;
   const t   = sinTildes(actNueva.TIPO||'');
 
   // Capturar descuento y forma de pago ANTES de cerrar el modal
@@ -3028,65 +3072,93 @@ async function guardarCambioActividad() {
   const neto    = Math.round((precio - descEur) * 100) / 100;
 
   try {
-    // 1. Marcar inscripción actual como BAJA
-    await writeToSheet('INSCRIPCIONES',
-      { ...oldInsc, ESTADO: 'BAJA', FECHA_BAJA: hoy },
-      oldInsc.ID_INSCRIPCION
-    );
-
-    // 2. Crear nueva inscripción ACTIVA con la nueva actividad
-    const newInsc = {
-      ID_ALUMNO:       aluId || oldInsc.ID_ALUMNO,
-      ID_CLIENTE:      oldInsc.ID_CLIENTE || '',
-      ID_ACTIVIDAD:    actNuevaId,
-      LINEA:           actNueva.LINEA || oldInsc.LINEA || '',
-      GRUPO:           grupo,
-      PRECIO_ACORDADO: precio,
-      DESCUENTO:       String(descPct),
-      TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
-      DIAS_SEMANA:     actNueva.DIAS_SEMANA || actNueva.DIA_SEMANA || '',
-      HORARIO:         actNueva.HORARIO || '',
-      FORMA_PAGO:      fPago,
-      FECHA_ALTA:      hoy,
-      ESTADO:          'ACTIVA',
-      OBSERVACIONES:   oldInsc.OBSERVACIONES || '',
-    };
-    await writeToSheet('INSCRIPCIONES', newInsc, null);
-
-    // 3. Recargar BD para obtener el ID de la nueva inscripción
-    await loadAllData();
-
-    // 4. Localizar la inscripción recién creada
-    const nuevaInsc = DB.inscripciones.find(i =>
-      String(i.ID_ALUMNO)    === String(aluId || oldInsc.ID_ALUMNO) &&
-      String(i.ID_ACTIVIDAD) === String(actNuevaId) &&
-      String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
-      String(i.FECHA_ALTA||'').startsWith(hoy)
-    );
-
-    // 5. Actualizar pagos PENDIENTES vinculados a la inscripción antigua
-    const pagosPend = DB.pagos.filter(p =>
-      String(p.ID_INSCRIPCION) === String(oldInsc.ID_INSCRIPCION) &&
-      String(p.ESTADO||'').toUpperCase() === 'PENDIENTE'
-    );
-
-    if (pagosPend.length && nuevaInsc) {
-      if (btn) btn.textContent = `Actualizando ${pagosPend.length} pago${pagosPend.length>1?'s':''}…`;
-      for (const pago of pagosPend) {
-        await writeToSheet('PAGOS', {
-          ...pago,
-          ID_INSCRIPCION: nuevaInsc.ID_INSCRIPCION,
-          LINEA:          actNueva.LINEA || oldInsc.LINEA || pago.LINEA || '',
-          SERVICIO:       actNueva.NOMBRE || pago.SERVICIO,
-          IMPORTE:        precio.toFixed(2),
-          DESC_EUR:       descEur.toFixed(2),
-          TOTAL_ESPERADO: neto.toFixed(2),
-        }, pago.ID_PAGO || pago.ID);
-      }
+    if (esFutura) {
+      // Cambio programado: vieja queda ACTIVA con FECHA_BAJA futura; nueva se crea PENDIENTE
+      await writeToSheet('INSCRIPCIONES',
+        { ...oldInsc, FECHA_BAJA: fechaEf },
+        oldInsc.ID_INSCRIPCION
+      );
+      const newInsc = {
+        ID_ALUMNO:       aluId || oldInsc.ID_ALUMNO,
+        ID_CLIENTE:      oldInsc.ID_CLIENTE || '',
+        ID_ACTIVIDAD:    actNuevaId,
+        LINEA:           actNueva.LINEA || oldInsc.LINEA || '',
+        GRUPO:           grupo,
+        PRECIO_ACORDADO: precio,
+        DESCUENTO:       String(descPct),
+        TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+        DIAS_SEMANA:     actNueva.DIAS_SEMANA || actNueva.DIA_SEMANA || '',
+        HORARIO:         actNueva.HORARIO || '',
+        FORMA_PAGO:      fPago,
+        FECHA_ALTA:      fechaEf,
+        ESTADO:          'PENDIENTE',
+        OBSERVACIONES:   oldInsc.OBSERVACIONES || '',
+      };
+      await writeToSheet('INSCRIPCIONES', newInsc, null);
       await loadAllData();
-      showToast(`Cambio registrado · ${pagosPend.length} pago${pagosPend.length>1?'s':''} pendiente${pagosPend.length>1?'s':''} actualizado${pagosPend.length>1?'s':''}`);
+      showToast(`Cambio programado para el ${fmtFecha(fechaEf)}`);
     } else {
-      showToast('Cambio de actividad registrado');
+      // Cambio inmediato (comportamiento original)
+      // 1. Marcar inscripción actual como BAJA
+      await writeToSheet('INSCRIPCIONES',
+        { ...oldInsc, ESTADO: 'BAJA', FECHA_BAJA: hoy },
+        oldInsc.ID_INSCRIPCION
+      );
+
+      // 2. Crear nueva inscripción ACTIVA con la nueva actividad
+      const newInsc = {
+        ID_ALUMNO:       aluId || oldInsc.ID_ALUMNO,
+        ID_CLIENTE:      oldInsc.ID_CLIENTE || '',
+        ID_ACTIVIDAD:    actNuevaId,
+        LINEA:           actNueva.LINEA || oldInsc.LINEA || '',
+        GRUPO:           grupo,
+        PRECIO_ACORDADO: precio,
+        DESCUENTO:       String(descPct),
+        TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+        DIAS_SEMANA:     actNueva.DIAS_SEMANA || actNueva.DIA_SEMANA || '',
+        HORARIO:         actNueva.HORARIO || '',
+        FORMA_PAGO:      fPago,
+        FECHA_ALTA:      hoy,
+        ESTADO:          'ACTIVA',
+        OBSERVACIONES:   oldInsc.OBSERVACIONES || '',
+      };
+      await writeToSheet('INSCRIPCIONES', newInsc, null);
+
+      // 3. Recargar BD para obtener el ID de la nueva inscripción
+      await loadAllData();
+
+      // 4. Localizar la inscripción recién creada
+      const nuevaInsc = DB.inscripciones.find(i =>
+        String(i.ID_ALUMNO)    === String(aluId || oldInsc.ID_ALUMNO) &&
+        String(i.ID_ACTIVIDAD) === String(actNuevaId) &&
+        String(i.ESTADO||'').toUpperCase() === 'ACTIVA' &&
+        String(i.FECHA_ALTA||'').startsWith(hoy)
+      );
+
+      // 5. Actualizar pagos PENDIENTES vinculados a la inscripción antigua
+      const pagosPend = DB.pagos.filter(p =>
+        String(p.ID_INSCRIPCION) === String(oldInsc.ID_INSCRIPCION) &&
+        String(p.ESTADO||'').toUpperCase() === 'PENDIENTE'
+      );
+
+      if (pagosPend.length && nuevaInsc) {
+        if (btn) btn.textContent = `Actualizando ${pagosPend.length} pago${pagosPend.length>1?'s':''}…`;
+        for (const pago of pagosPend) {
+          await writeToSheet('PAGOS', {
+            ...pago,
+            ID_INSCRIPCION: nuevaInsc.ID_INSCRIPCION,
+            LINEA:          actNueva.LINEA || oldInsc.LINEA || pago.LINEA || '',
+            SERVICIO:       actNueva.NOMBRE || pago.SERVICIO,
+            IMPORTE:        precio.toFixed(2),
+            DESC_EUR:       descEur.toFixed(2),
+            TOTAL_ESPERADO: neto.toFixed(2),
+          }, pago.ID_PAGO || pago.ID);
+        }
+        await loadAllData();
+        showToast(`Cambio registrado · ${pagosPend.length} pago${pagosPend.length>1?'s':''} pendiente${pagosPend.length>1?'s':''} actualizado${pagosPend.length>1?'s':''}`);
+      } else {
+        showToast('Cambio de actividad registrado');
+      }
     }
 
     closeModal();
