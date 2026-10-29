@@ -200,6 +200,7 @@ tr:hover td{background:#f8f8f8}
 .toast.error{background:var(--red)}
 .toast.info{background:var(--blue)}
 @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
 .empty{text-align:center;padding:48px 20px;color:var(--text3)}
@@ -9142,6 +9143,221 @@ function guardarPersonal(id) {
 //  MÓDULO: NÓMINAS
 // ══════════════════════════════════════════════════════════════════════════
 
+// ── Carga dinámica de scripts externos ───────────────────────────────────
+function _loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('No se pudo cargar: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+// ── Estado temporal del flujo de subida ──────────────────────────────────
+let _snPdfDoc   = null;
+let _snPdfBytes = null;
+
+function modalSubirNominas() {
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                 'agosto','septiembre','octubre','noviembre','diciembre'];
+  const mesAct = meses[new Date().getMonth()];
+  const anyoAct = new Date().getFullYear();
+  _snPdfDoc = null; _snPdfBytes = null;
+
+  openModal('Subir nóminas desde PDF', `
+    <div id="sn-step1">
+      <p style="color:var(--text3);font-size:13px;margin-bottom:16px">
+        Selecciona el PDF completo que envía la asesoría. La app lo dividirá por páginas
+        y subirá cada una a Drive asignándola a la trabajadora correspondiente.
+      </p>
+      <label style="display:flex;flex-direction:column;align-items:center;gap:10px;border:2px dashed var(--border2);border-radius:8px;padding:36px 20px;cursor:pointer;transition:border-color .2s" id="sn-drop">
+        <span style="font-size:36px">📄</span>
+        <span style="font-size:14px;color:var(--text2)">Arrastra el PDF aquí o haz clic para seleccionar</span>
+        <input type="file" id="sn-file" accept=".pdf,application/pdf" style="display:none">
+      </label>
+      <div id="sn-load-msg" style="margin-top:12px;font-size:13px;color:var(--text3);text-align:center"></div>
+    </div>
+    <div id="sn-step2" style="display:none">
+      <div id="sn-info" style="font-size:12px;color:var(--text3);margin-bottom:12px"></div>
+      <div style="overflow-x:auto">
+        <table id="sn-tabla" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:var(--bg2)">
+              <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--text3);font-size:11px;text-transform:uppercase">Página</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--text3);font-size:11px;text-transform:uppercase">Trabajadora</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--text3);font-size:11px;text-transform:uppercase">Mes</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;color:var(--text3);font-size:11px;text-transform:uppercase">Año</th>
+            </tr>
+          </thead>
+          <tbody id="sn-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="sn-step3" style="display:none">
+      <div id="sn-progress-wrap" style="display:flex;flex-direction:column;gap:10px;padding:8px 0"></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" id="sn-btn-procesar" style="display:none" onclick="_subirNominasProcesar()">Subir nóminas</button>`,
+    'wide');
+
+  // Drag & drop
+  const drop = document.getElementById('sn-drop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--g2)'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.style.borderColor = '';
+    const f = e.dataTransfer.files[0];
+    if (f) _subirNominasCargar(f);
+  });
+  document.getElementById('sn-file').addEventListener('change', e => {
+    if (e.target.files[0]) _subirNominasCargar(e.target.files[0]);
+  });
+}
+
+async function _subirNominasCargar(file) {
+  const msg = document.getElementById('sn-load-msg');
+  if (!file || file.type !== 'application/pdf') {
+    if (msg) msg.textContent = 'Solo se aceptan archivos PDF.';
+    return;
+  }
+  if (msg) msg.textContent = 'Cargando pdf-lib…';
+  try {
+    await _loadScript('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js');
+  } catch(e) {
+    if (msg) msg.textContent = 'Error cargando librería PDF. Comprueba la conexión.';
+    return;
+  }
+
+  if (msg) msg.textContent = 'Analizando PDF…';
+  try {
+    _snPdfBytes = await file.arrayBuffer();
+    _snPdfDoc   = await PDFLib.PDFDocument.load(_snPdfBytes);
+  } catch(e) {
+    if (msg) msg.textContent = 'No se pudo leer el PDF: ' + e.message;
+    return;
+  }
+
+  const pageCount = _snPdfDoc.getPageCount();
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio',
+                 'agosto','septiembre','octubre','noviembre','diciembre'];
+  const mesAct  = meses[new Date().getMonth()];
+  const anyoAct = new Date().getFullYear();
+
+  const personal = DB.personal.filter(p =>
+    String(p.ACTIVO||'').toUpperCase().startsWith('S') &&
+    !['FAMILIA','AMPA'].includes(String(p.ROL||'').toUpperCase())
+  ).sort((a,b) => (a.NOMBRE||'').localeCompare(b.NOMBRE||''));
+
+  const opsPer = `<option value="">— Sin asignar —</option>` +
+    personal.map(p => `<option value="${esc(p.ID_MONITOR)}">${esc(p.NOMBRE+' '+(p.APELLIDOS||''))}</option>`).join('');
+  const opsMes = meses.map(m =>
+    `<option value="${m}" ${m===mesAct?'selected':''}>${m.charAt(0).toUpperCase()+m.slice(1)}</option>`
+  ).join('');
+
+  const tbody = document.getElementById('sn-tbody');
+  tbody.innerHTML = Array.from({length: pageCount}, (_, i) => `
+    <tr style="border-bottom:1px solid var(--border2)">
+      <td style="padding:8px 10px;color:var(--text3);white-space:nowrap">Página ${i+1}</td>
+      <td style="padding:6px 10px"><select class="sn-worker" data-page="${i}" style="width:100%;padding:5px 8px;border:1px solid var(--border2);border-radius:4px;font-size:13px;background:var(--white);color:var(--text1)">${opsPer}</select></td>
+      <td style="padding:6px 10px"><select class="sn-mes" data-page="${i}" style="padding:5px 8px;border:1px solid var(--border2);border-radius:4px;font-size:13px;background:var(--white);color:var(--text1)">${opsMes}</select></td>
+      <td style="padding:6px 10px"><input class="sn-anyo" data-page="${i}" type="number" value="${anyoAct}" style="width:72px;padding:5px 8px;border:1px solid var(--border2);border-radius:4px;font-size:13px"></td>
+    </tr>`).join('');
+
+  document.getElementById('sn-info').textContent = `PDF cargado — ${pageCount} página${pageCount!==1?'s':''} detectada${pageCount!==1?'s':''}. Asigna cada página a su trabajadora.`;
+  document.getElementById('sn-step1').style.display = 'none';
+  document.getElementById('sn-step2').style.display = '';
+  document.getElementById('sn-btn-procesar').style.display = '';
+}
+
+async function _subirNominasProcesar() {
+  if (!_snPdfDoc || !_snPdfBytes) return;
+
+  const workers  = [...document.querySelectorAll('.sn-worker')];
+  const meses_   = [...document.querySelectorAll('.sn-mes')];
+  const anyos    = [...document.querySelectorAll('.sn-anyo')];
+
+  const asignaciones = workers.map((sel, i) => ({
+    pageIdx: i,
+    monitorId: sel.value,
+    mes:  meses_[i].value,
+    anyo: anyos[i].value,
+  })).filter(a => a.monitorId);
+
+  if (!asignaciones.length) {
+    showToast('Asigna al menos una página a una trabajadora', 'warn'); return;
+  }
+
+  const btn = document.getElementById('sn-btn-procesar');
+  btn.disabled = true; btn.textContent = 'Subiendo…';
+
+  document.getElementById('sn-step2').style.display = 'none';
+  document.getElementById('sn-step3').style.display = '';
+  const wrap = document.getElementById('sn-progress-wrap');
+
+  let ok = 0, err = 0;
+  for (const a of asignaciones) {
+    const p = DB.personal.find(x => String(x.ID_MONITOR) === a.monitorId);
+    const nombre = p ? (p.NOMBRE+' '+(p.APELLIDOS||'')).trim() : a.monitorId;
+    const label  = `${nombre} — ${a.mes} ${a.anyo}`;
+    const li = document.createElement('div');
+    li.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:var(--bg2);font-size:13px';
+    li.innerHTML = `<span style="width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--g2);border-radius:50%;display:inline-block;animation:spin .7s linear infinite"></span><span>${esc(label)}</span>`;
+    wrap.appendChild(li);
+
+    try {
+      // Extraer página como PDF independiente
+      const newDoc = await PDFLib.PDFDocument.create();
+      const [page] = await newDoc.copyPages(_snPdfDoc, [a.pageIdx]);
+      newDoc.addPage(page);
+      const pdfBytes = await newDoc.save();
+
+      // Base64 (chunked para evitar stack overflow en arrays grandes)
+      let b64 = '';
+      const CHUNK = 8192;
+      for (let i = 0; i < pdfBytes.length; i += CHUNK)
+        b64 += String.fromCharCode(...pdfBytes.subarray(i, Math.min(i+CHUNK, pdfBytes.length)));
+      b64 = btoa(b64);
+
+      const fileName = `Nomina_${nombre.replace(/\s+/g,'_')}_${a.mes}_${a.anyo}.pdf`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 90000);
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'SUBIR_NOMINA_PDF', base64: b64, fileName }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error en GAS');
+
+      // Crear o actualizar registro NOMINAS
+      const nomExist = DB.nominas.find(n =>
+        String(n.ID_MONITOR) === a.monitorId &&
+        String(n.MES||'').toLowerCase() === a.mes.toLowerCase() &&
+        String(n['AÑO']||n.AÑO||'') === String(a.anyo)
+      );
+      if (nomExist) {
+        await writeToSheet('NOMINAS', { PDF_DRIVE: data.url }, nomExist.ID || nomExist.ID_NOMINA);
+      } else {
+        await writeToSheet('NOMINAS', {
+          ID_MONITOR: a.monitorId, MES: a.mes, 'AÑO': a.anyo, PDF_DRIVE: data.url,
+        }, null);
+      }
+
+      li.innerHTML = `<span style="color:var(--g2);font-size:16px">✓</span><span>${esc(label)}</span>`;
+      ok++;
+    } catch(e) {
+      li.innerHTML = `<span style="color:var(--red);font-size:16px">✗</span><span>${esc(label)}</span><span style="color:var(--red);font-size:11px">${esc(e.message)}</span>`;
+      err++;
+    }
+  }
+
+  btn.textContent = 'Cerrar';
+  btn.disabled = false;
+  btn.onclick = () => { closeModal(); loadAllData().then(nominas); };
+  showToast(`${ok} nómina${ok!==1?'s':''} subida${ok!==1?'s':''}${err?' · '+err+' error'+( err!==1?'s':''):''}`, err ? 'warn' : 'success');
+}
+
 function _driveFileId(url) {
   if (!url) return null;
   const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -9183,6 +9399,7 @@ function nominas() {
     render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2></div>'); return;
   }
   topbarBtn('+ Añadir nómina', () => modalNomina());
+  topbarBtn('⬆ Subir PDF asesoría', () => modalSubirNominas(), 'btn-secondary');
 
   // Agrupar por trabajador
   const rows = DB.nominas.map(n => {

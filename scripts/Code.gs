@@ -118,6 +118,8 @@ function doPost(e) {
       result = guardarPdfFirmadoPersonal_(body);
     } else if (action === 'SUBIR_CNDS') {
       result = subirCNDS_(body);
+    } else if (action === 'SUBIR_NOMINA_PDF') {
+      result = subirNominaPdf_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1407,7 +1409,7 @@ function subirCNDS_(body) {
 }
 
 // ===========================================================================
-//  NÓMINAS — PROXY DE DESCARGA DE PDF DESDE DRIVE
+//  NÓMINAS — PROXY DE DESCARGA Y SUBIDA DE PDF
 // ===========================================================================
 function getNominaPdf_(fileId) {
   if (!fileId) return { ok: false, error: 'fileId requerido' };
@@ -1423,4 +1425,25 @@ function getNominaPdf_(fileId) {
   } catch(e) {
     return { ok: false, error: 'Archivo no accesible: ' + e.message };
   }
+}
+
+function subirNominaPdf_(body) {
+  var base64     = body.base64;
+  var fileName   = body.fileName   || 'nomina.pdf';
+  if (!base64) return { ok: false, error: 'base64 requerido' };
+  try {
+    var bytes  = Utilities.base64Decode(base64);
+    var blob   = Utilities.newBlob(bytes, MimeType.PDF, fileName);
+    var folder = _carpetaNominas_();
+    var file   = folder.createFile(blob);
+    return { ok: true, fileId: file.getId(), url: file.getUrl() };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function _carpetaNominas_() {
+  var name = 'SM Academia — Nóminas';
+  var it   = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
 }
