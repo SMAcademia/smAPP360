@@ -11568,6 +11568,8 @@ function asistenciasExtra() {
     render('<div class="stub"><div class="stub-icon">🔒</div><h2>Acceso restringido</h2><p>El pase de lista lo realizan los monitores y el coordinador.</p></div>');
     return;
   }
+  document.getElementById('topbar-actions').innerHTML = '';
+  if (isAdmin()) topbarBtn('🔍 Auditar bonos', () => modalAuditoriaBonos(), 'btn-secondary');
   const today = new Date().toISOString().slice(0,10);
 
   // Actividades de la línea extraescolares activas
@@ -11925,10 +11927,105 @@ async function guardarAsistenciaExtra() {
     // --- Background: bono counters + bajas de día suelto (fire-and-forget) ---
     _procesarBonosYBajas(actId, fecha, presentes, checks, prev).catch(()=>{});
 
+
   } catch(err) {
     if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = 'Guardar asistencia'; }
     showToast('Error al guardar: ' + (err.message||err), 'error');
   }
+}
+
+// ── Auditoría de bonos ────────────────────────────────────────────────────
+async function modalAuditoriaBonos() {
+  const actTempIds = (DB.actividades||[])
+    .filter(a => _COM_TEMPRANA_RE.test(sinTildes(a.NOMBRE||'')))
+    .map(a => String(a.ID));
+
+  const bonoInscs = DB.inscripciones.filter(i => {
+    if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
+    const a = DB.actividades.find(x => String(x.ID) === String(i.ID_ACTIVIDAD));
+    return a && esBonoUsos(a.NOMBRE||'');
+  });
+
+  if (!bonoInscs.length) {
+    openModal('Auditoría de bonos', '<p style="padding:16px 0">No hay bonos de 10 usos activos.</p>',
+      '<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>');
+    return;
+  }
+
+  const filas = bonoInscs.map(ins => {
+    const alu  = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(ins.ID_ALUMNO));
+    const act  = DB.actividades.find(a => String(a.ID) === String(ins.ID_ACTIVIDAD));
+    const aluId = String(ins.ID_ALUMNO);
+    const usosReales = (DB.asistenciasExtra||[]).filter(s =>
+      actTempIds.includes(String(s.ID_ACTIVIDAD||'')) &&
+      String(s.ALUMNOS_PRESENTES||'').split(',').map(x => x.trim()).includes(aluId)
+    ).length;
+    const usosGuardados = bonoUsosCont(ins);
+    const cap  = bonoCapacidad(act?.NOMBRE||'');
+    const diff = usosReales - usosGuardados;
+    return { ins, alu, act, usosReales, usosGuardados, cap, diff };
+  }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  const hayDiff = filas.some(f => f.diff !== 0);
+  const rows = filas.map((f, idx) => {
+    const nombre = f.alu ? (f.alu.NOMBRE + ' ' + (f.alu.APELLIDOS||'')).trim() : f.ins.ID_ALUMNO;
+    const diffColor = f.diff !== 0 ? 'var(--red)' : 'var(--green)';
+    const diffLabel = f.diff > 0 ? `+${f.diff} sin registrar`
+                    : f.diff < 0 ? `${f.diff} de más`
+                    : '✓ OK';
+    return `<tr>
+      <td><strong>${esc(nombre)}</strong></td>
+      <td style="font-size:11px;color:var(--text3)">${esc(f.act?.NOMBRE||'—')}</td>
+      <td style="text-align:center">${f.usosReales} / ${f.cap}</td>
+      <td style="text-align:center">${f.usosGuardados} / ${f.cap}</td>
+      <td style="text-align:center;font-weight:600;color:${diffColor}">${esc(diffLabel)}</td>
+      <td>${f.diff !== 0 ? `<button class="btn btn-sm btn-primary" onclick="_corregirBonoAuditoria(${idx})">Corregir</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  openModal('🔍 Auditoría de bonos — Recogida temprana',
+    `<p style="font-size:12px;color:var(--text3);margin-bottom:12px">Compara las asistencias reales a recogida temprana con el contador guardado en cada bono.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Alumno</th><th>Bono</th><th style="text-align:center">Asistencias reales</th><th style="text-align:center">Usos guardados</th><th style="text-align:center">Diferencia</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <p style="font-size:12px;margin-top:10px;color:${hayDiff?'var(--amber)':'var(--green)'}">
+      ${hayDiff ? '⚠ Hay discrepancias. Pulsa "Corregir" para sincronizar el contador con las asistencias reales.' : '✓ Todos los contadores están correctos.'}
+    </p>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+     ${hayDiff ? `<button class="btn btn-primary" onclick="_corregirTodosBonosAuditoria()">Corregir todos</button>` : ''}`
+  );
+  window._auditoriaBonos = filas;
+}
+
+async function _corregirBonoAuditoria(idx) {
+  const f = (window._auditoriaBonos||[])[idx];
+  if (!f) return;
+  const inscId = f.ins.ID_INSCRIPCION || f.ins.ID;
+  const nuevaObs = bonoObsActualizada(f.ins, f.usosReales, null, null);
+  try {
+    await writeToSheet('INSCRIPCIONES', { OBSERVACIONES: nuevaObs }, inscId);
+    f.ins.OBSERVACIONES = nuevaObs;
+    showToast(`Bono corregido a ${f.usosReales} usos — ${f.alu?.NOMBRE||''}`, 'success');
+    await loadAllData();
+    modalAuditoriaBonos();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function _corregirTodosBonosAuditoria() {
+  const filas = (window._auditoriaBonos||[]).filter(f => f.diff !== 0);
+  if (!filas.length) return;
+  for (const f of filas) {
+    const inscId = f.ins.ID_INSCRIPCION || f.ins.ID;
+    const nuevaObs = bonoObsActualizada(f.ins, f.usosReales, null, null);
+    try {
+      await writeToSheet('INSCRIPCIONES', { OBSERVACIONES: nuevaObs }, inscId);
+      f.ins.OBSERVACIONES = nuevaObs;
+    } catch(e) { showToast(`Error con ${f.alu?.NOMBRE||''}: ` + e.message, 'error'); }
+  }
+  showToast(`${filas.length} bono${filas.length>1?'s':''} corregido${filas.length>1?'s':''}`, 'success');
+  await loadAllData();
+  modalAuditoriaBonos();
 }
 
 async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
