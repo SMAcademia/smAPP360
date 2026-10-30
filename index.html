@@ -1340,6 +1340,7 @@ function esExtraescolar(l) { return sinTildes(l).includes('EXTRAESCOLAR'); }
 // "Día suelto genérico": actividad cuyo nombre contiene DIA SUELTO, SUELTO, JORNAD o similar.
 // Los eventos puntuales (ej. Fiesta Halloween) usan PAGO_ÚNICO pero NO son día suelto genérico.
 function esDiaSueltoGenerico(nombre) { const n = sinTildes(nombre||'').toUpperCase(); return n.includes('SUELT') || n.includes('JORNAD'); }
+function esPagoUnico(tipo) { const t = sinTildes(tipo||'').toUpperCase(); return t.includes('SUELT') || t.includes('ANUAL') || t.includes('JORNAD') || t.includes('CAMPUS'); }
 function esBonoUsos(nombre, insc){ const n=sinTildes(nombre||''); const porNombre = n.includes('BONO'); const porObs = insc && /USOS:\d+/i.test(String(insc.OBSERVACIONES||'')); return porNombre || porObs; }
 function bonoCapacidad(nombre){ const m=sinTildes(nombre||'').match(/(\d+)/); return m?parseInt(m[1]):10; }
 function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:(\d+)/i); return m?parseInt(m[1]):0; }
@@ -2678,8 +2679,7 @@ function inscripciones() {
 
 function _infoActividad(act) {
   if (!act) return '';
-  const t = sinTildes(act.TIPO||'');
-  const esUnico = t.includes('SUELT') || t.includes('ANUAL') || t.includes('JORNAD');
+  const esUnico = esPagoUnico(act.TIPO||'');
   const parts = [];
   if (act.NUM_GRUPOS) parts.push('Grupo ' + act.NUM_GRUPOS);
   if (act.PRECIO)     parts.push(fmtEur(act.PRECIO) + (esUnico ? ' pago único' : '/mes'));
@@ -2818,14 +2818,13 @@ function guardarInscripcion(id) {
     const dias = [...entry.querySelectorAll('.ins-dia-cb:checked')].map(cb=>cb.value).join(',');
     const hIni = entry.querySelector('.ins-hora-ini')?.value||'';
     const hFin = entry.querySelector('.ins-hora-fin')?.value||'';
-    const t = sinTildes(act?.TIPO||'');
     return { ...common,
       ID_ACTIVIDAD:    actId,
       LINEA:           act?.LINEA||'EXTRAESCOLARES',
       DIAS_SEMANA:     dias,
       GRUPO:           act?.NUM_GRUPOS ? String(act.NUM_GRUPOS) : '',
       HORARIO:         hIni&&hFin ? hIni+'-'+hFin : hIni||hFin||'',
-      TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
+      TIPO_PRECIO:     esPagoUnico(act?.TIPO||'') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
       PRECIO_ACORDADO: act?.PRECIO||'',
     };
   }).filter(Boolean);
