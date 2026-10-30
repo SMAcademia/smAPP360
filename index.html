@@ -1346,23 +1346,23 @@ function bonoUsosCont(insc){ const m=String(insc.OBSERVACIONES||'').match(/USOS:
 // Entradas en FECHAS: "YYYY-MM-DD" (manual) o "YYYY-MM-DD:actId" (auto, para idempotencia por sesión)
 function bonoFechasRaw(insc){ const m=String(insc.OBSERVACIONES||'').match(/FECHAS:([^;]+)/i); return m?m[1].trim().split(',').map(d=>d.trim()).filter(Boolean):[]; }
 function bonoFechas(insc){ return bonoFechasRaw(insc).map(e=>e.split(':')[0]); } // solo la parte de fecha para mostrar
-// IDs de actividades de recogida temprana (fuente de verdad para bonos de usos)
-function _actIdsTemprana() {
+// IDs de actividades de recogida (temprana + tardía) — fuente de verdad para bonos de usos
+function _actIdsRecogida() {
   return (DB.actividades||[])
-    .filter(x => _COM_TEMPRANA_RE.test(sinTildes(x.NOMBRE||'')))
+    .filter(x => _COM_RECOGIDA_RE.test(sinTildes(x.NOMBRE||'')))
     .map(x => String(x.ID));
 }
-// Fuente de verdad: asistencias a recogida TEMPRANA. Fallback a OBSERVACIONES si no hay datos live.
+// Fuente de verdad: asistencias a recogida (temprana + tardía). Fallback a OBSERVACIONES si no hay datos live.
 function bonoUsosReales(aluId, actId) {
   const aluIdStr = String(aluId);
   const enSesion = s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr);
-  // 1. Actividad propia del bono (por si en el futuro los bonos tienen su propia actividad con asistencias)
+  // 1. Actividad propia del bono (por compatibilidad futura)
   const propias = (DB.asistenciasExtra||[]).filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s));
   if (propias.length) return propias.length;
-  // 2. Asistencias a recogida temprana (fuente principal real)
-  const tempIds = _actIdsTemprana();
-  if (!tempIds.length) return 0;
-  return (DB.asistenciasExtra||[]).filter(s => tempIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s)).length;
+  // 2. Asistencias a recogida temprana + tardía (fuente principal real)
+  const recIds = _actIdsRecogida();
+  if (!recIds.length) return 0;
+  return (DB.asistenciasExtra||[]).filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s)).length;
 }
 function bonoFechasReales(aluId, actId, insc) {
   const aluIdStr = String(aluId);
@@ -1372,11 +1372,11 @@ function bonoFechasReales(aluId, actId, insc) {
     .filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s))
     .map(s => String(s.FECHA||'')).filter(Boolean).sort();
   if (propias.length) return propias;
-  // 2. Asistencias a recogida TEMPRANA (fuente principal — misma lógica que bonoUsosReales)
-  const tempIds = _actIdsTemprana();
-  if (tempIds.length) {
+  // 2. Asistencias a recogida temprana + tardía (misma fuente que bonoUsosReales)
+  const recIds = _actIdsRecogida();
+  if (recIds.length) {
     const fechas = (DB.asistenciasExtra||[])
-      .filter(s => tempIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s))
+      .filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s))
       .map(s => String(s.FECHA||'')).filter(Boolean).sort();
     if (fechas.length) return fechas;
   }
@@ -3581,7 +3581,8 @@ function _ampaCuota(acts) {
 
 const _COM_SVC_RE      = /madrugadora|recogida|bono|cuota|d[ií]a suelto/i;
 const _COM_OCULTAR_RE  = /recogida tard|bono recogida|d[ií]a suelto/i;  // no mostrar en mensaje
-const _COM_TEMPRANA_RE = /madrugadora|recogida temp/i;     // pago SM Academia 27€
+const _COM_TEMPRANA_RE  = /madrugadora|recogida temp/i;     // pago SM Academia 27€
+const _COM_RECOGIDA_RE  = /madrugadora|recogida temp|recogida tard/i; // temprana + tardía (descuento bono)
 function _comInscExtrasAlu(aluId) {
   const seen = new Set();
   return DB.inscripciones
@@ -11948,9 +11949,7 @@ async function guardarAsistenciaExtra() {
 
 // ── Auditoría de bonos ────────────────────────────────────────────────────
 async function modalAuditoriaBonos() {
-  const actTempIds = (DB.actividades||[])
-    .filter(a => _COM_TEMPRANA_RE.test(sinTildes(a.NOMBRE||'')))
-    .map(a => String(a.ID));
+  const actTempIds = _actIdsRecogida();
 
   const bonoInscs = DB.inscripciones.filter(i => {
     if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
@@ -12044,9 +12043,9 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
   const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
   const nuevos  = presentes.filter(id => !prevIds.includes(id));
 
-  // Los bonos de 10 usos solo se gastan en recogida temprana
+  // Los bonos de 10 usos solo se gastan en recogida (temprana o tardía)
   const actAsistida = DB.actividades.find(a => String(a.ID) === String(actId));
-  const esRecogidaTemprana = actAsistida && _COM_TEMPRANA_RE.test(sinTildes(actAsistida.NOMBRE||''));
+  const esRecogida = actAsistida && _COM_RECOGIDA_RE.test(sinTildes(actAsistida.NOMBRE||''));
 
   for (const aluId of nuevos) {
     // Buscar siempre la inscripción de bono primero (tiene prioridad para descontar usos).
@@ -12063,8 +12062,8 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
       String(i.ESTADO||'').toUpperCase()==='ACTIVA'
     ) : null;
     const insc = bonoInsc || directInsc;
-    // Solo descontar bono si la sesión registrada es recogida temprana
-    if (insc && bonoInsc && !esRecogidaTemprana) continue;
+    // Solo descontar bono si la sesión registrada es recogida (temprana o tardía)
+    if (insc && bonoInsc && !esRecogida) continue;
     if (!insc) continue;
     const inscAct = DB.actividades.find(a => String(a.ID) === String(insc.ID_ACTIVIDAD));
     if (!inscAct || !esBonoUsos(inscAct.NOMBRE||'')) continue;
