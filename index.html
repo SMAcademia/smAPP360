@@ -11935,6 +11935,10 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
   const prevIds = prev ? String(prev.ALUMNOS_PRESENTES||'').split(',').filter(Boolean) : [];
   const nuevos  = presentes.filter(id => !prevIds.includes(id));
 
+  // Los bonos de 10 usos solo se gastan en recogida temprana
+  const actAsistida = DB.actividades.find(a => String(a.ID) === String(actId));
+  const esRecogidaTemprana = actAsistida && _COM_TEMPRANA_RE.test(sinTildes(actAsistida.NOMBRE||''));
+
   for (const aluId of nuevos) {
     // Buscar siempre la inscripción de bono primero (tiene prioridad para descontar usos).
     // Una inscripción mensual directa a la misma actividad NO bloquea el bono.
@@ -11950,6 +11954,8 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
       String(i.ESTADO||'').toUpperCase()==='ACTIVA'
     ) : null;
     const insc = bonoInsc || directInsc;
+    // Solo descontar bono si la sesión registrada es recogida temprana
+    if (insc && bonoInsc && !esRecogidaTemprana) continue;
     if (!insc) continue;
     const inscAct = DB.actividades.find(a => String(a.ID) === String(insc.ID_ACTIVIDAD));
     if (!inscAct || !esBonoUsos(inscAct.NOMBRE||'')) continue;
