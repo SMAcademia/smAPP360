@@ -11947,6 +11947,22 @@ async function guardarAsistenciaExtra() {
   }
 }
 
+// Reconstruye OBSERVACIONES de un bono desde las asistencias reales (temprana + tardía)
+function _bonoObsRebuild(insc) {
+  const aluIdStr = String(insc.ID_ALUMNO);
+  const recIds = _actIdsRecogida();
+  const sesiones = (DB.asistenciasExtra||[])
+    .filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) &&
+      String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr))
+    .sort((a,b) => String(a.FECHA||'').localeCompare(String(b.FECHA||'')));
+  const entries = sesiones.map(s => String(s.FECHA||'')+':'+String(s.ID_ACTIVIDAD||''));
+  const usos = sesiones.length;
+  const obs = String(insc.OBSERVACIONES||'');
+  const restoObs = obs.replace(/USOS:\d+;?\s*/i,'').replace(/FECHAS:[^;]+;?\s*/i,'').trim();
+  const fechaStr = entries.length ? '; FECHAS:'+entries.join(',') : '';
+  return { obs: 'USOS:'+usos+fechaStr+(restoObs?'; '+restoObs:''), usos };
+}
+
 // ── Auditoría de bonos ────────────────────────────────────────────────────
 async function modalAuditoriaBonos() {
   const actTempIds = _actIdsRecogida();
@@ -11994,8 +12010,8 @@ async function modalAuditoriaBonos() {
     </tr>`;
   }).join('');
 
-  openModal('🔍 Auditoría de bonos — Recogida temprana',
-    `<p style="font-size:12px;color:var(--text3);margin-bottom:12px">Compara las asistencias reales a recogida temprana con el contador guardado en cada bono.</p>
+  openModal('🔍 Auditoría de bonos — Recogida',
+    `<p style="font-size:12px;color:var(--text3);margin-bottom:12px">Compara las asistencias reales a recogida (temprana + tardía) con el contador guardado en cada bono.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Alumno</th><th>Bono</th><th style="text-align:center">Asistencias reales</th><th style="text-align:center">Usos guardados</th><th style="text-align:center">Diferencia</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -12013,11 +12029,11 @@ async function _corregirBonoAuditoria(idx) {
   const f = (window._auditoriaBonos||[])[idx];
   if (!f) return;
   const inscId = f.ins.ID_INSCRIPCION || f.ins.ID;
-  const nuevaObs = bonoObsActualizada(f.ins, f.usosReales, null, null);
+  const { obs: nuevaObs, usos } = _bonoObsRebuild(f.ins);
   try {
     await writeToSheet('INSCRIPCIONES', { OBSERVACIONES: nuevaObs }, inscId);
     f.ins.OBSERVACIONES = nuevaObs;
-    showToast(`Bono corregido a ${f.usosReales} usos — ${f.alu?.NOMBRE||''}`, 'success');
+    showToast(`Bono corregido a ${usos} usos — ${f.alu?.NOMBRE||''}`, 'success');
     await loadAllData();
     modalAuditoriaBonos();
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
@@ -12028,7 +12044,7 @@ async function _corregirTodosBonosAuditoria() {
   if (!filas.length) return;
   for (const f of filas) {
     const inscId = f.ins.ID_INSCRIPCION || f.ins.ID;
-    const nuevaObs = bonoObsActualizada(f.ins, f.usosReales, null, null);
+    const { obs: nuevaObs } = _bonoObsRebuild(f.ins);
     try {
       await writeToSheet('INSCRIPCIONES', { OBSERVACIONES: nuevaObs }, inscId);
       f.ins.OBSERVACIONES = nuevaObs;
