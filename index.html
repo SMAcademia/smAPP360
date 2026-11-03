@@ -4826,7 +4826,12 @@ function pagos(filtro) {
       return isNaN(n) ? id : n;
     }
     if (_pgSort.col === 'MES')      return String(p.MES||'');
-    if (_pgSort.col === 'PAGADOR') { const a = DB.alumnos.find(x=>String(x.ID_ALUMNO)===String(p.ID_ALUMNO)); return a ? (a.NOMBRE+' '+(a.APELLIDOS||'')).trim() : String(p.ID_ALUMNO||''); }
+    if (_pgSort.col === 'PAGADOR') {
+      const a = DB.alumnos.find(x=>String(x.ID_ALUMNO)===String(p.ID_ALUMNO));
+      if (a) return (a.NOMBRE+' '+(a.APELLIDOS||'')).trim();
+      const c = p.ID_CLIENTE ? DB.clientes.find(x=>String(x.ID_CLIENTE||x.ID)===String(p.ID_CLIENTE)) : null;
+      return c ? (c.NOMBRE+' '+(c.APELLIDOS||'')).trim() : String(p.ID_ALUMNO||'');
+    }
     if (_pgSort.col === 'SERVICIO') return String(p.SERVICIO||'');
     if (_pgSort.col === 'ESPERADO') return parseFloat(p.TOTAL_ESPERADO||p.IMPORTE||0);
     if (_pgSort.col === 'ESTADO')   return String(p.ESTADO||'');
@@ -4869,6 +4874,11 @@ function pagos(filtro) {
           const nombre = pe ? (pe.RAZON_SOCIAL||pe.NOMBRE||'') : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'');
           const cif    = pe ? pe.CIF : '';
           return `<span style="font-size:12px">${esc(nombre)||'Pagador externo'}${cif?` <span style="color:var(--text3);font-size:10px">${esc(cif)}</span>`:''}`;
+        }
+        // Pago familiar (ID_ALUMNO vacío, ID_CLIENTE presente)
+        if (p.ID_CLIENTE) {
+          const cli = DB.clientes.find(c=>String(c.ID_CLIENTE||c.ID)===String(p.ID_CLIENTE));
+          if (cli) return esc((cli.NOMBRE+' '+(cli.APELLIDOS||'')).trim());
         }
         return esc(p.ID_ALUMNO||'—');
       })()}</td>
