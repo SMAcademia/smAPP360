@@ -5466,13 +5466,29 @@ async function guardarPago(id) {
       closeModal();
       if (debeAutoFac && savedPagoId) {
         try {
+          // Reunir todos los pagos de la misma familia/mes ya confirmados sin factura
+          const cliIdFac = row.ID_CLIENTE ||
+            DB.alumnos.find(a => String(a.ID_ALUMNO) === String(row.ID_ALUMNO))?.ID_CLIENTE || '';
           const savedPagoId2 = row2 ? (results[1]?.id || '') : null;
-          const facId = await _autoCrearFactura(
-            { ...row },  savedPagoId,
-            row2 && savedPagoId2 ? { ...row2 } : null,
-            savedPagoId2 || null
-          );
-          showToast(`Factura ${facId} generada automáticamente${row2 ? ' (2 alumnos)' : ''}`, 'success');
+          // Siempre incluir el pago principal (y row2 si existe)
+          const bundle = [{ pago: { ...row }, id: savedPagoId }];
+          if (row2 && savedPagoId2) bundle.push({ pago: { ...row2 }, id: savedPagoId2 });
+          // Añadir hermanos del DB: mismo cliente, mismo mes, PAGADO, sin factura, no ya incluidos
+          if (cliIdFac && !LINEAS_EXT.includes(row.LINEA)) {
+            const bundleIds = new Set(bundle.map(b => String(b.id)));
+            DB.pagos.filter(p2 => {
+              if (p2.ID_FACTURA) return false;
+              if (String(p2.ESTADO||'').toUpperCase() !== 'PAGADO') return false;
+              if (_mesNorm(p2.MES) !== _mesNorm(row.MES)) return false;
+              const p2id = String(p2.ID_PAGO||p2.ID||'');
+              if (bundleIds.has(p2id)) return false;
+              const alu2 = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p2.ID_ALUMNO));
+              return String(p2.ID_CLIENTE || alu2?.ID_CLIENTE || '') === String(cliIdFac);
+            }).forEach(p2 => bundle.push({ pago: p2, id: String(p2.ID_PAGO||p2.ID||'') }));
+          }
+          const facId = await _autoCrearFactura(bundle);
+          const n = bundle.length;
+          showToast(`Factura ${facId} generada automáticamente${n > 1 ? ` (${n} alumnos)` : ''}`, 'success');
         } catch(e) {
           console.error('Auto-factura error:', e);
           showToast('Pago guardado · Error al crear factura automática: ' + (e.message||e), 'error');
@@ -7439,8 +7455,9 @@ function calcTotalFac() {
   const tEl = document.getElementById('fac-total'); if(tEl) tEl.value = total.toFixed(2);
 }
 
-// pago2/pagoId2 opcionales: agrupa dos hermanos en una sola factura
-async function _autoCrearFactura(pago, pagoId, pago2, pagoId2) {
+// bundle: array de { pago, id } — agrupa N pagos de la misma familia en una sola factura
+async function _autoCrearFactura(bundle) {
+  const pago = bundle[0].pago;
   const esExterno = LINEAS_EXT.includes(pago.LINEA);
   const metodosMap = {
     BIZUM: 'Bizum', TRANSFERENCIA: 'Transferencia bancaria',
@@ -7468,21 +7485,15 @@ async function _autoCrearFactura(pago, pagoId, pago2, pagoId2) {
     clienteNif    = cli?.NIF || cli?.DNI || '';
   }
 
-  const serie          = 'SM';
-  const base1          = parseFloat(pago.IMPORTE || pago.TOTAL_ESPERADO || 0);
-  const desc1          = parseFloat(pago.DESC_EUR || 0) || 0;
-  const base2          = pago2 ? parseFloat(pago2.IMPORTE || pago2.TOTAL_ESPERADO || 0) : 0;
-  const desc2          = pago2 ? (parseFloat(pago2.DESC_EUR || 0) || 0) : 0;
-  const baseImponible  = base1 + base2;
-  const descuento      = desc1 + desc2;
-  const total          = parseFloat(Math.max(0, baseImponible - descuento).toFixed(2));
-  const fecha          = new Date().toISOString().slice(0,10);
-  // Concepto: servicios únicos + mes
-  const mes            = pago.MES || (pago2?.MES) || '';
-  const servs          = [pago.SERVICIO||'Servicio'];
-  if (pago2) servs.push(pago2.SERVICIO||'Servicio');
-  const concepto       = [...new Set(servs)].join(' / ') + (mes ? ` — ${mes}` : '');
-  const formaPago      = metodosMap[String(pago.MÉTODO||'').toUpperCase()] || '';
+  const serie         = 'SM';
+  const baseImponible = bundle.reduce((s, b) => s + parseFloat(b.pago.IMPORTE||b.pago.TOTAL_ESPERADO||0), 0);
+  const descuento     = bundle.reduce((s, b) => s + (parseFloat(b.pago.DESC_EUR||0)||0), 0);
+  const total         = parseFloat(Math.max(0, baseImponible - descuento).toFixed(2));
+  const fecha         = new Date().toISOString().slice(0,10);
+  const mes           = bundle.map(b => b.pago.MES||'').find(Boolean) || '';
+  const servs         = bundle.map(b => b.pago.SERVICIO||'Servicio');
+  const concepto      = [...new Set(servs)].join(' / ') + (mes ? ` — ${mes}` : '');
+  const formaPago     = metodosMap[String(pago.MÉTODO||'').toUpperCase()] || '';
 
   // Número de factura (reserva en memoria primero para evitar duplicados)
   const nextNum = Math.max(0, ...DB.facturas.map(f => parseInt(f.NUMERO)||0)) + 1;
@@ -7521,8 +7532,7 @@ async function _autoCrearFactura(pago, pagoId, pago2, pagoId2) {
   };
 
   await writeToSheet('FACTURAS', row, null);
-  await writeToSheet('PAGOS', { ID_FACTURA: numFac }, pagoId);
-  if (pagoId2) await writeToSheet('PAGOS', { ID_FACTURA: numFac }, pagoId2);
+  for (const b of bundle) await writeToSheet('PAGOS', { ID_FACTURA: numFac }, b.id);
 
   // Sustituir la entrada reservada por la real
   const idx = DB.facturas.findIndex(f => f.ID_FACTURA === numFac && f._reservado);
