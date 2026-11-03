@@ -4492,7 +4492,7 @@ function _renderGmFiltros() {
     +'<div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Mes</label>'
     +'<select id="gm-mes" style="width:100%">'+opsMes+'</select></div>'
     +'</div>'
-    +'<p style="font-size:12px;color:var(--text3)">Se generarán pagos PENDIENTES para todas las familias con inscripciones activas en la línea seleccionada que no tengan ya un pago registrado para ese mes.</p>';
+    +'<p style="font-size:12px;color:var(--text3)">Se generarán pagos PENDIENTES para todas las familias con inscripciones activas en la línea seleccionada que no tengan ya un pago registrado para ese mes. Los bonos de 10 usos quedan excluidos (se pagan por uso, no mensualmente).</p>';
   openModal(
     'Generar pagos masivo',
     bodyHtml,
@@ -4541,10 +4541,8 @@ function _gmPreview() {
     const perAlu = aluIds.map(aluId => {
       const aluIns = data.inscs.filter(i=>String(i.ID_ALUMNO)===aluId)
         .map(i=>({ ins:i, act: DB.actividades.find(a=>String(a.ID)===String(i.ID_ACTIVIDAD)) }))
-        .filter(x=>x.act);
-      const bonoX  = aluIns.find(x=>/bono/i.test(sinTildes(x.act.NOMBRE||'')));
-      const hayRec = aluIns.some(x=>/recogida/i.test(sinTildes(x.act.NOMBRE||'')));
-      const billable = bonoX && hayRec ? [bonoX] : aluIns;
+        .filter(x=>x.act && !esBonoUsos(x.act.NOMBRE||'', x.ins)); // bonos de usos: pago por uso, no mensual
+      const billable = aluIns;
       let raw = 0, post = 0;
       for (const {ins,act} of billable) {
         const p = parseFloat(ins.PRECIO_ACORDADO||act.PRECIO||0);
