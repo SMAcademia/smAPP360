@@ -11804,10 +11804,12 @@ function cargarListaExtra() {
   const mundoAct = (a) => esFutbol(a?.LINEA||a?.NOMBRE||'') ? 'FUTBOL' : 'EXTRA';
   const mundoSel = mundoAct(actSelObj);
 
-  // 2. Alumnos con bono de usos genérico del mismo mundo
-  const actsBono = DB.actividades.filter(a =>
-    esBonoUsos(a.NOMBRE||'') && mundoAct(a) === mundoSel
-  );
+  // 2. Alumnos con bono de usos de recogida — solo se añaden a listas de actividades de recogida
+  // (temprana o tardía). En otras actividades el alumno solo aparece si tiene inscripción directa.
+  const actSelEsRecogida = actSelObj && _COM_RECOGIDA_RE.test(sinTildes(actSelObj.NOMBRE||''));
+  const actsBono = actSelEsRecogida
+    ? DB.actividades.filter(a => esBonoUsos(a.NOMBRE||'') && mundoAct(a) === mundoSel)
+    : [];
   const inscsBono = DB.inscripciones.filter(i => {
     if (!activaEnFecha(i)) return false;
     if (idsDirectos.has(String(i.ID_ALUMNO))) return false;
@@ -11869,8 +11871,7 @@ function cargarListaExtra() {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:13px;color:var(--text3)">
         ${lista.length} alumnos${diaHoy?' · '+diaHoy.charAt(0)+diaHoy.slice(1).toLowerCase():''}
-        ${actEsBono?' · 🎫 Bono usos':''}
-        ${nBono?` <span style="color:#7c3aed;font-weight:600">+${nBono} bono genérico</span>`:''}
+        ${nBono?` <span style="color:#7c3aed;font-weight:600">+${nBono} bono recogida</span>`:''}
         ${nSueltos?` <span style="color:var(--amber);font-weight:600">+${nSueltos} día suelto</span>`:''}
       </span>
       <div>
@@ -11881,16 +11882,8 @@ function cargarListaExtra() {
     <div id="lista-checks-extra" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
       ${lista.map(({alumno: a, insc, esBono, esSuelto}) => {
         let badgeHtml = '';
-        if (esBono) {
-          const bonoAct = actsBono.find(x => String(x.ID) === String(insc.ID_ACTIVIDAD));
-          const cap  = bonoAct ? bonoCapacidad(bonoAct.NOMBRE) : 10;
-          const usos = bonoUsosCont(insc);
-          const rest = cap - usos;
-          badgeHtml = `<span style="margin-left:auto;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;background:${rest<=0?'var(--text3)':rest<=2?'var(--red)':rest<=4?'var(--amber)':'#7c3aed'};color:#fff">${rest<=0?'Agotado':rest+' usos'}</span>`;
-        } else if (actEsBono) {
-          const usos = bonoUsosCont(insc);
-          const rest = actBonoCap - usos;
-          badgeHtml = `<span style="margin-left:auto;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;background:${rest<=0?'var(--text3)':rest<=2?'var(--red)':rest<=4?'var(--amber)':'var(--green)'};color:#fff">${rest<=0?'Agotado':rest+' usos'}</span>`;
+        if (esBono || actEsBono) {
+          badgeHtml = `<span style="margin-left:auto;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;background:#7c3aed;color:#fff">Bono</span>`;
         } else if (esSuelto) {
           const actSuelta = actsSueltas.find(x => String(x.ID) === String(insc.ID_ACTIVIDAD)) || actSelObj;
           badgeHtml = `<span style="margin-left:auto;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;background:var(--amber);color:#fff" title="${esc(actSuelta?.NOMBRE||'Día suelto')}">Día suelto</span>`;
