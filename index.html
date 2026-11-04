@@ -4551,23 +4551,24 @@ function _gmPreview() {
       }
       return { aluId, billable, raw, post };
     }).filter(x => x.post > 0);
-    perAlu.sort((a,b)=>b.post-a.post);
     if (!perAlu.length) continue;
-    // Colapsar familia en un solo pago
+    // Colapsar familia en un solo pago — el descuento de hermanos viene de DESCUENTO en la inscripción
     const subvIds = new Set((DB.actividades||[]).filter(a=>String(a.SUBVENCIONADA||'').toUpperCase().startsWith('S')).map(a=>String(a.ID||'')));
     let famRaw = 0, famDesc = 0, famTotal = 0;
     const famAluNombres = [], famServicios = [], famInsIds = [];
     let famLinea = '';
-    perAlu.forEach(({aluId,billable,raw,post},idx) => {
-      const hermPct = idx > 0 ? 0.10 : 0;
-      const final   = post*(1-hermPct);
-      const descEur = raw - final;
-      famRaw   += raw; famDesc += descEur; famTotal += final;
+    perAlu.forEach(({aluId,billable,raw,post}) => {
+      const descEur = raw - post;
+      famRaw   += raw; famDesc += descEur; famTotal += post;
       const alu = DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId);
       famAluNombres.push(alu ? alu.NOMBRE.split(' ')[0] : aluId);
       const visActs = billable.filter(x => !subvIds.has(String(x.act.ID||'')));
       famServicios.push((visActs.length ? visActs : billable).map(x=>x.act.NOMBRE).join(' + '));
-      famInsIds.push(billable[0]?.ins?.ID_INSCRIPCION||billable[0]?.ins?.ID||'');
+      // Incluir IDs de todas las inscripciones del alumno (no sólo la primera)
+      billable.forEach(x => {
+        const insId = x.ins.ID_INSCRIPCION||x.ins.ID||'';
+        if (insId && !famInsIds.includes(insId)) famInsIds.push(insId);
+      });
       if (!famLinea) famLinea = billable[0]?.act?.LINEA||'';
     });
     _gmData.push({ cliId, servicios: famServicios.join(' / '), insIds: famInsIds, linea: famLinea,
@@ -4577,7 +4578,7 @@ function _gmPreview() {
       alumnos:  famAluNombres.join(' + '),
       servicios: famServicios.join(' / '),
       total:    famTotal,
-      hermanos: perAlu.length > 1,
+      tieneDto: famDesc > 0.01,
     });
   }
   if (!_gmData.length) {
@@ -4587,11 +4588,11 @@ function _gmPreview() {
   const totalGral = preview.reduce((s,p)=>s+p.total,0);
   const bodyHtml = ''
     +'<p style="margin-bottom:12px">Se crearán <strong>'+_gmData.length+' pagos PENDIENTES</strong> (1 por familia) para <strong>'+esc(_gmMes)+'</strong> · '+esc(_gmLinea||'Todas las líneas')+'.<br>'
-    +'<span style="font-size:12px;color:var(--text3)">Familias con pago ya registrado este mes quedan excluidas. Hermanos agrupados en un único pago con descuento del 10% aplicado.</span></p>'
+    +'<span style="font-size:12px;color:var(--text3)">Familias con pago ya registrado este mes quedan excluidas. Hermanos agrupados en un único pago. Los descuentos se leen de cada inscripción.</span></p>'
     +'<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Familia</th><th>Alumnos</th><th>Actividad/es</th><th>Importe</th></tr></thead><tbody>'
     +preview.map(p=>
       '<tr><td>'+esc(p.familia)+'</td>'
-      +'<td>'+esc(p.alumnos)+(p.hermanos?' <span style="font-size:10px;color:var(--green)">-10%</span>':'')+'</td>'
+      +'<td>'+esc(p.alumnos)+(p.tieneDto?' <span style="font-size:10px;color:var(--green)">dto.</span>':'')+'</td>'
       +'<td style="font-size:11px;color:var(--text3)">'+esc(p.servicios)+'</td>'
       +'<td style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEur(p.total)+'</td></tr>'
     ).join('')
