@@ -5009,16 +5009,23 @@ function modalPago(p) {
   const isNew  = !p.ID_PAGO && !p.ID;
   const id     = p.ID_PAGO || p.ID || null;
   const mesActual = new Date().toISOString().slice(0,7);
-  const modoInicial = LINEAS_EXT.includes(p.LINEA) ? 'externo' : 'alumno';
+  const esFamiliar     = !isNew && !p.ID_ALUMNO && !!p.ID_CLIENTE && !LINEAS_EXT.includes(p.LINEA||'');
+  const modoInicial    = esFamiliar ? 'familiar' : LINEAS_EXT.includes(p.LINEA) ? 'externo' : 'alumno';
   const tipoExtInicial = LINEAS_EXT.includes(p.LINEA) ? p.LINEA : 'AMPA';
+  const famCli    = esFamiliar ? (DB.clientes.find(c=>String(c.ID_CLIENTE||c.ID)===String(p.ID_CLIENTE))||null) : null;
+  const famNombre = famCli ? (famCli.NOMBRE+' '+(famCli.APELLIDOS||'')).trim() : '';
 
-  const opsAlu = DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
-    .map(a => `<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`)
-    .join('');
+  const opsAlu = esFamiliar
+    ? `<option value="__familiar__" selected>${esc(famNombre)} — pago familiar</option>`
+    : DB.alumnos.filter(a => String(a.ACTIVO||'').toUpperCase().startsWith('S'))
+        .map(a => `<option value="${a.ID_ALUMNO}" ${String(p.ID_ALUMNO)===String(a.ID_ALUMNO)?'selected':''}>${esc(a.NOMBRE+' '+(a.APELLIDOS||''))}</option>`)
+        .join('');
 
-  const insOps = p.ID_ALUMNO
-    ? '<option value="">— Selecciona —</option>' + _opcionesInscPago(String(p.ID_ALUMNO), p.ID_INSCRIPCION||'', p.ID_INSCRIPCION||'')
-    : '<option value="">— Selecciona primero un alumno —</option>';
+  const insOps = esFamiliar
+    ? `<option value="__familiar__" selected>${esc(p.SERVICIO||'Pago familiar')}</option>`
+    : p.ID_ALUMNO
+      ? '<option value="">— Selecciona —</option>' + _opcionesInscPago(String(p.ID_ALUMNO), p.ID_INSCRIPCION||'', p.ID_INSCRIPCION||'')
+      : '<option value="">— Selecciona primero un alumno —</option>';
 
   // Para externo: leer pagador de ID_PAGADOR_EXT o fallback a NOTAS legacy
   const pagExtId = p.ID_PAGADOR_EXT || '';
@@ -5033,7 +5040,7 @@ function modalPago(p) {
 
   openModal(isNew ? 'Registrar pago' : 'Editar pago', `
     <input type="hidden" id="p-modo" value="${modoInicial}">
-    <div class="field span2" style="margin-bottom:4px">
+    <div class="field span2" style="margin-bottom:4px;${esFamiliar?'display:none':''}">
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content">
         <button type="button" id="btn-modo-alumno"
           style="padding:5px 16px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:${modoInicial==='alumno'?'var(--g1)':'var(--bg2)'};color:${modoInicial==='alumno'?'#fff':'var(--text1)'}"
@@ -5044,7 +5051,7 @@ function modalPago(p) {
       </div>
     </div>
 
-    <div class="form-grid" id="p-seccion-alumno" style="display:${modoInicial==='alumno'?'grid':'none'}">
+    <div class="form-grid" id="p-seccion-alumno" style="display:${modoInicial==='alumno'||modoInicial==='familiar'?'grid':'none'}">
       <div class="field span2">
         <label>Alumno <span class="req">*</span></label>
         <select id="p-alu" onchange="actualizarInscPago()" ${!isNew?'disabled':''}>
@@ -5053,7 +5060,7 @@ function modalPago(p) {
       </div>
       <div class="field span2">
         <label>Inscripción / Concepto <span class="req">*</span></label>
-        <select id="p-insc" onchange="autorellenarPago(${!isNew})">
+        <select id="p-insc" onchange="autorellenarPago(${!isNew})" ${esFamiliar?'disabled':''}>
           ${insOps}
         </select>
       </div>
@@ -5207,6 +5214,7 @@ function modalPago(p) {
         <input id="p-fecha" type="date" value="${esc(p.FECHA||'')}">
       </div>
       <input type="hidden" id="p-cli" value="${esc(p.ID_CLIENTE||'')}">
+      <input type="hidden" id="p-familiar-insc" value="${esFamiliar?esc(p.ID_INSCRIPCION||''):''}">
       <div class="field span2">
         <label>Notas</label>
         <textarea id="p-notas">${esc(notasResto)}</textarea>
@@ -5412,6 +5420,23 @@ async function guardarPago(id) {
       ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
       FECHA:          document.getElementById('p-fecha')?.value || '',
       NOTAS:          notasExtra,
+    };
+  } else if (modo === 'familiar') {
+    row = {
+      ID_ALUMNO:      '',
+      ID_CLIENTE:     document.getElementById('p-cli')?.value || '',
+      ID_INSCRIPCION: document.getElementById('p-familiar-insc')?.value || '',
+      LINEA:          document.getElementById('p-linea')?.value || '',
+      SERVICIO:       document.getElementById('p-serv')?.value || '',
+      MES:            document.getElementById('p-mes')?.value.trim() || '',
+      IMPORTE:        document.getElementById('p-fact')?.value || '',
+      DESC_EUR:       document.getElementById('p-desc')?.value || '0',
+      TOTAL_ESPERADO: document.getElementById('p-neto')?.value || '',
+      TOTAL_RECIBIDO: document.getElementById('p-recib')?.value || '',
+      MÉTODO:         document.getElementById('p-metodo')?.value || '',
+      ESTADO:         document.getElementById('p-estado')?.value || 'PENDIENTE',
+      FECHA:          document.getElementById('p-fecha')?.value || '',
+      NOTAS:          document.getElementById('p-notas')?.value.trim() || '',
     };
   } else {
     const aluId   = document.getElementById('p-alu')?.value;
