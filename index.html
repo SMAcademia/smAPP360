@@ -1354,30 +1354,35 @@ function _actIdsRecogida() {
     .map(x => String(x.ID));
 }
 // Fuente de verdad: asistencias a recogida (temprana + tardía). Fallback a OBSERVACIONES si no hay datos live.
-function bonoUsosReales(aluId, actId) {
-  const aluIdStr = String(aluId);
-  const enSesion = s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr);
+// insc opcional: si se pasa, solo se cuentan asistencias desde su FECHA_ALTA (evita contar épocas de cuota mensual).
+function bonoUsosReales(aluId, actId, insc) {
+  const aluIdStr  = String(aluId);
+  const fechaMin  = insc ? String(insc.FECHA_ALTA||'').slice(0,10) : '';
+  const desdeBono = s => !fechaMin || String(s.FECHA||'').slice(0,10) >= fechaMin;
+  const enSesion  = s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr);
   // 1. Actividad propia del bono (por compatibilidad futura)
-  const propias = (DB.asistenciasExtra||[]).filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s));
+  const propias = (DB.asistenciasExtra||[]).filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s) && desdeBono(s));
   if (propias.length) return propias.length;
   // 2. Asistencias a recogida temprana + tardía (fuente principal real)
   const recIds = _actIdsRecogida();
   if (!recIds.length) return 0;
-  return (DB.asistenciasExtra||[]).filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s)).length;
+  return (DB.asistenciasExtra||[]).filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s) && desdeBono(s)).length;
 }
 function bonoFechasReales(aluId, actId, insc) {
-  const aluIdStr = String(aluId);
-  const enSesion = s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr);
+  const aluIdStr  = String(aluId);
+  const fechaMin  = insc ? String(insc.FECHA_ALTA||'').slice(0,10) : '';
+  const desdeBono = s => !fechaMin || String(s.FECHA||'').slice(0,10) >= fechaMin;
+  const enSesion  = s => String(s.ALUMNOS_PRESENTES||'').split(',').map(x=>x.trim()).includes(aluIdStr);
   // 1. Actividad propia del bono
   const propias = (DB.asistenciasExtra||[])
-    .filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s))
+    .filter(s => String(s.ID_ACTIVIDAD||'') === String(actId) && enSesion(s) && desdeBono(s))
     .map(s => String(s.FECHA||'')).filter(Boolean).sort();
   if (propias.length) return propias;
   // 2. Asistencias a recogida temprana + tardía (misma fuente que bonoUsosReales)
   const recIds = _actIdsRecogida();
   if (recIds.length) {
     const fechas = (DB.asistenciasExtra||[])
-      .filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s))
+      .filter(s => recIds.includes(String(s.ID_ACTIVIDAD||'')) && enSesion(s) && desdeBono(s))
       .map(s => String(s.FECHA||'')).filter(Boolean).sort();
     if (fechas.length) return fechas;
   }
@@ -1831,7 +1836,7 @@ function modalAlumno(a) {
       const cap    = esBono ? bonoCapacidad(act.NOMBRE) : 0;
       const aluIdStr = String(a.ID_ALUMNO||'');
       const actIdStr = String(i.ID_ACTIVIDAD||'');
-      const usosRealesVal = esBono ? bonoUsosReales(aluIdStr, actIdStr) : 0;
+      const usosRealesVal = esBono ? bonoUsosReales(aluIdStr, actIdStr, i) : 0;
       const usos   = esBono ? (usosRealesVal || bonoUsosCont(i)) : 0;
       const fechas = esBono ? bonoFechasReales(aluIdStr, actIdStr, i) : [];
       const inscId = String(i.ID_INSCRIPCION || i.ID || '');
@@ -3843,7 +3848,7 @@ function _comFamiliasBonoRenovar() {
     const cli = DB.clientes.find(c=>String(c.ID_CLIENTE)===String(alu.ID_CLIENTE));
     if (!cli) return null;
     const cap  = bonoCapacidad(act.NOMBRE||'');
-    const usos = bonoUsosReales(String(ins.ID_ALUMNO), String(ins.ID_ACTIVIDAD)) || bonoUsosCont(ins);
+    const usos = bonoUsosReales(String(ins.ID_ALUMNO), String(ins.ID_ACTIVIDAD), ins) || bonoUsosCont(ins);
     const rest = cap - usos;
     return {
       cliId: String(cli.ID_CLIENTE),
@@ -4381,7 +4386,7 @@ function _renderBonosPanel() {
     const cap  = bonoCapacidad(act?.NOMBRE||'');
     const aluIdStr2 = String(ins.ID_ALUMNO||'');
     const actIdStr2 = String(ins.ID_ACTIVIDAD||'');
-    const usosR = bonoUsosReales(aluIdStr2, actIdStr2);
+    const usosR = bonoUsosReales(aluIdStr2, actIdStr2, ins);
     const usos = usosR || bonoUsosCont(ins);
     const rest    = cap - usos;
     const agotado = rest <= 0;
@@ -4429,7 +4434,7 @@ function _bonoAvisarWA(inscId) {
   const tel = String(cli['TELÉFONO']||cli.TELEFONO||'').replace(/\D/g,'');
   if (!tel) { showToast('Esta familia no tiene teléfono registrado','error'); return; }
   const cap  = bonoCapacidad(act?.NOMBRE||'');
-  const usos = bonoUsosReales(String(ins.ID_ALUMNO), String(ins.ID_ACTIVIDAD)) || bonoUsosCont(ins);
+  const usos = bonoUsosReales(String(ins.ID_ALUMNO), String(ins.ID_ACTIVIDAD), ins) || bonoUsosCont(ins);
   const rest = cap - usos;
   const nomAlu = alu ? (alu.NOMBRE+' '+(alu.APELLIDOS||'')).trim() : '';
   const tutor  = (cli.NOMBRE||'').split(' ')[0];
@@ -4451,8 +4456,8 @@ function _bonoAvisarWA(inscId) {
 async function _comRegistrarUsoBono(inscId, usoActual, capacidad) {
   const insc = DB.inscripciones.find(i=>String(i.ID_INSCRIPCION||i.ID)===String(inscId));
   if (!insc) return;
-  // Releer siempre el valor real de la inscripción en memoria (evita usar valor obsoleto del render)
-  const usosReales = bonoUsosCont(insc);
+  // Usar asistencias reales filtradas desde FECHA_ALTA para evitar contar épocas de cuota mensual
+  const usosReales = bonoUsosReales(String(insc.ID_ALUMNO||''), String(insc.ID_ACTIVIDAD||''), insc) || bonoUsosCont(insc);
   if (usosReales >= capacidad) { showToast('Bono agotado — crea una nueva inscripción','error'); return; }
   const hoy = new Date().toISOString().slice(0,10);
   const nuevaObs = bonoObsActualizada(insc, usosReales + 1, hoy);
@@ -12136,7 +12141,8 @@ async function _procesarBonosYBajas(actId, fecha, presentes, checks, prev) {
     const inscAct = DB.actividades.find(a => String(a.ID) === String(insc.ID_ACTIVIDAD));
     if (!inscAct || !esBonoUsos(inscAct.NOMBRE||'')) continue;
     const cap  = bonoCapacidad(inscAct.NOMBRE);
-    const usos = bonoUsosCont(insc);
+    // Usar asistencias reales filtradas desde FECHA_ALTA del bono (evita contar época de cuota mensual)
+    const usos = bonoUsosReales(aluId, String(insc.ID_ACTIVIDAD||''), insc) || bonoUsosCont(insc);
     if (usos >= cap) {
       showToast(`Bono agotado — ${DB.alumnos.find(a=>String(a.ID_ALUMNO)===aluId)?.NOMBRE||aluId}`, 'warn');
       continue;
@@ -14302,7 +14308,7 @@ function portalFamilia() {
               const cap   = bonoCapacidad(act.NOMBRE);
               const aluIdP = String(i.ID_ALUMNO||'');
               const actIdP = String(i.ID_ACTIVIDAD||'');
-              const usosR2 = bonoUsosReales(aluIdP, actIdP);
+              const usosR2 = bonoUsosReales(aluIdP, actIdP, i);
               const usos  = usosR2 || bonoUsosCont(i);
               const rest  = cap - usos;
               const pct   = cap>0?Math.round(usos/cap*100):0;
