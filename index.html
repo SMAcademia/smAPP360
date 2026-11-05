@@ -4513,8 +4513,11 @@ function _gmPreview() {
   _gmData  = [];
 
   const actsOk = DB.actividades.filter(a => {
+    const nombre = sinTildes(a.NOMBRE||'');
+    // Las recogidas (temprana/tardía) son siempre extraescolares, aunque su LINEA difiera
+    const esRecogidaAct = _COM_RECOGIDA_RE.test(nombre);
     const lineaOk = !_gmLinea
-      || (_gmLinea==='EXTRAESCOLARES' && esExtraescolar(a.LINEA||''))
+      || (_gmLinea==='EXTRAESCOLARES' && (esExtraescolar(a.LINEA||'') || esRecogidaAct))
       || (_gmLinea==='FUTBOL' && esFutbol(a.LINEA||''));
     return lineaOk && String(a.ACTIVA||'').toUpperCase().startsWith('S');
   });
@@ -4587,7 +4590,25 @@ function _gmPreview() {
     });
   }
   if (!_gmData.length) {
-    showToast('Todas las familias ya tienen pago registrado para '+_gmMes, 'info');
+    // Diagnóstico: calcular cuántas familias se omitieron y por qué
+    const mesFiltroNorm = _mesNorm(_gmMes);
+    let nYaTiene = 0, nSinInscs = 0;
+    for (const [cliId, data] of Object.entries(byCliente)) {
+      const aluIds2 = [...data.aluIds];
+      const yaT = DB.pagos.some(p => {
+        const esCli2 = String(p.ID_CLIENTE)===cliId || aluIds2.includes(String(p.ID_ALUMNO));
+        return esCli2 && _mesNorm(p.MES)===mesFiltroNorm && !['ANULADO','ANULADA'].includes(String(p.ESTADO||'').toUpperCase());
+      });
+      if (yaT) nYaTiene++; else nSinInscs++;
+    }
+    const diagHtml = `<p style="color:var(--text3);font-size:13px">No hay pagos nuevos que generar para <strong>${esc(_gmMes)}</strong> · ${esc(_gmLinea||'Todas las líneas')}.</p>`
+      + `<ul style="font-size:12px;color:var(--text3);margin-top:8px">`
+      + `<li>${nYaTiene} familia${nYaTiene!==1?'s':''} ya tienen pago registrado este mes.</li>`
+      + (nSinInscs ? `<li>${nSinInscs} familia${nSinInscs!==1?'s con inscripciones':' con inscripciones'} activas sin importes facturables (revisar precios o bonos).</li>` : '')
+      + (Object.keys(byCliente).length===0 ? '<li>No se encontraron inscripciones activas para la línea y mes seleccionados.</li>' : '')
+      + `</ul>`;
+    openModal('Generar pagos — '+esc(_gmMes), diagHtml,
+      '<button class="btn btn-secondary" onclick="_renderGmFiltros()">← Cambiar filtros</button>');
     return;
   }
   const totalGral = preview.reduce((s,p)=>s+p.total,0);
