@@ -3418,7 +3418,13 @@ function toggleDescuentoRc() {
 
 async function guardarRegistroCompleto() {
   const btn = document.getElementById('rc-save-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    // Cancelar el timer de 8 s del wrapper de openModal para que el botón
+    // no se re-habilite mientras la operación async sigue en curso
+    if (btn._unblockTimer) { clearTimeout(btn._unblockTimer); btn._unblockTimer = null; }
+  }
   const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Guardar todo'; } };
 
   try {
@@ -3483,10 +3489,10 @@ async function guardarRegistroCompleto() {
         }, null);
         await loadAllData();
 
-        const fullName = (nombre + ' ' + apellidos).trim().toUpperCase();
+        const fullName = sinTildes((nombre + ' ' + apellidos).trim());
         const newAlu   = DB.alumnos.find(a =>
           String(a.ID_CLIENTE) === String(cliId) &&
-          (a.NOMBRE + ' ' + (a.APELLIDOS||'')).trim().toUpperCase() === fullName
+          sinTildes((a.NOMBRE + ' ' + (a.APELLIDOS||'')).trim()) === fullName
         );
         if (!newAlu) throw new Error('No se pudo recuperar el alumno creado: ' + nombre);
         aluId = newAlu.ID_ALUMNO;
