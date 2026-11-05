@@ -3421,11 +3421,10 @@ async function guardarRegistroCompleto() {
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'Guardando…';
-    // Cancelar el timer de 8 s del wrapper de openModal para que el botón
-    // no se re-habilite mientras la operación async sigue en curso
     if (btn._unblockTimer) { clearTimeout(btn._unblockTimer); btn._unblockTimer = null; }
   }
-  const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Guardar todo'; } };
+  const resetBtn  = () => { if (btn) { btn.disabled = false; btn.textContent = 'Guardar todo'; } };
+  const setStatus = txt => { if (btn) btn.textContent = txt; };
 
   try {
     const modo = document.querySelector('input[name="rc-cli-modo"]:checked')?.value;
@@ -3437,6 +3436,7 @@ async function guardarRegistroCompleto() {
       if (!cliNombre || !cliEmail) throw new Error('Nombre y email del cliente son obligatorios');
       if (DB.clientes.find(c => (c.EMAIL||'').toLowerCase() === cliEmail))
         throw new Error('Ya existe un cliente con ese email (' + cliEmail + ')');
+      setStatus('Creando cliente…');
       await writeToSheet('CLIENTES', {
         NOMBRE:     cliNombre,
         APELLIDOS:  document.getElementById('rc-cn-apellidos')?.value.trim() || '',
@@ -3445,6 +3445,7 @@ async function guardarRegistroCompleto() {
         ACTIVO:     'SÍ',
         FECHA_ALTA: new Date().toISOString().slice(0,10),
       }, null);
+      setStatus('Cargando…');
       await loadAllData();
       const newCli = DB.clientes.find(c => (c.EMAIL||'').toLowerCase() === cliEmail);
       if (!newCli) throw new Error('No se pudo recuperar el cliente creado');
@@ -3461,47 +3462,61 @@ async function guardarRegistroCompleto() {
     const dto    = dtoSel === 'custom' ? (document.getElementById('rc-dto')?.value || '0') : dtoSel;
     const fpago  = document.getElementById('rc-fpago').value;
     const falta  = document.getElementById('rc-falta').value;
-    let totalIns = 0;
+
+    // Separar alumnos existentes de nuevos para crear todos en un único batch
+    const newAluEntries  = []; // {card, nombre, apellidos, linea, rowObj}
+    const existAluCards  = []; // {card, aluId}
 
     for (const card of aluCards) {
       const existingAluId = card.querySelector('.alu-id-existente')?.value;
-      let aluId;
-
       if (existingAluId) {
-        aluId = existingAluId;
+        existAluCards.push({ card, aluId: existingAluId });
       } else {
         const nombre    = card.querySelector('.alu-nombre')?.value.trim();
         const apellidos = card.querySelector('.alu-apellidos')?.value.trim() || '';
         const linea     = card.querySelector('.alu-linea')?.value;
         if (!nombre) throw new Error('El nombre del alumno es obligatorio');
         if (!linea)  throw new Error('Selecciona la línea para el alumno ' + nombre);
+        newAluEntries.push({
+          card, nombre, apellidos, linea,
+          rowObj: {
+            NOMBRE:          nombre,
+            APELLIDOS:       apellidos,
+            LINEA:           linea,
+            CENTRO:          esExtraescolar(linea) ? (card.querySelector('.alu-centro')?.value.trim() || '') : '',
+            FECHA_NAC:       card.querySelector('.alu-fnac')?.value || '',
+            CURSO:           card.querySelector('.alu-curso')?.value || '',
+            ID_CLIENTE:      cliId,
+            'CESIÓN_IMAGEN': card.querySelector('.alu-img')?.value || 'SÍ',
+            ACTIVO:          'SÍ',
+          },
+        });
+      }
+    }
 
-        await writeToSheet('ALUMNOS', {
-          NOMBRE:          nombre,
-          APELLIDOS:       apellidos,
-          LINEA:           linea,
-          CENTRO:          esExtraescolar(linea) ? (card.querySelector('.alu-centro')?.value.trim() || '') : '',
-          FECHA_NAC:       card.querySelector('.alu-fnac')?.value || '',
-          CURSO:           card.querySelector('.alu-curso')?.value || '',
-          ID_CLIENTE:      cliId,
-          'CESIÓN_IMAGEN': card.querySelector('.alu-img')?.value || 'SÍ',
-          ACTIVO:          'SÍ',
-        }, null);
-        await loadAllData();
-
-        const fullName = sinTildes((nombre + ' ' + apellidos).trim());
+    // Crear todos los alumnos nuevos en una sola llamada batch
+    let resolvedCards = [...existAluCards]; // {card, aluId}
+    if (newAluEntries.length) {
+      setStatus(`Guardando ${newAluEntries.length} alumno(s)…`);
+      await writeBatchToSheet('ALUMNOS', newAluEntries.map(e => e.rowObj));
+      setStatus('Actualizando datos…');
+      await loadAllData();
+      for (const e of newAluEntries) {
+        const fullName = sinTildes((e.nombre + ' ' + e.apellidos).trim());
         const newAlu   = DB.alumnos.find(a =>
           String(a.ID_CLIENTE) === String(cliId) &&
           sinTildes((a.NOMBRE + ' ' + (a.APELLIDOS||'')).trim()) === fullName
         );
-        if (!newAlu) throw new Error('No se pudo recuperar el alumno creado: ' + nombre);
-        aluId = newAlu.ID_ALUMNO;
+        if (!newAlu) throw new Error('No se pudo recuperar el alumno: ' + e.nombre);
+        resolvedCards.push({ card: e.card, aluId: newAlu.ID_ALUMNO });
       }
+    }
 
-      const aluLinea = existingAluId
-        ? (DB.alumnos.find(a => String(a.ID_ALUMNO) === String(existingAluId))?.LINEA || '')
-        : (card.querySelector('.alu-linea')?.value || '');
-
+    // Recopilar todas las inscripciones
+    const allInsRows = [];
+    for (const { card, aluId } of resolvedCards) {
+      const aluLinea = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(aluId))?.LINEA
+        || card.querySelector('.alu-linea')?.value || '';
       const insRows = [...card.querySelectorAll('.ins-act-entry')].map(entry => {
         const actId = entry.querySelector('.rc-act-sel')?.value;
         if (!actId) return null;
@@ -3524,13 +3539,16 @@ async function guardarRegistroCompleto() {
           ESTADO:          'ACTIVA',
         };
       }).filter(Boolean);
-
       if (!insRows.length) throw new Error('Añade al menos una actividad para el alumno seleccionado');
-      for (const row of insRows) { await writeToSheet('INSCRIPCIONES', row, null); totalIns++; }
+      allInsRows.push(...insRows);
     }
 
+    // Crear todas las inscripciones en una sola llamada batch
+    setStatus(`Guardando ${allInsRows.length} inscripción(es)…`);
+    await writeBatchToSheet('INSCRIPCIONES', allInsRows);
+    setStatus('Finalizando…');
     await loadAllData();
-    showToast(aluCards.length + ' alumno(s), ' + totalIns + ' inscripción(es) creadas');
+    showToast(aluCards.length + ' alumno(s), ' + allInsRows.length + ' inscripción(es) creadas');
     closeModal();
     inscripciones();
 
