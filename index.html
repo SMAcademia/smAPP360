@@ -1780,22 +1780,53 @@ function alumnos() {
 
   const seccion = (titulo, icono, lista, mostrarCentro) => {
     if (!lista.length) return '';
-    const idTbl = 'tbl-alu-'+titulo.replace(/\s/g,'');
-    const idQ   = 'q-alu-'+titulo.replace(/\s/g,'');
+    const slug    = titulo.replace(/\s/g,'');
+    const idTbl   = 'tbl-alu-' + slug;
+    const idQ     = 'q-alu-'   + slug;
+    const idBody  = 'body-alu-' + slug;
+    const storKey = 'alu-open-' + slug;
+    let open;
+    try { open = localStorage.getItem(storKey); } catch(_) {}
+    // Por defecto abierto; si el usuario lo cerró queda cerrado
+    const expanded = open !== '0';
+    const chevron  = expanded ? '▼' : '▶';
     const thead = `<tr><th>ID</th><th>Nombre</th><th>Curso</th><th>Fecha nac.</th><th>Cliente</th>${mostrarCentro?'<th>Centro</th>':''}<th>Estado</th><th></th></tr>`;
     return `
-      <div class="card" style="padding:14px 20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div style="font-size:14px;font-weight:700">${icono} ${titulo} <span style="font-size:12px;font-weight:400;color:var(--text3)">(${lista.length})</span></div>
-          <input class="search-input" id="${idQ}" placeholder="Buscar…" oninput="filterTable('${idQ}','${idTbl}')" style="width:180px">
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;cursor:pointer;user-select:none"
+             onclick="_aluToggle('${idBody}','${storKey}',this)">
+          <div style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--text3);min-width:12px" id="chev-${slug}">${chevron}</span>
+            ${icono} ${titulo}
+            <span style="font-size:12px;font-weight:400;color:var(--text3)">(${lista.length})</span>
+          </div>
+          <input class="search-input" id="${idQ}" placeholder="Buscar…"
+                 oninput="filterTable('${idQ}','${idTbl}')"
+                 onclick="event.stopPropagation()"
+                 style="width:180px;${expanded?'':'display:none'}">
         </div>
-        <div class="table-wrap">
-          <table id="${idTbl}">
-            <thead>${thead}</thead>
-            <tbody>${lista.map(a=>filaAlumno(a,mostrarCentro)).join('')}</tbody>
-          </table>
+        <div id="${idBody}" style="${expanded?'':'display:none'};padding:0 20px 14px">
+          <div class="table-wrap">
+            <table id="${idTbl}">
+              <thead>${thead}</thead>
+              <tbody>${lista.map(a=>filaAlumno(a,mostrarCentro)).join('')}</tbody>
+            </table>
+          </div>
         </div>
       </div>`;
+  };
+
+  window._aluToggle = function(bodyId, storKey, header) {
+    const body    = document.getElementById(bodyId);
+    const slug    = bodyId.replace('body-alu-','');
+    const chevron = document.getElementById('chev-' + slug);
+    const search  = header.querySelector('.search-input');
+    if (!body) return;
+    const opening = body.style.display === 'none';
+    body.style.display    = opening ? '' : 'none';
+    if (chevron) chevron.textContent = opening ? '▼' : '▶';
+    if (search)  search.style.display = opening ? '' : 'none';
+    try { localStorage.setItem(storKey, opening ? '1' : '0'); } catch(_) {}
   };
 
   const totalActivos = DB.alumnos.filter(a=>String(a.ACTIVO||'S').toUpperCase().startsWith('S')).length;
