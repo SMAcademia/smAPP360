@@ -13000,10 +13000,10 @@ function presupuesto() {
       <div class="form-grid" style="gap:10px">
         <div class="field span2"><label>Cliente / Proyecto</label>
           <input id="pres-cliente" placeholder="Nombre del cliente o proyecto" oninput="window._presCalc()"></div>
-        <div class="field"><label>Costes fijos proporcionales (€)</label>
+        <div class="field"><label>Costes operativos (€)</label>
           <input id="pres-fijos" type="number" value="0" min="0" step="0.01" oninput="window._presCalc()"></div>
-        <div class="field"><label>Margen deseado (%)</label>
-          <input id="pres-margen" type="number" value="20" min="0" step="1" oninput="window._presCalc()"></div>
+        <div class="field"><label>Margen interno (%)</label>
+          <input id="pres-margen" type="number" value="20" min="0" step="1" oninput="window._presCalc()" title="Solo para cálculo interno — no aparece en el PDF"></div>
         <div class="field"><label>Impuesto</label>
           <select id="pres-imp" onchange="window._presToggleTax()">
             <option value="0">Sin impuesto (0 %)</option>
@@ -13082,40 +13082,77 @@ function presupuesto() {
     const cliente = document.getElementById('pres-cliente')?.value||'';
     document.getElementById('pres-proyecto').textContent = cliente ? 'Cliente: '+cliente : '';
 
-    const fila = (label, valor, bold, highlight) =>
-      `<tr style="${highlight?'border-top:2px solid var(--border)':''}">
-        <td style="padding:9px 0;border-bottom:1px solid var(--border2);font-size:13px;${bold?'font-weight:700':'color:var(--text2)'}">${label}</td>
+    const fila = (label, valor, bold, highlight, interno) =>
+      `<tr style="${highlight?'border-top:2px solid var(--border)':''}${interno?';opacity:.55':''}">
+        <td style="padding:9px 0;border-bottom:1px solid var(--border2);font-size:13px;${bold?'font-weight:700':'color:var(--text2)'}${interno?';font-style:italic':''}">${label}</td>
         <td style="padding:9px 0;border-bottom:1px solid var(--border2);text-align:right;font-size:13px;font-weight:${bold?'700':'600'};${highlight?'color:var(--green);font-size:15px':''}">${valor}</td>
       </tr>`;
 
     document.getElementById('pres-tbody').innerHTML =
-      fila('Total costes directos',        fmt(directos))   +
-      fila('Costes fijos proporcionales',  fmt(fijos))      +
-      fila('Coste total base',             fmt(base), true) +
-      fila(`Margen de beneficio (${margen}%)`, fmt(beneficio)) +
-      fila('Base imponible (subtotal)',    fmt(subtotal), true) +
-      fila(`Impuesto (${impPct}%)`,        fmt(impuesto))   +
-      fila('TOTAL PRESUPUESTO',            fmt(total), true, true);
+      fila('Total conceptos',                                    fmt(directos))             +
+      (fijos   ? fila('Costes operativos',                       fmt(fijos))               : '') +
+      fila('Base (antes de margen interno)',                      fmt(base),    true)        +
+      (margen  ? fila(`Margen interno (${margen}%) — no visible en PDF`, fmt(beneficio), false, false, true) : '') +
+      fila('Base imponible',                                     fmt(subtotal), true)        +
+      (impPct  ? fila(`Impuesto (${impPct}%)`,                   fmt(impuesto))             : '') +
+      fila('TOTAL PRESUPUESTO',                                  fmt(total),   true, true);
   };
 
   window._presImprimir = function() {
     const cliente  = document.getElementById('pres-cliente')?.value || '';
     const rows     = document.querySelectorAll('#pres-items > div');
+
+    // Conceptos
     const itemsHtml = [...rows].map(r => {
       const inputs = r.querySelectorAll('input');
       const nombre = inputs[0].value || '—';
       const imp    = parseFloat(inputs[1].value)||0;
-      return `<tr><td>${esc(nombre)}</td><td style="text-align:right">${fmt(imp)}</td></tr>`;
+      return `<tr><td style="padding:6px 0;border-bottom:1px solid #eee">${esc(nombre)}</td><td style="text-align:right;padding:6px 0;border-bottom:1px solid #eee">${fmt(imp)}</td></tr>`;
     }).join('');
-    const resumen  = document.getElementById('pres-tbody')?.innerHTML || '';
-    const titulo   = 'Presupuesto' + (cliente ? ' — '+cliente : '');
+
+    // Recalcular valores para el PDF (mismo cálculo que _presCalc)
+    let directos = 0;
+    rows.forEach(r => { const inp = r.querySelectorAll('input'); directos += parseFloat(inp[1].value)||0; });
+    const fijos    = parseFloat(document.getElementById('pres-fijos')?.value) || 0;
+    const margen   = parseFloat(document.getElementById('pres-margen')?.value) || 0;
+    const sel      = document.getElementById('pres-imp');
+    const impPct   = sel?.value==='custom'
+      ? (parseFloat(document.getElementById('pres-imp-custom')?.value)||0)
+      : (parseFloat(sel?.value)||0);
+    const base       = directos + fijos;
+    const beneficio  = base * (margen/100);
+    const subtotal   = base + beneficio;
+    const impuesto   = subtotal * (impPct/100);
+    const total      = subtotal + impuesto;
+
+    // Costes operativos para el PDF = fijos + margen internos (sin desgranar)
+    const costesOp = fijos + beneficio;
+
+    const filaP = (label, valor, bold, highlight) =>
+      `<tr style="${highlight?'border-top:2px solid #ccc':''}">
+        <td style="padding:7px 0;border-bottom:1px solid #eee;font-size:12px;${bold?'font-weight:700':'color:#555'}">${label}</td>
+        <td style="padding:7px 0;border-bottom:1px solid #eee;text-align:right;font-size:12px;font-weight:${bold?'700':'600'};${highlight?'font-size:14px':'color:#333'}">${valor}</td>
+      </tr>`;
+
+    const desgloseHtml =
+      (costesOp > 0.005 ? filaP('Costes operativos', fmt(costesOp)) : '') +
+      filaP('Base imponible',       fmt(subtotal), true) +
+      (impuesto > 0 ? filaP(`Impuesto (${impPct}%)`, fmt(impuesto)) : '') +
+      filaP('TOTAL',                fmt(total),    true, true);
+
+    const titulo = 'Presupuesto' + (cliente ? ' — ' + cliente : '');
     exportarPDF(titulo, `
-      ${cliente ? `<p style="font-weight:600;margin-bottom:12px">Cliente / Proyecto: ${esc(cliente)}</p>` : ''}
-      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#666;margin-bottom:6px">Conceptos</h3>
-      <table><thead><tr><th>Concepto</th><th style="text-align:right">Importe</th></tr></thead>
-        <tbody>${itemsHtml}</tbody></table>
-      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#666;margin:16px 0 6px">Desglose</h3>
-      <table><tbody>${resumen}</tbody></table>`);
+      ${cliente ? `<p style="font-weight:600;margin-bottom:14px;font-size:13px">Cliente / Proyecto: ${esc(cliente)}</p>` : ''}
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#888;margin-bottom:6px">Conceptos</h3>
+      <table style="width:100%">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 0;border-bottom:2px solid #ccc;font-size:12px">Concepto</th>
+          <th style="text-align:right;padding:6px 0;border-bottom:2px solid #ccc;font-size:12px">Importe</th>
+        </tr></thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#888;margin:18px 0 6px">Resumen</h3>
+      <table style="width:100%"><tbody>${desgloseHtml}</tbody></table>`);
   };
 
   window._presNuevo = function() {
