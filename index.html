@@ -13225,8 +13225,20 @@ let _resCfg = (function() {
 function _resSaveCfg() { try { localStorage.setItem('res-cfg', JSON.stringify(_resCfg)); } catch(_) {} }
 
 function _resDiasDisp()  { return _resCfg.dias  || [0, 2, 4]; }
-function _resHoraIni()   { return _resCfg.hIni  ?? 9; }
-function _resHoraFin()   { return _resCfg.hFin  ?? 21; }
+// Hora como "HH:MM" — soporta medias horas (p.ej. "18:30")
+function _resHoraIni()   {
+  const v = _resCfg.hIni;
+  if (!v && v !== 0) return '17:00';
+  if (typeof v === 'number') return String(v).padStart(2,'0') + ':00'; // compat antigua config
+  return v;
+}
+function _resHoraFin()   {
+  const v = _resCfg.hFin;
+  if (!v) return '18:30';
+  if (typeof v === 'number') return String(v).padStart(2,'0') + ':00';
+  return v;
+}
+function _resMins(t)     { const [h,m] = String(t||'0:0').split(':').map(Number); return h*60+m; }
 function _resWA()        { return _resCfg.wa    || ''; }
 function _resDurDef()    { return _resCfg.dur   || 60; }
 
@@ -13342,8 +13354,11 @@ function _resCalHtml() {
   const lunes = new Date(+_resLunes(new Date()) + _resCalOffset * 7 * 86400000);
   const dias  = Array.from({length:7}, (_,i) => new Date(+lunes + i*86400000));
   const hIni  = _resHoraIni(); const hFin = _resHoraFin();
+  const iniMin = _resMins(hIni), finMin = _resMins(hFin);
   const slots = [];
-  for (let h = hIni; h < hFin; h++) { slots.push(h + ':00'); slots.push(h + ':30'); }
+  for (let m = iniMin; m < finMin; m += 30) {
+    slots.push(String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'));
+  }
 
   const lunes_str   = lunes.toLocaleDateString('es-ES',{day:'numeric',month:'short'});
   const domingo_str = dias[6].toLocaleDateString('es-ES',{day:'numeric',month:'short'});
@@ -13407,7 +13422,7 @@ function _resCalHtml() {
     const resHtml = resDelDia.map(r => {
       const [sh,sm]  = (r.HORA_INICIO||'09:00').split(':').map(Number);
       const [eh,em]  = (r.HORA_FIN||'10:00').split(':').map(Number);
-      const topMin   = (sh*60+sm) - hIni*60;
+      const topMin   = (sh*60+sm) - iniMin;
       const durMin   = (eh*60+em) - (sh*60+sm);
       const topPx    = (topMin/30) * slotH;
       const hPx      = Math.max((durMin/30) * slotH - 2, 20);
@@ -13714,9 +13729,9 @@ function _resModalConfig() {
         <div style="display:flex;flex-wrap:wrap;gap:12px">${diaChecks}</div>
       </div>
       <div class="field"><label>Hora inicio</label>
-        <input id="rcfg-hini" type="number" min="0" max="23" value="${_resHoraIni()}"></div>
+        <input id="rcfg-hini" type="time" value="${_resHoraIni()}"></div>
       <div class="field"><label>Hora fin</label>
-        <input id="rcfg-hfin" type="number" min="1" max="24" value="${_resHoraFin()}"></div>
+        <input id="rcfg-hfin" type="time" value="${_resHoraFin()}"></div>
       <div class="field"><label>Duración por defecto (min)</label>
         <select id="rcfg-dur">
           ${[30,45,60,90,120].map(d=>`<option value="${d}" ${_resDurDef()===d?'selected':''}>${d} min</option>`).join('')}
@@ -13733,8 +13748,8 @@ function _resModalConfig() {
 function _resGuardarConfig() {
   const dias = [...document.querySelectorAll('.res-dia-chk:checked')].map(c => Number(c.value));
   _resCfg.dias = dias;
-  _resCfg.hIni = Number(document.getElementById('rcfg-hini')?.value) || 9;
-  _resCfg.hFin = Number(document.getElementById('rcfg-hfin')?.value) || 21;
+  _resCfg.hIni = document.getElementById('rcfg-hini')?.value || '17:00';
+  _resCfg.hFin = document.getElementById('rcfg-hfin')?.value || '18:30';
   _resCfg.dur  = Number(document.getElementById('rcfg-dur')?.value)  || 60;
   _resCfg.wa   = document.getElementById('rcfg-wa')?.value.trim() || '';
   _resSaveCfg();
