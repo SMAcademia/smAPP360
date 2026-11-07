@@ -13239,11 +13239,50 @@ let _resTabActual = 'dashboard';
 let _resCalOffset = 0;
 
 // ── Capacidad ─────────────────────────────────────────────────────────────
+function _resParseDias(str) {
+  if (!str) return [];
+  const names = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
+  return String(str).split(/[,;\s\/]+/).flatMap(s => {
+    s = s.trim(); if (!s) return [];
+    const n = parseInt(s);
+    if (!isNaN(n) && n >= 0 && n <= 6) return [n];
+    const idx = names.findIndex(d => d.startsWith(sinTildes(s.toLowerCase()).slice(0,3)));
+    return idx >= 0 ? [idx] : [];
+  });
+}
+
 function _resAbonados(fecha) {
-  const dow = new Date(fecha + 'T12:00:00').getDay();
-  return (DB.abonados || []).filter(a =>
-    Number(a.DIA_SEMANA) === dow && String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')
-  );
+  const dow    = new Date(fecha + 'T12:00:00').getDay();
+  const filtro = sinTildes((_resCfg.actividadFiltro || '').trim().toLowerCase());
+
+  // Derivados de inscripciones activas
+  const desdeIns = (DB.inscripciones || [])
+    .filter(ins => {
+      if ((ins.ESTADO || 'ACTIVA').toUpperCase() === 'BAJA') return false;
+      if (filtro) {
+        const act = (DB.actividades || []).find(a => String(a.ID) === String(ins.ID_ACTIVIDAD));
+        if (!act || !sinTildes((act.NOMBRE || '').toLowerCase()).includes(filtro)) return false;
+      }
+      return _resParseDias(ins.DIAS_SEMANA).includes(dow);
+    })
+    .map(ins => {
+      const alu  = (DB.alumnos || []).find(a => String(a.ID_ALUMNO) === String(ins.ID_ALUMNO));
+      const nombre = [alu?.NOMBRE, alu?.APELLIDOS].filter(Boolean).join(' ') || ('Alumno #' + ins.ID_ALUMNO);
+      return { _tipo:'ins', ID: ins.ID_INSCRIPCION, NOMBRE: nombre, DIA_SEMANA: dow, TELEFONO: alu?.TELEFONO||'', ACTIVO:'SÍ' };
+    });
+
+  // Entradas manuales de la hoja ABONADOS (complemento para casos especiales)
+  const manuales = (DB.abonados || [])
+    .filter(a => Number(a.DIA_SEMANA) === dow && String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S'))
+    .map(a => ({ ...a, _tipo:'manual' }));
+
+  // Deduplicar por nombre (por si un abonado manual coincide con inscripción)
+  const vistos = new Set();
+  return [...desdeIns, ...manuales].filter(a => {
+    const k = sinTildes((a.NOMBRE||'').toUpperCase());
+    if (vistos.has(k)) return false;
+    vistos.add(k); return true;
+  });
 }
 function _resOcupadas(fecha) {
   return DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA').length;
@@ -13480,42 +13519,53 @@ function _resAbonadosHtml() {
   const porDia = {};
   _resDiasDisp().forEach(d => { porDia[d] = lista.filter(a => Number(a.DIA_SEMANA) === d && String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')); });
 
+  const filtro  = _resCfg.actividadFiltro || '';
+  const totalActivos = _resDiasDisp().reduce((s,d) => {
+    const f0 = new Date().toISOString().slice(0,10);
+    // find next occurrence of this dow
+    const base = new Date(); base.setHours(12,0,0,0);
+    for (let i=0;i<7;i++) { const t = new Date(+base+i*86400000); if(t.getDay()===d){ return s + _resAbonados(t.toISOString().slice(0,10)).length; } }
+    return s;
+  }, 0);
+
   const filaAbonado = a => {
-    const activo = String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S');
+    const esMod = a._tipo === 'manual';
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2)">
-      <div style="width:4px;height:36px;border-radius:2px;background:${activo?'var(--primary)':'var(--border)'};flex-shrink:0"></div>
+      <div style="width:4px;height:36px;border-radius:2px;background:var(--primary);flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600">${esc(a.NOMBRE||'—')}</div>
-        <div style="font-size:11px;color:var(--text3)">${_RES_DIA_FULL[Number(a.DIA_SEMANA)]||'—'}${a.TELEFONO?' · '+esc(a.TELEFONO):''}${a.EMAIL?' · '+esc(a.EMAIL):''}</div>
+        <div style="font-size:11px;color:var(--text3)">${_RES_DIA_FULL[Number(a.DIA_SEMANA)]||'—'}${a.TELEFONO?' · '+esc(a.TELEFONO):''} · <em style="opacity:.7">${esMod?'manual':'desde inscripciones'}</em></div>
       </div>
-      ${!activo ? '<span style="font-size:11px;color:var(--red,#ef4444);font-weight:600">Baja</span>' : ''}
-      <button class="btn btn-sm btn-secondary" onclick='modalAbonado(${JSON.stringify(a)})'>Editar</button>
+      ${esMod ? `<button class="btn btn-sm btn-secondary" onclick='modalAbonado(${JSON.stringify(a)})'>Editar</button>` : ''}
     </div>`;
   };
-
-  const totalActivos = lista.filter(a => String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')).length;
 
   return `
     <div style="display:grid;gap:14px">
       <div class="card" style="padding:14px 20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div>
             <div style="font-size:13px;font-weight:700">Clientes con mensualidad fija</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">${totalActivos} abonado${totalActivos!==1?'s':''} activo${totalActivos!==1?'s':''} · Ocupan plaza fija cada semana</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Derivados de inscripciones activas${filtro?' · filtro: '+esc(filtro):''}</div>
           </div>
-          <button class="btn btn-primary" style="font-size:13px" onclick="modalAbonado()">+ Nuevo abonado</button>
+          <button class="btn btn-secondary" style="font-size:12px" onclick="modalAbonado()">+ Manual</button>
         </div>
-        ${lista.length === 0
-          ? '<p style="color:var(--text3);font-size:13px;margin:0">Sin abonados registrados. Añade el primero.</p>'
-          : lista.map(filaAbonado).join('')
-        }
+        ${filtro ? '' : `<div style="background:var(--amber,#f59e0b)1a;border:1px solid var(--amber,#f59e0b)44;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:12px">
+          ⚙️ Sin filtro configurado — se muestran <strong>todas</strong> las inscripciones activas con días que coincidan. Configura el nombre de actividad para limitar solo a entrenamiento.
+        </div>`}
       </div>
       ${_resDiasDisp().map(dow => {
-        const ab = porDia[dow] || [];
+        const base = new Date(); base.setHours(12,0,0,0);
+        let proxFecha = '';
+        for (let i=0;i<7;i++) { const t=new Date(+base+i*86400000); if(t.getDay()===dow){proxFecha=t.toISOString().slice(0,10);break;} }
+        const ab = proxFecha ? _resAbonados(proxFecha) : [];
         return `<div class="card" style="padding:12px 16px">
-          <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--primary)">${_RES_DIA_FULL[dow]} — ${ab.length}/${_RES_MAX_PLAZAS} plazas ocupadas por mensualidad</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700;color:var(--primary)">${_RES_DIA_FULL[dow]}</div>
+            <div style="font-size:12px;color:var(--text3)">${ab.length}/${_RES_MAX_PLAZAS} plazas · quedan ${_RES_MAX_PLAZAS-ab.length}</div>
+          </div>
           ${ab.length
-            ? ab.map(a=>`<div style="font-size:12px;padding:3px 0">📌 ${esc(a.NOMBRE||'—')}</div>`).join('')
+            ? ab.map(filaAbonado).join('')
             : `<div style="font-size:12px;color:var(--text3)">Sin abonados para este día</div>`}
         </div>`;
       }).join('')}
@@ -13737,6 +13787,10 @@ function _resModalConfig() {
       <div class="field span2"><label style="margin-bottom:6px;display:block">Días disponibles</label>
         <div style="display:flex;flex-wrap:wrap;gap:12px">${diaChecks}</div>
       </div>
+      <div class="field span2"><label>Filtrar abonados por nombre de actividad</label>
+        <input id="rcfg-act" placeholder="ej: entrenamiento" value="${esc(_resCfg.actividadFiltro||'')}">
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">Texto que debe contener el nombre de la actividad en Inscripciones. Vacío = todas las inscripciones activas.</div>
+      </div>
       <div class="field span2"><label>WhatsApp del entrenador</label>
         <input id="rcfg-wa" type="tel" placeholder="+34 600 000 000" value="${esc(_resWA())}"></div>
     </div>`,
@@ -13748,8 +13802,9 @@ function _resModalConfig() {
 
 function _resGuardarConfig() {
   const dias = [...document.querySelectorAll('.res-dia-chk:checked')].map(c => Number(c.value));
-  _resCfg.dias = dias;
-  _resCfg.wa   = document.getElementById('rcfg-wa')?.value.trim() || '';
+  _resCfg.dias            = dias;
+  _resCfg.actividadFiltro = document.getElementById('rcfg-act')?.value.trim() || '';
+  _resCfg.wa              = document.getElementById('rcfg-wa')?.value.trim() || '';
   _resSaveCfg();
   closeModal();
   showToast('Configuración guardada');
