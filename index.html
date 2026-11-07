@@ -2976,6 +2976,7 @@ function modalCambioActividad(aluId, inscId) {
     `<option value="${esc(String(a.ID))}"
       data-precio="${parseFloat(a.PRECIO||0).toFixed(2)}"
       data-linea="${esc(a.LINEA||'')}"
+      data-dias="${esc(String(a.DIAS_SEMANA||a.DIA_SEMANA||''))}"
     >${esc(a.NOMBRE)}${a.LINEA && a.LINEA !== lineaRef ? ' [' + esc(a.LINEA) + ']' : ''}</option>`
   ).join('');
 
@@ -3028,6 +3029,10 @@ function modalCambioActividad(aluId, inscId) {
         <label>Grupo (opcional)</label>
         <input id="ca-grupo" type="text" placeholder="Ej: A, 1, Tarde…" value="${esc(grupoInit)}">
       </div>
+      <div class="field span2">
+        <label>Días de asistencia <span class="req">*</span></label>
+        <div id="ca-dias-wrap" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"></div>
+      </div>
       <div class="field">
         <label>Forma de pago</label>
         <select id="ca-fpago">
@@ -3045,7 +3050,7 @@ function modalCambioActividad(aluId, inscId) {
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button id="ca-btn" class="btn btn-primary" onclick="guardarCambioActividad()">Confirmar cambio</button>`
   );
-  setTimeout(_caActualizarNeto, 50);
+  setTimeout(() => { _caActualizarNeto(); _caDiasActualizar_(); }, 50);
 }
 
 function _caOnInscChange() {
@@ -3108,6 +3113,21 @@ function _caActualizarPrecio() {
   const o = sel.options[sel.selectedIndex];
   const el = document.getElementById('ca-precio');
   if (el) el.value = o.dataset.precio || '0.00';
+  _caDiasActualizar_();
+}
+
+function _caDiasActualizar_() {
+  const sel  = document.getElementById('ca-act-nueva');
+  const wrap = document.getElementById('ca-dias-wrap');
+  if (!sel || !wrap) return;
+  const diasRaw = sel.options[sel.selectedIndex]?.dataset.dias || '';
+  const TODOS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
+  const activos = diasRaw ? diasRaw.split(',').map(d => d.trim()).filter(Boolean) : [];
+  const base = activos.length ? activos : TODOS;
+  wrap.innerHTML = base.map(d =>
+    `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:5px 9px;border:1.5px solid var(--border2);border-radius:6px">
+      <input type="checkbox" class="ca-dia-cb" value="${esc(sinTildes(d))}" ${activos.length ? 'checked' : ''}> ${d.slice(0,2)}</label>`
+  ).join('');
 }
 
 async function guardarCambioActividad() {
@@ -3117,8 +3137,11 @@ async function guardarCambioActividad() {
   const grupo     = (document.getElementById('ca-grupo')?.value || '').trim();
   const aluId     = document.getElementById('ca-alu-id')?.value;
 
+  const diasSel = [...document.querySelectorAll('#ca-dias-wrap .ca-dia-cb:checked')].map(cb => cb.value);
+
   if (!inscId)     { showToast('Selecciona la inscripción a cambiar', 'error'); return; }
   if (!actNuevaId) { showToast('Selecciona la nueva actividad', 'error'); return; }
+  if (!diasSel.length) { showToast('Selecciona al menos un día de asistencia', 'error'); return; }
 
   const oldInsc = DB.inscripciones.find(i => String(i.ID_INSCRIPCION) === String(inscId));
   if (!oldInsc) { showToast('Inscripción no encontrada', 'error'); return; }
@@ -3161,7 +3184,7 @@ async function guardarCambioActividad() {
         PRECIO_ACORDADO: precio,
         DESCUENTO:       String(descPct),
         TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
-        DIAS_SEMANA:     actNueva.DIAS_SEMANA || actNueva.DIA_SEMANA || '',
+        DIAS_SEMANA:     diasSel.join(','),
         HORARIO:         actNueva.HORARIO || '',
         FORMA_PAGO:      fPago,
         FECHA_ALTA:      fechaEf,
@@ -3189,7 +3212,7 @@ async function guardarCambioActividad() {
         PRECIO_ACORDADO: precio,
         DESCUENTO:       String(descPct),
         TIPO_PRECIO:     t.includes('SUELT')||t.includes('ANUAL')||t.includes('JORNAD') ? 'PAGO_ÚNICO' : 'MENSUALIDAD',
-        DIAS_SEMANA:     actNueva.DIAS_SEMANA || actNueva.DIA_SEMANA || '',
+        DIAS_SEMANA:     diasSel.join(','),
         HORARIO:         actNueva.HORARIO || '',
         FORMA_PAGO:      fPago,
         FECHA_ALTA:      hoy,
