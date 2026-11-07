@@ -130,6 +130,12 @@ function doPost(e) {
       result = cancelarReservaPublica_(body);
     } else if (action === 'GET_RESERVA_TOKEN') {
       result = getReservaPorToken_(body);
+    } else if (action === 'GET_SLOTS_EXTERNOS') {
+      result = getSlotsExternos_(body);
+    } else if (action === 'CREAR_RESERVA_PENDIENTE') {
+      result = crearReservaPendiente_(body);
+    } else if (action === 'CONFIRMAR_PAGO_RESERVA') {
+      result = confirmarPagoReserva_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1773,6 +1779,211 @@ function getReservaPorToken_(data) {
     }
   }
   return { ok: false, error: 'Reserva no encontrada.' };
+}
+
+// ── Stripe helpers ──────────────────────────────────────────────────────────
+
+function _stripePost_(path, paramsFlat) {
+  var key = PropertiesService.getScriptProperties().getProperty('STRIPE_SECRET');
+  if (!key) throw new Error('STRIPE_SECRET no configurada en Propiedades del script');
+  var payload = Object.keys(paramsFlat).map(function(k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(paramsFlat[k]);
+  }).join('&');
+  var resp = UrlFetchApp.fetch('https://api.stripe.com/v1' + path, {
+    method: 'post',
+    headers: { Authorization: 'Basic ' + Utilities.base64Encode(key + ':') },
+    contentType: 'application/x-www-form-urlencoded',
+    payload: payload,
+    muteHttpExceptions: true
+  });
+  return JSON.parse(resp.getContentText());
+}
+
+function _stripeGet_(path) {
+  var key = PropertiesService.getScriptProperties().getProperty('STRIPE_SECRET');
+  if (!key) throw new Error('STRIPE_SECRET no configurada');
+  var resp = UrlFetchApp.fetch('https://api.stripe.com/v1' + path, {
+    headers: { Authorization: 'Basic ' + Utilities.base64Encode(key + ':') },
+    muteHttpExceptions: true
+  });
+  return JSON.parse(resp.getContentText());
+}
+
+// ── Slots para jugadores externos (sin restricción de inscripción) ──────────
+
+function getSlotsExternos_(data) {
+  var book         = ss_();
+  var inscripciones= sheetToJSON(book, 'INSCRIPCIONES');
+  var reservas     = sheetToJSON(book, 'RESERVAS') || [];
+  var now          = new Date();
+  var slots = slotsDisponibles_(inscripciones, reservas, '__EXTERNO__', now);
+  return { ok: true, slots: slots };
+}
+
+// ── Crear reserva pendiente de pago (jugadores externos) ───────────────────
+
+function crearReservaPendiente_(data) {
+  var nombre    = String(data.nombre   || '').trim();
+  var email     = String(data.email    || '').trim();
+  var telefono  = String(data.telefono || '').replace(/\D/g, '').slice(-9);
+  var fecha     = String(data.fecha    || '');
+  var esAlcotan = data.esAlcotan === true || data.esAlcotan === 'true';
+
+  if (!nombre || !email || telefono.length < 9 || !/^\d{4}-\d{2}-\d{2}$/.test(fecha))
+    return { ok: false, error: 'Datos incompletos.' };
+  if (!/^[^@]+@[^@]+\.[^@]+$/.test(email))
+    return { ok: false, error: 'Email inválido.' };
+
+  var now = new Date();
+  var fechaObj = new Date(fecha + 'T' + RES_HORA_INI_ + ':00');
+  if ((fechaObj.getTime() - now.getTime()) < 24 * 3600000)
+    return { ok: false, error: 'La reserva debe hacerse con al menos 24 horas de antelación.' };
+
+  var book         = ss_();
+  var inscripciones= sheetToJSON(book, 'INSCRIPCIONES');
+  var reservas     = sheetToJSON(book, 'RESERVAS') || [];
+
+  var dow = new Date(fecha + 'T12:00:00').getDay();
+  var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  var seenCap = {};
+  inscripciones.forEach(function(i) {
+    if (String(i.ESTADO || '').toUpperCase() !== 'ACTIVA') return;
+    if (!esFutbol_(String(i.LINEA || ''))) return;
+    var parts = String(i.DIAS_SEMANA || i.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
+    var tieneDia = parts.some(function(p) {
+      var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
+      return idx === dow;
+    });
+    if (tieneDia) { var key = String(i.ID_ALUMNO || ''); if (key) seenCap[key] = true; }
+  });
+  var abonadosDia = Object.keys(seenCap).length;
+  var reservasDia = reservas.filter(function(r) {
+    var est = String(r.ESTADO || '').toUpperCase();
+    return r.FECHA === fecha && (est === 'CONFIRMADA' || est === 'PENDIENTE_PAGO');
+  }).length;
+  if (abonadosDia + reservasDia >= RES_MAX_PLAZAS_)
+    return { ok: false, error: 'No quedan plazas libres para esta fecha.' };
+
+  var sheet = book.getSheetByName('RESERVAS');
+  if (!sheet) return { ok: false, error: 'Hoja RESERVAS no encontrada.' };
+  var existentes = sheetToJSON(book, 'RESERVAS') || [];
+  var nextNum    = existentes.length + 1;
+  var idReserva  = 'RESERVA-' + String(nextNum).padStart(3, '0');
+  var token      = Utilities.getUuid();
+  var ahora      = Utilities.formatDate(now, 'Europe/Madrid', 'yyyy-MM-dd HH:mm:ss');
+  var precioCents= esAlcotan ? 1700 : 2000;
+  var precioLabel= esAlcotan ? '17,00 €' : '20,00 €';
+  var clubLabel  = esAlcotan ? 'C.D. Alcotán Canarias' : 'Externo';
+  var fechaFmt   = formatFechaEs_(fecha);
+
+  appendRow('RESERVAS', {
+    ID_RESERVA: idReserva, ID_ALUMNO: '', NOMBRE_ALUMNO: nombre,
+    EMAIL_CLIENTE: email, TELEFONO_CLIENTE: telefono, FECHA: fecha,
+    HORA_INI: RES_HORA_INI_, HORA_FIN: RES_HORA_FIN_,
+    ESTADO: 'PENDIENTE_PAGO', FECHA_CREACION: ahora,
+    TOKEN_CANCEL: token, FUENTE: 'PUBLICA_PAGO', STRIPE_SESSION: ''
+  });
+
+  var successUrl = RES_APP_BASE_ + 'reservar.html?pago=ok&session_id={CHECKOUT_SESSION_ID}&id=' + encodeURIComponent(idReserva);
+  var cancelUrl  = RES_APP_BASE_ + 'reservar.html?pago=cancel';
+
+  var sessionData;
+  try {
+    sessionData = _stripePost_('/checkout/sessions', {
+      'mode': 'payment',
+      'customer_email': email,
+      'payment_method_types[0]': 'card',
+      'line_items[0][price_data][currency]': 'eur',
+      'line_items[0][price_data][unit_amount]': String(precioCents),
+      'line_items[0][price_data][product_data][name]': 'Sesión grupal SM Fútbol · ' + fechaFmt,
+      'line_items[0][price_data][product_data][description]': '17:00–18:30 · ' + clubLabel,
+      'line_items[0][quantity]': '1',
+      'success_url': successUrl,
+      'cancel_url': cancelUrl,
+      'metadata[idReserva]': idReserva
+    });
+  } catch(e) {
+    updateRow('RESERVAS', idReserva, { ESTADO: 'CANCELADA' });
+    return { ok: false, error: 'Error al crear sesión de pago: ' + e.toString() };
+  }
+
+  if (sessionData.error) {
+    updateRow('RESERVAS', idReserva, { ESTADO: 'CANCELADA' });
+    return { ok: false, error: 'Error Stripe: ' + (sessionData.error.message || 'inténtalo de nuevo') };
+  }
+
+  updateRow('RESERVAS', idReserva, { STRIPE_SESSION: sessionData.id });
+
+  return { ok: true, idReserva: idReserva, sessionId: sessionData.id,
+           checkoutUrl: sessionData.url, precioLabel: precioLabel,
+           fecha: fecha, fechaFmt: fechaFmt };
+}
+
+// ── Confirmar reserva tras pago Stripe ─────────────────────────────────────
+
+function confirmarPagoReserva_(data) {
+  var sessionId = String(data.sessionId || '').trim();
+  var idReserva = String(data.idReserva || '').trim();
+  if (!sessionId || !idReserva) return { ok: false, error: 'Datos incompletos.' };
+
+  var book     = ss_();
+  var reservas = sheetToJSON(book, 'RESERVAS') || [];
+  var reserva  = null;
+  for (var i = 0; i < reservas.length; i++) {
+    if (String(reservas[i].ID_RESERVA || '') === idReserva) { reserva = reservas[i]; break; }
+  }
+  if (!reserva) return { ok: false, error: 'Reserva no encontrada.' };
+
+  var estado = String(reserva.ESTADO || '').toUpperCase();
+  if (estado === 'CONFIRMADA')
+    return { ok: true, idReserva: idReserva, fecha: reserva.FECHA || '',
+             fechaFmt: formatFechaEs_(reserva.FECHA || ''), nombre: reserva.NOMBRE_ALUMNO || '',
+             email: reserva.EMAIL_CLIENTE || '', hora: RES_HORA_INI_ + ' – ' + RES_HORA_FIN_,
+             token: reserva.TOKEN_CANCEL || '' };
+
+  var session;
+  try {
+    session = _stripeGet_('/checkout/sessions/' + sessionId);
+  } catch(e) {
+    return { ok: false, error: 'Error al verificar el pago.' };
+  }
+  if (session.error) return { ok: false, error: 'Error al verificar el pago.' };
+  if (session.payment_status !== 'paid') return { ok: false, error: 'El pago no se ha completado.' };
+
+  updateRow('RESERVAS', idReserva, { ESTADO: 'CONFIRMADA', STRIPE_SESSION: sessionId });
+
+  var nombre   = reserva.NOMBRE_ALUMNO || '';
+  var email    = reserva.EMAIL_CLIENTE || '';
+  var fecha    = reserva.FECHA || '';
+  var fechaFmt = formatFechaEs_(fecha);
+  var cancelUrl= RES_APP_BASE_ + 'reservar.html?cancelar=' + (reserva.TOKEN_CANCEL || '');
+
+  if (email) {
+    try {
+      MailApp.sendEmail({
+        to: email,
+        subject: '✅ Reserva confirmada · Pago recibido – ' + fechaFmt + ' – SM Academia',
+        htmlBody: '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">' +
+          '<div style="background:#1a6b3a;padding:24px;text-align:center">' +
+          '<h1 style="color:#fff;font-size:20px;margin:0">SM Academia</h1></div>' +
+          '<div style="padding:24px">' +
+          '<h2 style="color:#1a6b3a;font-size:18px;margin-top:0">✅ Reserva confirmada · Pago recibido</h2>' +
+          '<p style="margin:4px 0"><strong>Jugador:</strong> ' + nombre + '</p>' +
+          '<p style="margin:4px 0"><strong>Fecha:</strong> ' + fechaFmt + '</p>' +
+          '<p style="margin:4px 0"><strong>Horario:</strong> ' + RES_HORA_INI_ + ' – ' + RES_HORA_FIN_ + '</p>' +
+          '<p style="margin:4px 0 20px"><strong>Referencia:</strong> ' + idReserva + '</p>' +
+          '<p style="font-size:13px;color:#555">¿Necesitas cancelar? Hazlo con al menos 24 h de antelación:</p>' +
+          '<a href="' + cancelUrl + '" style="display:inline-block;background:#ef4444;color:#fff;' +
+          'padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:24px">Cancelar reserva</a>' +
+          '</div></div>',
+        name: 'SM Academia', replyTo: EMAIL_EMPRESA.director
+      });
+    } catch(e) {}
+  }
+
+  return { ok: true, idReserva: idReserva, fecha: fecha, fechaFmt: fechaFmt,
+           nombre: nombre, email: email, hora: RES_HORA_INI_ + ' – ' + RES_HORA_FIN_,
+           token: reserva.TOKEN_CANCEL || '' };
 }
 
 // ── Helpers internos ────────────────────────────────────────────────────────

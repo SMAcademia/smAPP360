@@ -88,6 +88,14 @@ h2{font-size:18px;font-weight:700;margin-bottom:4px}
 .detail-val{font-weight:600}
 a{color:var(--green);text-decoration:none}
 .back-link{font-size:13px;color:var(--text3);display:flex;align-items:center;gap:5px;margin-bottom:16px;cursor:pointer}
+.tabs{display:flex;gap:0;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
+.tab{flex:1;padding:10px;border:none;background:var(--card);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.tab-active{background:var(--green);color:#fff}
+.price-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px}
+.price-val{font-size:17px;font-weight:700;color:var(--green)}
+.btn-stripe{background:#635bff;color:#fff}
+select{width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;color:var(--text1);background:var(--card);outline:none;appearance:auto}
+select:focus{border-color:var(--green)}
 </style>
 </head>
 <body>
@@ -107,7 +115,20 @@ a{color:var(--green);text-decoration:none}
 
 <script>
 var GAS = 'https://script.google.com/macros/s/AKfycbzRPAbr64l1xmFBhMIKxQoovkNCFCQEVOZ7zoUT_M0HqfLuqysdak-gPBgmGkqCCNfueQ/exec';
-var state = { screen: 'id', nombre: '', telefono: '', data: null };
+var state = {
+  screen: 'id', modo: 'academia',
+  // Academia
+  nombre: '', telefono: '', data: null,
+  // Externo
+  extNombre: '', extEmail: '', extTelefono: '', extEsAlcotan: false, extSlots: null,
+  // Shared pick/confirm
+  selectedFecha: '', selectedFechaFmt: '', selectedListaEspera: false,
+  // Pago
+  pendingIdReserva: '', pendingSessionId: '', doneData: null,
+  // Cancel
+  cancelToken: '', cancelFechaFmt: '', cancelId: '',
+  cancelByToken: '', tokenReservaData: null, cancelledData: null
+};
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ var d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
@@ -123,17 +144,37 @@ function render(){
   var app = $('app');
   var s = state.screen;
 
-  if (s === 'id')       app.innerHTML = screenId();
-  else if (s === 'dash') app.innerHTML = screenDash();
-  else if (s === 'pick') app.innerHTML = screenPick();
-  else if (s === 'confirm') app.innerHTML = screenConfirm();
-  else if (s === 'done')  app.innerHTML = screenDone();
-  else if (s === 'cancel') app.innerHTML = screenCancel();
-  else if (s === 'cancelled') app.innerHTML = screenCancelled();
+  if      (s === 'id')          app.innerHTML = screenId();
+  else if (s === 'dash')        app.innerHTML = screenDash();
+  else if (s === 'pick')        app.innerHTML = screenPick();
+  else if (s === 'confirm')     app.innerHTML = screenConfirm();
+  else if (s === 'done')        app.innerHTML = screenDone();
+  else if (s === 'cancel')      app.innerHTML = screenCancel();
+  else if (s === 'cancelled')   app.innerHTML = screenCancelled();
+  else if (s === 'ext-id')      app.innerHTML = screenExtId();
+  else if (s === 'ext-pick')    app.innerHTML = screenExtPick();
+  else if (s === 'ext-confirm') app.innerHTML = screenExtConfirm();
+  else if (s === 'pago-loading')app.innerHTML = screenPagoLoading();
+  else if (s === 'pago-done')   app.innerHTML = screenPagoDone();
+  else if (s === 'pago-cancel') app.innerHTML = screenPagoCancel();
 }
 
 // ── Pantalla 1: Identificación ────────────────────────────────────────────
 function screenId(){
+  var esExt = state.modo === 'externo';
+  return '<div class="tabs">' +
+    '<button class="tab' + (!esExt ? ' tab-active' : '') + '" onclick="switchModo(\'academia\')">🎓 Soy de la academia</button>' +
+    '<button class="tab' + (esExt ? ' tab-active' : '') + '" onclick="switchModo(\'externo\')">💳 Acceso libre</button>' +
+    '</div>' +
+    (esExt ? screenExtId() : screenAcademiaId());
+}
+
+function switchModo(modo){
+  state.modo = modo;
+  render();
+}
+
+function screenAcademiaId(){
   return '<div class="card">' +
     '<div class="card-title">Accede con tus datos</div>' +
     '<div class="field"><label>Nombre completo del jugador</label>' +
@@ -144,7 +185,7 @@ function screenId(){
     '<button class="btn btn-primary" id="btn-id" onclick="doLogin()">Acceder</button>' +
     '</div>' +
     '<p style="font-size:12px;color:var(--text3);text-align:center;margin-top:12px">' +
-    'Solo jugadores con inscripción activa en SM Fútbol pueden reservar.</p>';
+    'Jugadores con mensualidad activa en SM Fútbol.</p>';
 }
 
 function doLogin(){
@@ -205,8 +246,149 @@ function screenDash(){
     '<div id="dash-err" class="msg msg-error hidden" style="margin-top:12px"></div>';
 }
 
-function doLogout(){ state = { screen:'id', nombre:'', telefono:'', data:null }; render(); }
+function doLogout(){ state = { screen:'id', modo: state.modo, nombre:'', telefono:'', data:null }; render(); }
 function goPickSlot(){ state.screen = 'pick'; render(); }
+
+// ── Pantallas externas ────────────────────────────────────────────────────
+
+function screenExtId(){
+  return '<div class="card">' +
+    '<div class="card-title">Reserva una sesión · pago con tarjeta</div>' +
+    '<div class="msg msg-info" style="margin-bottom:14px">Externo: <strong>20 €</strong> · C.D. Alcotán Canarias: <strong>17 €</strong></div>' +
+    '<div class="field"><label>Nombre completo del jugador</label>' +
+    '<input id="ext-nombre" type="text" placeholder="Nombre Apellido Apellido" autocomplete="name" autocapitalize="words"></div>' +
+    '<div class="field"><label>Email (recibirás la confirmación)</label>' +
+    '<input id="ext-email" type="email" placeholder="email@ejemplo.com" autocomplete="email"></div>' +
+    '<div class="field"><label>Teléfono</label>' +
+    '<input id="ext-tel" type="tel" placeholder="6xx xxx xxx" autocomplete="tel"></div>' +
+    '<div class="field"><label>Club</label>' +
+    '<select id="ext-club">' +
+    '<option value="externo">Externo – 20 €</option>' +
+    '<option value="alcotan">C.D. Alcotán Canarias – 17 €</option>' +
+    '</select></div>' +
+    '<div id="ext-id-err" class="msg msg-error hidden"></div>' +
+    '<button class="btn btn-primary" id="btn-ext-id" onclick="doExtLogin()">Ver fechas disponibles</button>' +
+    '</div>';
+}
+
+function doExtLogin(){
+  var nombre   = $('ext-nombre').value.trim();
+  var email    = $('ext-email').value.trim();
+  var telefono = $('ext-tel').value.trim();
+  var club     = $('ext-club').value;
+  if (!nombre || !email || !telefono){ showErr('ext-id-err','Rellena todos los campos.'); return; }
+  setBtnLoading('btn-ext-id', true);
+  state.extNombre    = nombre;
+  state.extEmail     = email;
+  state.extTelefono  = telefono;
+  state.extEsAlcotan = (club === 'alcotan');
+  post('GET_SLOTS_EXTERNOS', {})
+    .then(function(r){
+      setBtnLoading('btn-ext-id', false);
+      if (!r.ok){ showErr('ext-id-err', r.error || 'Error al cargar fechas.'); return; }
+      state.extSlots = r.slots;
+      state.screen   = 'ext-pick';
+      render();
+    }).catch(function(){ setBtnLoading('btn-ext-id', false); showErr('ext-id-err','Error de conexión.'); });
+}
+
+function screenExtPick(){
+  var DIAS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  var precio = state.extEsAlcotan ? '17 €' : '20 €';
+  var slotsHtml = '';
+  if (!state.extSlots || !state.extSlots.length) {
+    slotsHtml = '<div class="msg msg-info">No hay sesiones disponibles en los próximos días.</div>';
+  } else {
+    state.extSlots.forEach(function(s){
+      if (s.listaEspera) {
+        slotsHtml += '<div class="slot slot-lista" onclick="extSelectSlot(\'' + s.fecha + '\',\'' + esc(s.fechaFmt) + '\')">' +
+          '<div><div class="slot-info">' + esc(s.fechaFmt) + '</div>' +
+          '<div class="slot-sub">17:00 – 18:30</div></div>' +
+          '<span class="badge badge-amber">Lista de espera</span></div>';
+      } else {
+        slotsHtml += '<div class="slot" onclick="extSelectSlot(\'' + s.fecha + '\',\'' + esc(s.fechaFmt) + '\')">' +
+          '<div><div class="slot-info">' + esc(s.fechaFmt) + '</div>' +
+          '<div class="slot-sub">17:00 – 18:30</div></div>' +
+          '<span class="badge badge-green">' + precio + '</span></div>';
+      }
+    });
+  }
+  return '<div class="back-link" onclick="state.screen=\'id\';render()">← Volver</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Elige una fecha</div>' +
+    slotsHtml + '</div>';
+}
+
+function extSelectSlot(fecha, fechaFmt){
+  state.selectedFecha    = fecha;
+  state.selectedFechaFmt = fechaFmt;
+  state.screen = 'ext-confirm';
+  render();
+}
+
+function screenExtConfirm(){
+  var precio = state.extEsAlcotan ? '17,00 €' : '20,00 €';
+  var club   = state.extEsAlcotan ? 'C.D. Alcotán Canarias' : 'Externo';
+  return '<div class="back-link" onclick="state.screen=\'ext-pick\';render()">← Cambiar fecha</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Confirma y paga</div>' +
+    '<div class="detail-row"><span class="detail-label">Jugador</span><span class="detail-val">' + esc(state.extNombre) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Club</span><span class="detail-val">' + esc(club) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(state.selectedFechaFmt) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Horario</span><span class="detail-val">17:00 – 18:30</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">' + esc(state.extEmail) + '</span></div>' +
+    '<div class="price-row"><span class="detail-label">Total a pagar</span><span class="price-val">' + precio + '</span></div>' +
+    '</div>' +
+    '<div id="ext-confirm-err" class="msg msg-error hidden"></div>' +
+    '<button class="btn btn-stripe" id="btn-ext-pay" onclick="doExtPagar()">💳 Pagar con tarjeta</button>' +
+    '<p style="font-size:11px;color:var(--text3);text-align:center;margin-top:10px">Pago seguro a través de Stripe. Serás redirigido a la pasarela de pago.</p>';
+}
+
+function doExtPagar(){
+  setBtnLoading('btn-ext-pay', true);
+  post('CREAR_RESERVA_PENDIENTE', {
+    nombre: state.extNombre, email: state.extEmail,
+    telefono: state.extTelefono, fecha: state.selectedFecha,
+    esAlcotan: state.extEsAlcotan
+  }).then(function(r){
+    if (!r.ok){ setBtnLoading('btn-ext-pay', false); showErr('ext-confirm-err', r.error); return; }
+    // Redirect to Stripe Checkout
+    location.href = r.checkoutUrl;
+  }).catch(function(){ setBtnLoading('btn-ext-pay', false); showErr('ext-confirm-err','Error de conexión. Inténtalo de nuevo.'); });
+}
+
+// ── Pantallas pago ────────────────────────────────────────────────────────
+
+function screenPagoLoading(){
+  return '<div class="card text-center" style="padding:40px">' +
+    '<div class="spinner" style="width:32px;height:32px;border-width:4px;border-top-color:var(--green);border-color:var(--border);display:inline-block"></div>' +
+    '<p style="margin-top:16px;color:var(--text2)">Verificando el pago…</p>' +
+    '</div>';
+}
+
+function screenPagoDone(){
+  var r = state.doneData || {};
+  return '<div class="card text-center">' +
+    '<div class="success-icon">✅</div>' +
+    '<h2>¡Pago recibido!</h2>' +
+    '<p class="sub">' + (r.email ? 'Confirmación enviada a ' + esc(r.email) : 'Tu reserva está confirmada') + '</p>' +
+    '<div class="detail-row"><span class="detail-label">Jugador</span><span class="detail-val">' + esc(r.nombre||'') + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(r.fechaFmt||'') + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Horario</span><span class="detail-val">' + esc(r.hora||'17:00 – 18:30') + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Referencia</span><span class="detail-val">' + esc(r.idReserva||'') + '</span></div>' +
+    '</div>' +
+    '<p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 16px">Puedes cancelar hasta 24 horas antes desde el email de confirmación.</p>' +
+    '<button class="btn btn-ghost" onclick="location.href=\'reservar.html\'">Nueva reserva</button>';
+}
+
+function screenPagoCancel(){
+  return '<div class="card text-center">' +
+    '<div style="font-size:48px;margin-bottom:12px">❌</div>' +
+    '<h2>Pago cancelado</h2>' +
+    '<p class="sub">No se ha realizado ningún cargo. Puedes intentarlo de nuevo.</p>' +
+    '</div>' +
+    '<button class="btn btn-primary" style="margin-top:14px" onclick="location.href=\'reservar.html\'">Intentar de nuevo</button>';
+}
 
 function initCancel(token, fechaFmt, idRes){
   state.cancelToken   = token;
@@ -411,14 +593,38 @@ function setBtnLoading(id, on){
 
 // ── Init ──────────────────────────────────────────────────────────────────
 (function(){
-  var params = new URLSearchParams(location.search);
+  var params      = new URLSearchParams(location.search);
   var cancelToken = params.get('cancelar');
+  var pagoStatus  = params.get('pago');
+  var sessionId   = params.get('session_id');
+  var idReserva   = params.get('id');
+
   if (cancelToken) {
     state.screen       = 'cancelByToken';
     state.cancelByToken= cancelToken;
-    var app = $('app');
-    app.innerHTML = screenCancelByToken();
-    // screenCancelByToken already triggers the POST if data not loaded
+    $('app').innerHTML = screenCancelByToken();
+  } else if (pagoStatus === 'ok' && sessionId && idReserva) {
+    state.screen = 'pago-loading';
+    render();
+    // Strip query params from URL without reload
+    history.replaceState({}, '', location.pathname);
+    post('CONFIRMAR_PAGO_RESERVA', { sessionId: sessionId, idReserva: idReserva })
+      .then(function(r){
+        if (!r.ok){
+          $('app').innerHTML = '<div class="card"><div class="msg msg-error">' + esc(r.error) + '</div>' +
+            '<button class="btn btn-ghost" style="margin-top:12px" onclick="location.href=\'reservar.html\'">Volver</button></div>';
+          return;
+        }
+        state.doneData = r;
+        state.screen   = 'pago-done';
+        render();
+      }).catch(function(){
+        $('app').innerHTML = '<div class="card"><div class="msg msg-error">Error al verificar el pago. Contacta con la academia.</div></div>';
+      });
+  } else if (pagoStatus === 'cancel') {
+    history.replaceState({}, '', location.pathname);
+    state.screen = 'pago-cancel';
+    render();
   } else {
     render();
   }
