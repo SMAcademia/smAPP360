@@ -177,6 +177,7 @@ function getAllData() {
     firmasProtocolo:         sheetToJSON(book, 'FIRMAS_PROTOCOLO'),
     serviciosReservas:       sheetToJSON(book, 'SERVICIOS_RESERVAS'),
     reservas:                sheetToJSON(book, 'RESERVAS'),
+    abonados:                sheetToJSON(book, 'ABONADOS'),
   };
 }
 

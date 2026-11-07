@@ -765,6 +765,7 @@ function normalizarDB(raw) {
   DB.personal             = raw.personal             || [];
   DB.serviciosReservas    = raw.serviciosReservas    || [];
   DB.reservas             = raw.reservas             || [];
+  DB.abonados             = raw.abonados             || [];
   DB.ausencias            = raw.ausencias            || [];
   // REGISTRO_HORARIO: el sheet usa un registro por fichaje (TIPO=ENTRADA/SALIDA + columna HORA).
   // Emparejamos por ID_MONITOR+FECHA para obtener registros con HORA_ENTRADA/HORA_SALIDA/HORAS.
@@ -13238,10 +13239,17 @@ let _resTabActual = 'dashboard';
 let _resCalOffset = 0;
 
 // ── Capacidad ─────────────────────────────────────────────────────────────
+function _resAbonados(fecha) {
+  const dow = new Date(fecha + 'T12:00:00').getDay();
+  return (DB.abonados || []).filter(a =>
+    Number(a.DIA_SEMANA) === dow && String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')
+  );
+}
 function _resOcupadas(fecha) {
   return DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA').length;
 }
-function _resPlazasLibres(fecha) { return _RES_MAX_PLAZAS - _resOcupadas(fecha); }
+function _resTotalOcupadas(fecha) { return _resOcupadas(fecha) + _resAbonados(fecha).length; }
+function _resPlazasLibres(fecha)  { return _RES_MAX_PLAZAS - _resTotalOcupadas(fecha); }
 function _resFechaEsDisp(fecha) {
   const d = new Date(fecha + 'T12:00:00');
   return _resDiasDisp().includes(d.getDay());
@@ -13257,9 +13265,9 @@ function reservas() {
   render(`
     <div style="display:grid;gap:16px">
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${['dashboard','calendario','historial'].map(t =>
+        ${['dashboard','calendario','abonados','historial'].map(t =>
           `<button class="btn ${_resTabActual===t?'btn-primary':'btn-secondary'}" style="font-size:13px"
-            onclick="_resTab('${t}')">${{dashboard:'📊 Dashboard',calendario:'📅 Calendario',historial:'📋 Historial'}[t]}</button>`
+            onclick="_resTab('${t}')">${{dashboard:'📊 Dashboard',calendario:'📅 Calendario',abonados:'📌 Abonados',historial:'📋 Historial'}[t]}</button>`
         ).join('')}
       </div>
       <div id="res-content"></div>
@@ -13282,6 +13290,7 @@ function _resRenderTab() {
   if (!c) return;
   if (_resTabActual === 'dashboard')   c.innerHTML = _resDashboardHtml();
   else if (_resTabActual === 'calendario') c.innerHTML = _resCalHtml();
+  else if (_resTabActual === 'abonados')   c.innerHTML = _resAbonadosHtml();
   else if (_resTabActual === 'historial')  c.innerHTML = _resHistorialHtml();
 }
 
@@ -13305,25 +13314,29 @@ function _resDashboardHtml() {
   }
 
   const diaCard = fecha => {
-    const ocupadas = _resOcupadas(fecha);
-    const libres   = _RES_MAX_PLAZAS - ocupadas;
+    const abonadosDia = _resAbonados(fecha);
+    const nAbonados  = abonadosDia.length;
+    const nReservas  = _resOcupadas(fecha);
+    const total      = nAbonados + nReservas;
+    const libres     = _RES_MAX_PLAZAS - total;
     const d2 = new Date(fecha+'T12:00:00');
     const dStr = _RES_DIA_FULL[d2.getDay()] + ' ' + d2.getDate()+'/'+(d2.getMonth()+1);
-    const pct  = (ocupadas / _RES_MAX_PLAZAS) * 100;
+    const pct  = (total / _RES_MAX_PLAZAS) * 100;
     const barColor = libres === 0 ? 'var(--red,#ef4444)' : libres <= 2 ? 'var(--amber,#f59e0b)' : 'var(--green)';
     const resDelDia = DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA');
+    const desglose  = [nAbonados ? `📌 ${nAbonados} abonado${nAbonados>1?'s':''}` : '', nReservas ? `${nReservas} reserva${nReservas>1?'s':''}` : ''].filter(Boolean).join(' + ') || 'Sin reservas';
     return `<div class="card" style="padding:14px 16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div style="font-size:13px;font-weight:700">${dStr}</div>
         <div style="font-size:12px;font-weight:700;color:${barColor}">${libres===0?'Completo':libres+' libre'+(libres>1?'s':'')}</div>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${_RES_HORA_INI}–${_RES_HORA_FIN} · ${_RES_MONITOR}</div>
-      <div style="height:4px;border-radius:2px;background:var(--border2);margin-bottom:8px">
+      <div style="height:4px;border-radius:2px;background:var(--border2);margin-bottom:6px">
         <div style="width:${pct}%;height:100%;border-radius:2px;background:${barColor}"></div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${ocupadas}/${_RES_MAX_PLAZAS} · ${
-        resDelDia.length ? resDelDia.map(r=>esc(r.NOMBRE_CLIENTE||'—')).join(', ') : 'Sin reservas'
-      }</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${total}/${_RES_MAX_PLAZAS} · ${desglose}</div>
+      ${nAbonados ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${abonadosDia.map(a=>'📌 '+esc(a.NOMBRE||'—')).join(' · ')}</div>` : ''}
+      ${resDelDia.length ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${resDelDia.map(r=>'• '+esc(r.NOMBRE_CLIENTE||'—')).join(' · ')}</div>` : ''}
       ${libres > 0 ? `<button class="btn btn-secondary" style="font-size:12px;width:100%" onclick="modalReserva(null,'${fecha}')">+ Añadir</button>` : ''}
     </div>`;
   };
@@ -13400,11 +13413,14 @@ function _resCalHtml() {
       </div>`;
     }
 
-    const ocupadas = _resOcupadas(fecha);
-    const libres   = _RES_MAX_PLAZAS - ocupadas;
-    const pct      = (ocupadas / _RES_MAX_PLAZAS) * 100;
-    const barColor = libres === 0 ? 'var(--red,#ef4444)' : libres <= 2 ? 'var(--amber,#f59e0b)' : 'var(--green)';
-    const resDelDia = DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA');
+    const abonadosDia = _resAbonados(fecha);
+    const nAbonados  = abonadosDia.length;
+    const nReservas  = _resOcupadas(fecha);
+    const total      = nAbonados + nReservas;
+    const libres     = _RES_MAX_PLAZAS - total;
+    const pct        = (total / _RES_MAX_PLAZAS) * 100;
+    const barColor   = libres === 0 ? 'var(--red,#ef4444)' : libres <= 2 ? 'var(--amber,#f59e0b)' : 'var(--green)';
+    const resDelDia  = DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA');
 
     return `<div style="padding:12px;border-radius:var(--r);border:1px solid ${esHoy?'var(--primary)':'var(--border)'};
       background:${esHoy?'rgba(var(--primary-rgb,99,102,241),.06)':'var(--bg2)'};${esPasado?'opacity:.6':''}">
@@ -13414,25 +13430,27 @@ function _resCalHtml() {
           <div style="font-size:20px;font-weight:700;color:${esHoy?'var(--primary)':'var(--text)'};line-height:1.1">${d.getDate()}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:17px;font-weight:800;color:${barColor};font-variant-numeric:tabular-nums">${ocupadas}<span style="font-size:11px;font-weight:500;color:var(--text3)">/${_RES_MAX_PLAZAS}</span></div>
+          <div style="font-size:17px;font-weight:800;color:${barColor};font-variant-numeric:tabular-nums">${total}<span style="font-size:11px;font-weight:500;color:var(--text3)">/${_RES_MAX_PLAZAS}</span></div>
           <div style="font-size:9px;font-weight:700;color:${barColor};text-transform:uppercase">${libres===0?'completo':libres+' libre'+(libres>1?'s':'')}</div>
         </div>
       </div>
       <div style="height:3px;border-radius:2px;background:var(--border2);margin-bottom:6px">
         <div style="width:${pct}%;height:100%;border-radius:2px;background:${barColor}"></div>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">${_RES_HORA_INI}–${_RES_HORA_FIN}</div>
-      ${resDelDia.length ? `<div style="font-size:11px;line-height:1.7;margin-bottom:6px">${
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px">${_RES_HORA_INI}–${_RES_HORA_FIN}</div>
+      ${nAbonados ? `<div style="font-size:10px;line-height:1.6;margin-bottom:3px">${
+        abonadosDia.map(a => `<div style="color:var(--primary);cursor:pointer" onclick='modalAbonado(${JSON.stringify(a)})'>📌 ${esc(a.NOMBRE||'—')}</div>`).join('')
+      }</div>` : ''}
+      ${resDelDia.length ? `<div style="font-size:10px;line-height:1.6;margin-bottom:4px">${
         resDelDia.map(r => {
           const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
-          return `<div style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-            onclick='modalReserva(${JSON.stringify(r)})'>
-            <div style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0"></div>
-            <span style="overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_CLIENTE||'—')}</span>
+          return `<div style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick='modalReserva(${JSON.stringify(r)})'>
+            <div style="width:5px;height:5px;border-radius:50%;background:${color};flex-shrink:0"></div>
+            <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_CLIENTE||'—')}</span>
           </div>`;
         }).join('')
       }</div>` : ''}
-      ${!esPasado && libres > 0 ? `<button class="btn btn-secondary" style="font-size:11px;width:100%;padding:4px 0;margin-top:4px" onclick="modalReserva(null,'${fecha}')">+ Reserva</button>` : ''}
+      ${!esPasado && libres > 0 ? `<button class="btn btn-secondary" style="font-size:10px;width:100%;padding:3px 0;margin-top:3px" onclick="modalReserva(null,'${fecha}')">+ Reserva</button>` : ''}
     </div>`;
   };
 
@@ -13456,6 +13474,110 @@ function _resCalSemana(d) {
   _resRenderTab();
 }
 
+// ── ABONADOS ────────────────────────────────────────────────────────────────
+function _resAbonadosHtml() {
+  const lista = DB.abonados || [];
+  const porDia = {};
+  _resDiasDisp().forEach(d => { porDia[d] = lista.filter(a => Number(a.DIA_SEMANA) === d && String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')); });
+
+  const filaAbonado = a => {
+    const activo = String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2)">
+      <div style="width:4px;height:36px;border-radius:2px;background:${activo?'var(--primary)':'var(--border)'};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">${esc(a.NOMBRE||'—')}</div>
+        <div style="font-size:11px;color:var(--text3)">${_RES_DIA_FULL[Number(a.DIA_SEMANA)]||'—'}${a.TELEFONO?' · '+esc(a.TELEFONO):''}${a.EMAIL?' · '+esc(a.EMAIL):''}</div>
+      </div>
+      ${!activo ? '<span style="font-size:11px;color:var(--red,#ef4444);font-weight:600">Baja</span>' : ''}
+      <button class="btn btn-sm btn-secondary" onclick='modalAbonado(${JSON.stringify(a)})'>Editar</button>
+    </div>`;
+  };
+
+  const totalActivos = lista.filter(a => String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')).length;
+
+  return `
+    <div style="display:grid;gap:14px">
+      <div class="card" style="padding:14px 20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-size:13px;font-weight:700">Clientes con mensualidad fija</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${totalActivos} abonado${totalActivos!==1?'s':''} activo${totalActivos!==1?'s':''} · Ocupan plaza fija cada semana</div>
+          </div>
+          <button class="btn btn-primary" style="font-size:13px" onclick="modalAbonado()">+ Nuevo abonado</button>
+        </div>
+        ${lista.length === 0
+          ? '<p style="color:var(--text3);font-size:13px;margin:0">Sin abonados registrados. Añade el primero.</p>'
+          : lista.map(filaAbonado).join('')
+        }
+      </div>
+      ${_resDiasDisp().map(dow => {
+        const ab = porDia[dow] || [];
+        return `<div class="card" style="padding:12px 16px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--primary)">${_RES_DIA_FULL[dow]} — ${ab.length}/${_RES_MAX_PLAZAS} plazas ocupadas por mensualidad</div>
+          ${ab.length
+            ? ab.map(a=>`<div style="font-size:12px;padding:3px 0">📌 ${esc(a.NOMBRE||'—')}</div>`).join('')
+            : `<div style="font-size:12px;color:var(--text3)">Sin abonados para este día</div>`}
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function modalAbonado(a) {
+  a = a || {};
+  const isNew = !a.ID_ABONADO;
+  const diaOps = [0,1,2,3,4,5,6].map(d =>
+    `<option value="${d}" ${Number(a.DIA_SEMANA||2)===d?'selected':''}>${_RES_DIA_FULL[d]}</option>`).join('');
+
+  openModal(isNew ? 'Nuevo abonado' : 'Editar abonado', `
+    <div class="form-grid">
+      <div class="field span2"><label>Nombre <span class="req">*</span></label>
+        <input id="ab-nombre" class="upper" value="${esc(a.NOMBRE||'')}"></div>
+      <div class="field"><label>Día asignado</label>
+        <select id="ab-dia">${diaOps}</select></div>
+      <div class="field"><label>Activo</label>
+        <select id="ab-activo">
+          <option value="SÍ" ${String(a.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
+          <option value="NO" ${String(a.ACTIVO||'').toUpperCase()==='NO'?'selected':''}>No (baja)</option>
+        </select></div>
+      <div class="field"><label>Teléfono</label>
+        <input id="ab-tel" type="tel" value="${esc(a.TELEFONO||'')}"></div>
+      <div class="field"><label>Email</label>
+        <input id="ab-email" type="email" value="${esc(a.EMAIL||'')}"></div>
+      <div class="field span2"><label>Notas</label>
+        <textarea id="ab-notas" rows="2">${esc(a.NOTAS||'')}</textarea></div>
+    </div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-primary" id="ab-save-btn" onclick="guardarAbonado('${a.ID_ABONADO||''}')">Guardar</button>`,
+    'sm'
+  );
+}
+
+async function guardarAbonado(id) {
+  const btn = document.getElementById('ab-save-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const nombre = document.getElementById('ab-nombre')?.value.trim();
+    if (!nombre) throw new Error('El nombre es obligatorio');
+    const row = {
+      NOMBRE:      nombre.toUpperCase(),
+      DIA_SEMANA:  document.getElementById('ab-dia')?.value || '2',
+      ACTIVO:      document.getElementById('ab-activo')?.value || 'SÍ',
+      TELEFONO:    document.getElementById('ab-tel')?.value.trim() || '',
+      EMAIL:       document.getElementById('ab-email')?.value.trim() || '',
+      NOTAS:       document.getElementById('ab-notas')?.value.trim() || '',
+    };
+    if (!id) row.FECHA_ALTA = new Date().toISOString().slice(0,10);
+    await writeToSheet('ABONADOS', row, id || null);
+    await loadAllData();
+    showToast('Abonado guardado');
+    closeModal();
+    _resRenderTab();
+  } catch(err) {
+    showToast(err.message || 'Error al guardar', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ── HISTORIAL ───────────────────────────────────────────────────────────────
 function _resHistorialHtml() {
   const lista = [...DB.reservas].sort((a,b) => b.FECHA.localeCompare(a.FECHA));
@@ -13469,7 +13591,7 @@ function _resHistorialHtml() {
             const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
             const d     = new Date(r.FECHA+'T12:00:00');
             const dStr  = _RES_DIA_NAMES[d.getDay()] + ' ' + d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
-            const ocup  = _resOcupadas(r.FECHA);
+            const ocup  = _resTotalOcupadas(r.FECHA);
             return `<tr>
               <td style="font-size:12px">${dStr}</td>
               <td class="mono" style="font-size:12px">${_RES_HORA_INI}–${_RES_HORA_FIN}</td>
@@ -13494,14 +13616,18 @@ function modalReserva(r, fechaDefault) {
   const estadoOps = _RES_ESTADOS.map(e =>
     `<option value="${e}" ${(r.ESTADO||'PENDIENTE')===e?'selected':''}>${e}</option>`).join('');
 
+  const nAbonados = fecha ? _resAbonados(fecha).length : 0;
+  const nReservas = fecha ? _resOcupadas(fecha) : 0;
+  const desgloseTxt = fecha ? ` · ${[nAbonados?`📌 ${nAbonados} abonado${nAbonados>1?'s':''}`:'',(nReservas?`${nReservas} reserva${nReservas>1?'s':''}`:'')].filter(Boolean).join(' + ')||'0 reservas'}` : '';
+
   let capacidadHtml = '';
   if (fecha && isNew) {
     if (libres <= 0) {
-      capacidadHtml = `<div style="background:var(--red,#ef4444)1a;border:1px solid var(--red,#ef4444)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--red,#ef4444);font-weight:600;margin-bottom:12px">⛔ Sesión completa — no quedan plazas para esta fecha.</div>`;
+      capacidadHtml = `<div style="background:var(--red,#ef4444)1a;border:1px solid var(--red,#ef4444)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--red,#ef4444);font-weight:600;margin-bottom:12px">⛔ Sesión completa — no quedan plazas para esta fecha${desgloseTxt}.</div>`;
     } else if (libres <= 2) {
-      capacidadHtml = `<div style="background:var(--amber,#f59e0b)1a;border:1px solid var(--amber,#f59e0b)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--amber,#f59e0b);font-weight:600;margin-bottom:12px">⚠️ Quedan ${libres} plaza${libres>1?'s':''} para esta sesión.</div>`;
+      capacidadHtml = `<div style="background:var(--amber,#f59e0b)1a;border:1px solid var(--amber,#f59e0b)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--amber,#f59e0b);font-weight:600;margin-bottom:12px">⚠️ Quedan ${libres} plaza${libres>1?'s':''}${desgloseTxt}.</div>`;
     } else {
-      capacidadHtml = `<div style="background:var(--green)1a;border:1px solid var(--green)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--green);font-weight:600;margin-bottom:12px">✅ ${libres} de ${_RES_MAX_PLAZAS} plazas disponibles · ${_RES_HORA_INI}–${_RES_HORA_FIN} · Monitor: ${_RES_MONITOR}</div>`;
+      capacidadHtml = `<div style="background:var(--green)1a;border:1px solid var(--green)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--green);font-weight:600;margin-bottom:12px">✅ ${libres} libre${libres>1?'s':''} de ${_RES_MAX_PLAZAS}${desgloseTxt} · ${_RES_HORA_INI}–${_RES_HORA_FIN}</div>`;
     }
   }
 
