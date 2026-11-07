@@ -175,6 +175,8 @@ function getAllData() {
     bancoHistorico:          sheetToJSON(book, 'BANCO_HISTORICO'),
     pagadoresExternos:       sheetToJSON(book, 'PAGADORES_EXTERNOS'),
     firmasProtocolo:         sheetToJSON(book, 'FIRMAS_PROTOCOLO'),
+    serviciosReservas:       sheetToJSON(book, 'SERVICIOS_RESERVAS'),
+    reservas:                sheetToJSON(book, 'RESERVAS'),
   };
 }
 
