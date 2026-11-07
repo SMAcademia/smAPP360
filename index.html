@@ -13282,12 +13282,12 @@ let _resCalOffset = 0;
 // ── Capacidad ─────────────────────────────────────────────────────────────
 function _resParseDias(str) {
   if (!str) return [];
-  const names = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
+  const names = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
   return String(str).split(/[,;\s\/]+/).flatMap(s => {
     s = s.trim(); if (!s) return [];
     const n = parseInt(s);
     if (!isNaN(n) && n >= 0 && n <= 6) return [n];
-    const idx = names.findIndex(d => d.startsWith(sinTildes(s.toLowerCase()).slice(0,3)));
+    const idx = names.findIndex(d => d.startsWith(sinTildes(s).slice(0,3)));
     return idx >= 0 ? [idx] : [];
   });
 }
