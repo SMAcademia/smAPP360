@@ -5780,15 +5780,23 @@ const _CATS_BANCO = [
   { id:'transporte',grupo:'ocio',    label:'🚕 Transporte / Taxi',       color:'#6a1b9a',
     kw:['UBER ','CABIFY','BOLT ','TAXI','GUAGUA','GLOBAL','EMT ','METRO ','RENFE','IBERIA','RYANAIR','VUELING','EASYJET','BINTER'] },
 
+  // ── ACADEMIA / ACTIVIDADES ────────────────────────────────────────────────
+  { id:'act-eventos', grupo:'academia',label:'Actividades / Fiestas / Eventos', color:'#7c3aed',
+    kw:['HALLOWEEN','NAVIDAD','FIN DE CURSO','FIN CURSO','FIESTA ','FIESTAS ','EVENTO ','EVENTOS ','TALLER ','EXCURSION','EXCURSIÓN','GRADUACION','GRADUACIÓN','CARNAVAL','DIA DEL LIBRO','DIA DE LA PAZ'] },
+  { id:'act-colabs',  grupo:'academia',label:'Colaboradores / Instructores',    color:'#7c3aed',
+    kw:['MONITOR ','INSTRUCTOR','COLABORAD','HONORARIO','MINUTA ','DOCENTE','ANIMAD','EDUCAD','FORMAD','ENTRENADOR','PROFESSOR','PROFESOR '] },
+  { id:'act-material',grupo:'academia',label:'Material pedagógico / manualidades', color:'#7c3aed',
+    kw:['MANUALIDAD','PINTURAS','ROTULAD','CARTULINA','GOMEVA','GOMA EVA','PAPEL CREPE','MATERIAL ESCOLAR','MATERIAL DIDAC','PAPELERIA','PAPELERÍA','EVA FOAM'] },
+
   // ── DOMICILIACIONES EMPRESA ───────────────────────────────────────────────
   { id:'alquiler-dom',grupo:'empresa',  label:'Alquiler / Arrendamiento',  color:'#1565c0',
-    kw:['RENTBOX','RENTA MENSUAL ALQUILER','RENTA MENSUAL','ARRENDAMIENTO','CUOTA ARRENDAMIENTO'] },
+    kw:['RENTBOX','RENTA MENSUAL ALQUILER','RENTA MENSUAL','CUOTA ARRENDAMIENTO'] },
   { id:'pepper',   grupo:'empresa',    label:'Seguros / Servicios financieros', color:'#1565c0',
     kw:['PEPPER ASSETS','PEPPER SERVICES','COFIDIS','CETELEM','FINIBER'] },
 
-  // ── TRANSFERENCIAS (movimientos internos, no son gastos) ──────────────────
-  { id:'transf',   grupo:'transferencia',label:'Transferencias / Bizum', color:'#546e7a',
-    kw:['TRANSFERENCIA EMITIDA','ORDEN DE TRANSFERENCIA','BIZUM ENVIADO','BIZUM','TRASPASO A','TRASPASO ','TRANSFERENCIA A ','REINTEGRO','DEVOLUCION TRANSFERENCIA'] },
+  // ── TRANSFERENCIAS (solo movimientos entre cuentas propias) ───────────────
+  { id:'transf',   grupo:'transferencia',label:'Traspasos entre cuentas', color:'#546e7a',
+    kw:['TRASPASO A CUENTA','TRASPASO PROGRAMA','TRASPASO A '] },
 ];
 
 // Map de categorías del sistema banco → grupo análisis
@@ -5804,18 +5812,55 @@ const _BANCO_CAT_TO_GRUPO = {
   'COMISIONES':    { id:'com-b',      grupo:'empresa',  label:'Comisiones bancarias',      color:'#1565c0' },
   'IMPUESTOS':     { id:'imp',        grupo:'empresa',  label:'Impuestos / AEAT',          color:'#1565c0' },
   'GASTO_OTROS':   { id:'g-otros',    grupo:'empresa',  label:'Otros gastos empresa',      color:'#1565c0' },
+  'ACTIVIDADES':   { id:'act-ev-b',   grupo:'academia', label:'Actividades / Eventos',     color:'#7c3aed' },
+  'COLABORADORES': { id:'act-col-b',  grupo:'academia', label:'Colaboradores / Instructores', color:'#7c3aed' },
   'PERSONAL':      { id:'ret-per',    grupo:'ocio',     label:'Retirada autónomo',         color:'#6a1b9a' },
-  'TRANSFERENCIA': { id:'transf-b',   grupo:'transferencia', label:'Transferencia interna',color:'#546e7a' },
+  'TRANSFERENCIA': { id:'transf-b',   grupo:'transferencia', label:'Traspaso entre cuentas',color:'#546e7a' },
   'SIN_CLASE':     { id:'sin-cat',    grupo:'sin-categorizar', label:'⚠️ Sin categorizar', color:'#9e9e9e' },
 };
 
+// ── Reglas propias (localStorage) ────────────────────────────────────────────
+function _bancoReglasLoad() {
+  try { return JSON.parse(localStorage.getItem('smfbanco_reglas') || '[]'); } catch { return []; }
+}
+function _bancoReglasSave(r) {
+  try { localStorage.setItem('smfbanco_reglas', JSON.stringify(r)); } catch {}
+}
+function _addBancoRegla() {
+  const kw = (document.getElementById('nueva-regla-kw')?.value || '').trim().toUpperCase();
+  const catId = document.getElementById('nueva-regla-cat')?.value || '';
+  if (!kw || !catId) { showToast('Rellena la keyword y la categoría', 'error'); return; }
+  const reg = _bancoReglasLoad();
+  if (reg.some(r => r.kw === kw)) { showToast('Esa keyword ya tiene regla', 'info'); return; }
+  reg.push({ kw, catId });
+  _bancoReglasSave(reg);
+  if (document.getElementById('nueva-regla-kw')) document.getElementById('nueva-regla-kw').value = '';
+  showToast(`✅ Regla "${kw}" guardada. Aplica al instante.`, 'success');
+  analisisBancoSec();
+}
+function _delBancoRegla(i) {
+  const reg = _bancoReglasLoad(); reg.splice(i,1); _bancoReglasSave(reg); analisisBancoSec();
+}
+function _prefillarRegla(kw) {
+  const inp = document.getElementById('nueva-regla-kw');
+  if (inp) { inp.value = kw; inp.focus(); inp.scrollIntoView({behavior:'smooth',block:'center'}); }
+}
+
 function _catBanco(concepto, catExistente) {
-  // 1. Intentar match por keywords en concepto
   const c = sinTildes(String(concepto||'').toUpperCase());
+  // 0. Reglas propias del usuario (máxima prioridad)
+  const reglas = _bancoReglasLoad();
+  for (const r of reglas) {
+    if (r.kw && c.includes(sinTildes(r.kw.toUpperCase()))) {
+      const found = _CATS_BANCO.find(x => x.id === r.catId) || _BANCO_CAT_TO_GRUPO[r.catId];
+      if (found) return found;
+    }
+  }
+  // 1. Keywords por defecto
   for (const cat of _CATS_BANCO) {
     if (cat.kw.some(k => c.includes(sinTildes(k)))) return cat;
   }
-  // 2. Si tiene categoría del sistema banco, usarla
+  // 2. Categoría guardada en hoja
   if (catExistente && _BANCO_CAT_TO_GRUPO[catExistente]) {
     return _BANCO_CAT_TO_GRUPO[catExistente];
   }
@@ -5875,15 +5920,17 @@ function analisisBancoSec() {
     }
   });
 
-  // Gastos reales = todo excepto transferencias internas
+  // Gastos reales = todo excepto movimientos internos (traspasos entre cuentas propias)
   const totalGastos = Object.entries(porGrupo)
     .filter(([g]) => g !== 'transferencia')
     .reduce((s, [,v]) => s + v, 0);
   const totalTransf = porGrupo['transferencia'] || 0;
+  const totalAcademia = porGrupo['academia'] || 0;
 
   // ── KPIs por grupo (transferencias excluidas del % — no son gastos reales) ──
   const GRUPOS = [
     { id:'empresa',        label:'Empresa / Declarable', icon:'🏢', col:'var(--blue)'  },
+    { id:'academia',       label:'Academia / Actividades',icon:'🎨', col:'#7c3aed'     },
     { id:'domestico',      label:'Doméstico',             icon:'🏠', col:'var(--g2)'   },
     { id:'alimentacion',   label:'Alimentación',          icon:'🛒', col:'#e65100'     },
     { id:'ocio',           label:'Ocio / Personal',       icon:'🎯', col:'#6a1b9a'     },
@@ -5973,12 +6020,15 @@ function analisisBancoSec() {
   // ── Sin categorizar (detalle) ─────────────────────────────────────────────
   const sinCat = (porCat['sin-cat']?.items||[]).sort((a,b)=>(parseFloat(b.IMPORTE)||0)-(parseFloat(a.IMPORTE)||0));
   const sinCatHtml = sinCat.length
-    ? sinCat.map(m=>`<tr>
-        <td style="padding:6px 10px;font-size:12px;color:var(--text3)">${fmtFecha(m.FECHA)}</td>
-        <td style="padding:6px 10px;font-size:13px">${esc(m.CONCEPTO||'')}</td>
-        <td style="padding:6px 10px;font-size:12px;color:var(--text3)">${esc(m.NOTAS||'—')}</td>
-        <td style="padding:6px 10px;text-align:right;font-weight:700">${fmtEur(parseFloat(m.IMPORTE)||0)}</td>
-      </tr>`).join('')
+    ? sinCat.map(m=>{
+        const kw = esc(String(m.CONCEPTO||'').split(' ').slice(0,3).join(' '));
+        return `<tr>
+        <td style="padding:6px 10px;font-size:12px;color:var(--text3);white-space:nowrap">${fmtFecha(m.FECHA)}</td>
+        <td style="padding:6px 10px;font-size:12px">${esc(m.CONCEPTO||'')}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:700;white-space:nowrap">${fmtEur(parseFloat(m.IMPORTE)||0)}</td>
+        <td style="padding:6px 10px"><button onclick="_prefillarRegla('${kw}')"
+          style="font-size:11px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;cursor:pointer;white-space:nowrap">+ Regla</button></td>
+      </tr>`;}).join('')
     : `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text3)">¡Todo categorizado! 🎉</td></tr>`;
 
   // ── Meses para filtro ─────────────────────────────────────────────────────
@@ -6044,13 +6094,47 @@ function analisisBancoSec() {
     </div>
 
     <div class="card" style="padding:14px 20px;margin-bottom:14px">
-      <div class="card-title" style="margin-bottom:10px">⚠️ Sin categorizar (${sinCat.length} movimientos · ${fmtEur(porGrupo['sin-categorizar']||0)})</div>
-      <p style="font-size:12px;color:var(--text3);margin:0 0 10px">Revisa estos conceptos para ajustar las reglas de categorización.</p>
+      <div class="card-title" style="margin-bottom:6px">⚠️ Sin categorizar (${sinCat.length} · ${fmtEur(porGrupo['sin-categorizar']||0)})</div>
+      <p style="font-size:12px;color:var(--text3);margin:0 0 10px">Haz clic en <strong>+ Regla</strong> para crear una regla y que ese concepto se categorice automáticamente.</p>
       <div class="table-wrap">
-        <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Notas</th><th>Importe</th></tr></thead>
+        <table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Importe</th><th></th></tr></thead>
         <tbody>${sinCatHtml}</tbody></table>
       </div>
     </div>
+
+    ${(()=>{
+      const reglas = _bancoReglasLoad();
+      const allCats = [..._BANCO_CATS.filter(c=>c.tipo==='G'), ..._BANCO_CATS.filter(c=>c.tipo==='P'), ..._BANCO_CATS.filter(c=>c.tipo==='O')];
+      const catOpts = allCats.map(c=>`<option value="${c.id}">${c.label}</option>`).join('');
+      const reglasRows = reglas.length
+        ? reglas.map((r,i)=>{
+            const cat = allCats.find(c=>c.id===r.catId);
+            return `<tr>
+              <td style="padding:5px 8px;font-family:monospace;font-size:12px;font-weight:700">${esc(r.kw)}</td>
+              <td style="padding:5px 8px"><span style="font-size:11px;padding:2px 7px;border-radius:4px;background:${cat?.color||'#ccc'}22;color:${cat?.color||'#888'};border:1px solid ${cat?.color||'#ccc'}44">${esc(cat?.label||r.catId)}</span></td>
+              <td style="padding:5px 8px"><button onclick="_delBancoRegla(${i})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1" title="Eliminar regla">✕</button></td>
+            </tr>`;
+          }).join('')
+        : `<tr><td colspan="3" style="padding:10px 8px;font-size:12px;color:var(--text3);font-style:italic">Sin reglas aún. Añade la primera usando los botones de arriba o el formulario.</td></tr>`;
+      return `<div class="card" style="padding:14px 20px;margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:6px">⚙️ Reglas propias de categorización</div>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Si el concepto bancario <strong>contiene</strong> la keyword, se asigna esa categoría. Se guardan en este dispositivo y se aplican siempre.</p>
+        <div class="table-wrap" style="margin-bottom:12px">
+          <table><thead><tr><th>Keyword</th><th>Categoría</th><th></th></tr></thead>
+          <tbody>${reglasRows}</tbody></table>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="nueva-regla-kw" placeholder="Keyword (ej: HALLOWEEN, BIZUM MARIA, 27.00)" maxlength="60"
+            style="flex:1;min-width:160px;padding:7px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;background:var(--card);color:var(--text1)"
+            onkeydown="if(event.key==='Enter')_addBancoRegla()">
+          <select id="nueva-regla-cat"
+            style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;background:var(--card);color:var(--text1)">
+            <option value="">— Categoría —</option>${catOpts}
+          </select>
+          <button onclick="_addBancoRegla()" class="btn btn-sm">+ Añadir regla</button>
+        </div>
+      </div>`;
+    })()}
   `);
 }
 let _analisisMes = 'todos';
@@ -6345,7 +6429,10 @@ const _BANCO_CATS = [
   { id:'ALQUILER',      label:'Alquiler',               tipo:'G', color:'#f97316' },
   { id:'SUMINISTROS',   label:'Suministros (luz/agua/gas)', tipo:'G', color:'#fb923c' },
   { id:'TELEFONIA',     label:'Telefonía / internet',   tipo:'G', color:'#fbbf24' },
+  { id:'ACTIVIDADES',   label:'Actividades / Fiestas',  tipo:'G', color:'#7c3aed' },
+  { id:'COLABORADORES', label:'Colaboradores / Instruct.',tipo:'G', color:'#8b5cf6' },
   { id:'MATERIAL',      label:'Material deportivo',     tipo:'G', color:'#84cc16' },
+  { id:'MATERIAL_PEDAG',label:'Material pedagógico',    tipo:'G', color:'#65a30d' },
   { id:'SEGUROS',       label:'Seguros',                tipo:'G', color:'#38bdf8' },
   { id:'SERVICIOS',     label:'Servicios externos',     tipo:'G', color:'#818cf8' },
   { id:'COMISIONES',    label:'Comisiones bancarias',   tipo:'G', color:'#94a3b8' },
@@ -6434,24 +6521,37 @@ function _parseBBVA(rows) {
 }
 
 function _bancoCatAuto(concepto, esIngreso) {
-  const c = concepto.toLowerCase();
+  // 0. Reglas propias del usuario (máxima prioridad)
+  const _reglas = _bancoReglasLoad();
+  if (_reglas.length) {
+    const _cu = (concepto||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    for (const r of _reglas) {
+      if (r.kw && _cu.includes(r.kw.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''))) return r.catId;
+    }
+  }
+  const c = (concepto||'').toLowerCase();
   if (esIngreso) {
     if (/matricula|matr[íi]cula|inscripci/.test(c)) return 'MATRICULAS';
     if (/subvenci|ayuda|beca|donaci/.test(c)) return 'SUBVENCIONES';
     return 'CUOTAS';
   }
+  // — Academia (antes que general para capturar pagos propios)
+  if (/halloween|navidad|fiestas?\b|evento\b|celebraci|graduaci|fin de curso|fin curso|excursi|carnaval|dia del libro|dia de la paz/.test(c)) return 'ACTIVIDADES';
+  if (/monitor\b|instructor|colaborad|honorario|minuta\b|formad|animad|educad\b|docente/.test(c)) return 'COLABORADORES';
+  if (/manualidad|pintura|rotulad|cartulina|gomeva|goma eva|papel crepe|material escolar|material did|papeler/.test(c)) return 'MATERIAL_PEDAG';
+  // — General
   if (/n[oó]mina|salario|sueldo/.test(c)) return 'NOMINAS';
   if (/seguridad social|s\.s\.|cuentas cotizaci/.test(c)) return 'SS';
-  if (/alquiler|arrendamiento/.test(c)) return 'ALQUILER';
+  if (/alquiler|arrendamiento|rentbox/.test(c)) return 'ALQUILER';
   if (/endesa|iberdrola|naturgy|enel|electric|agua\b|gas\b|suministr/.test(c)) return 'SUMINISTROS';
   if (/tel[eé]f|movistar|vodafone|orange|jazztel|internet|fibra/.test(c)) return 'TELEFONIA';
-  if (/material|deport|equipamiento|bal[oó]n/.test(c)) return 'MATERIAL';
-  if (/seguro|p[oó]liza|mutua/.test(c)) return 'SEGUROS';
+  if (/material|deport|equipamiento|bal[oó]n|decathlon/.test(c)) return 'MATERIAL';
+  if (/seguro|p[oó]liza|mutua|pepper assets/.test(c)) return 'SEGUROS';
   if (/comisi[oó]n\b|asesor[íi]a|gestor[íi]a/.test(c)) return 'SERVICIOS';
   if (/gasto.?banco|cuota.?manten|mantenimiento.?cuenta/.test(c)) return 'COMISIONES';
   if (/irpf|hacienda|agencia tributaria|impuesto|aeat|retenci/.test(c)) return 'IMPUESTOS';
   if (/persona|familiar|propio|propietari|aut[oó]n/.test(c)) return 'PERSONAL';
-  if (/transfer|trasp/.test(c)) return 'TRANSFERENCIA';
+  if (/trasp(aso)/.test(c)) return 'TRANSFERENCIA';
   return 'GASTO_OTROS';
 }
 
