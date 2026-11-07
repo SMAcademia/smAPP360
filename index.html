@@ -13218,38 +13218,36 @@ function presupuesto() {
 //  MÓDULO: RESERVAS (Entrenamiento Personal)
 // ══════════════════════════════════════════════════════════════════════════
 
-// Días disponibles: 0=Dom, 2=Mar, 4=Jue  — se puede cambiar desde Configuración del módulo
 let _resCfg = (function() {
   try { return JSON.parse(localStorage.getItem('res-cfg') || 'null') || {}; } catch(_) { return {}; }
 })();
 function _resSaveCfg() { try { localStorage.setItem('res-cfg', JSON.stringify(_resCfg)); } catch(_) {} }
+function _resDiasDisp() { return _resCfg.dias || [0, 2, 4]; } // Dom=0, Mar=2, Jue=4
+function _resWA()       { return _resCfg.wa  || ''; }
 
-function _resDiasDisp()  { return _resCfg.dias  || [0, 2, 4]; }
-// Hora como "HH:MM" — soporta medias horas (p.ej. "18:30")
-function _resHoraIni()   {
-  const v = _resCfg.hIni;
-  if (!v && v !== 0) return '17:00';
-  if (typeof v === 'number') return String(v).padStart(2,'0') + ':00'; // compat antigua config
-  return v;
-}
-function _resHoraFin()   {
-  const v = _resCfg.hFin;
-  if (!v) return '18:30';
-  if (typeof v === 'number') return String(v).padStart(2,'0') + ':00';
-  return v;
-}
-function _resMins(t)     { const [h,m] = String(t||'0:0').split(':').map(Number); return h*60+m; }
-function _resWA()        { return _resCfg.wa    || ''; }
-function _resDurDef()    { return _resCfg.dur   || 60; }
-
-const _RES_DIA_NAMES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-const _RES_DIA_FULL  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-const _RES_ESTADOS   = ['PENDIENTE','CONFIRMADA','COMPLETADA','CANCELADA'];
+const _RES_DIA_NAMES    = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const _RES_DIA_FULL     = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+const _RES_ESTADOS      = ['PENDIENTE','CONFIRMADA','COMPLETADA','CANCELADA'];
 const _RES_ESTADO_COLOR = { PENDIENTE:'#f59e0b', CONFIRMADA:'#22c55e', COMPLETADA:'#6366f1', CANCELADA:'#ef4444' };
+const _RES_MAX_PLAZAS   = 8;
+const _RES_HORA_INI     = '17:00';
+const _RES_HORA_FIN     = '18:30';
+const _RES_MONITOR      = 'SAMY';
 
 let _resTabActual = 'dashboard';
-let _resCalOffset = 0; // semanas desde hoy
+let _resCalOffset = 0;
 
+// ── Capacidad ─────────────────────────────────────────────────────────────
+function _resOcupadas(fecha) {
+  return DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA').length;
+}
+function _resPlazasLibres(fecha) { return _RES_MAX_PLAZAS - _resOcupadas(fecha); }
+function _resFechaEsDisp(fecha) {
+  const d = new Date(fecha + 'T12:00:00');
+  return _resDiasDisp().includes(d.getDay());
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
 function reservas() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva reserva', () => modalReserva(), 'btn-primary');
@@ -13259,9 +13257,9 @@ function reservas() {
   render(`
     <div style="display:grid;gap:16px">
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${['dashboard','calendario','servicios','historial'].map(t =>
+        ${['dashboard','calendario','historial'].map(t =>
           `<button class="btn ${_resTabActual===t?'btn-primary':'btn-secondary'}" style="font-size:13px"
-            onclick="_resTab('${t}')">${{dashboard:'📊 Dashboard',calendario:'📅 Calendario',servicios:'🏋️ Servicios',historial:'📋 Historial'}[t]}</button>`
+            onclick="_resTab('${t}')">${{dashboard:'📊 Dashboard',calendario:'📅 Calendario',historial:'📋 Historial'}[t]}</button>`
         ).join('')}
       </div>
       <div id="res-content"></div>
@@ -13283,45 +13281,67 @@ function _resRenderTab() {
   const c = document.getElementById('res-content');
   if (!c) return;
   if (_resTabActual === 'dashboard')   c.innerHTML = _resDashboardHtml();
-  else if (_resTabActual === 'calendario') { c.innerHTML = _resCalHtml(); _resCalBind(); }
-  else if (_resTabActual === 'servicios')  c.innerHTML = _resServiciosHtml();
+  else if (_resTabActual === 'calendario') c.innerHTML = _resCalHtml();
   else if (_resTabActual === 'historial')  c.innerHTML = _resHistorialHtml();
 }
 
 // ── DASHBOARD ───────────────────────────────────────────────────────────────
 function _resDashboardHtml() {
-  const hoy       = new Date().toISOString().slice(0,10);
-  const semIni    = _resLunes(new Date()).toISOString().slice(0,10);
-  const semFin    = new Date(+_resLunes(new Date()) + 6*86400000).toISOString().slice(0,10);
+  const hoy    = new Date().toISOString().slice(0,10);
+  const semIni = _resLunes(new Date()).toISOString().slice(0,10);
+  const semFin = new Date(+_resLunes(new Date()) + 6*86400000).toISOString().slice(0,10);
 
-  const activas   = DB.reservas.filter(r => !['CANCELADA'].includes(r.ESTADO||'PENDIENTE'));
-  const hoyRes    = DB.reservas.filter(r => r.FECHA === hoy && r.ESTADO !== 'CANCELADA');
-  const semRes    = DB.reservas.filter(r => r.FECHA >= semIni && r.FECHA <= semFin && r.ESTADO !== 'CANCELADA');
+  const activas    = DB.reservas.filter(r => r.ESTADO !== 'CANCELADA');
+  const hoyRes     = activas.filter(r => r.FECHA === hoy);
+  const semRes     = activas.filter(r => r.FECHA >= semIni && r.FECHA <= semFin);
   const pendientes = DB.reservas.filter(r => (r.ESTADO||'PENDIENTE') === 'PENDIENTE');
-  const mesMes    = new Date().toISOString().slice(0,7);
-  const ingresosMes = DB.reservas
-    .filter(r => (r.FECHA||'').slice(0,7) === mesMes && r.ESTADO === 'COMPLETADA')
-    .reduce((s,r) => {
-      const svc = DB.serviciosReservas.find(s => String(s.ID_SERVICIO) === String(r.ID_SERVICIO));
-      return s + (parseFloat(svc?.PRECIO)||0);
-    }, 0);
 
-  // Próximas reservas (hoy en adelante, no canceladas, máx 8)
+  // Próximas 6 sesiones disponibles
+  const proxDias = [];
+  const dBase = new Date(); dBase.setHours(0,0,0,0);
+  for (let i = 0; proxDias.length < 6 && i < 60; i++) {
+    const f = new Date(+dBase + i*86400000).toISOString().slice(0,10);
+    if (_resFechaEsDisp(f)) proxDias.push(f);
+  }
+
+  const diaCard = fecha => {
+    const ocupadas = _resOcupadas(fecha);
+    const libres   = _RES_MAX_PLAZAS - ocupadas;
+    const d2 = new Date(fecha+'T12:00:00');
+    const dStr = _RES_DIA_FULL[d2.getDay()] + ' ' + d2.getDate()+'/'+(d2.getMonth()+1);
+    const pct  = (ocupadas / _RES_MAX_PLAZAS) * 100;
+    const barColor = libres === 0 ? 'var(--red,#ef4444)' : libres <= 2 ? 'var(--amber,#f59e0b)' : 'var(--green)';
+    const resDelDia = DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA');
+    return `<div class="card" style="padding:14px 16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:13px;font-weight:700">${dStr}</div>
+        <div style="font-size:12px;font-weight:700;color:${barColor}">${libres===0?'Completo':libres+' libre'+(libres>1?'s':'')}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${_RES_HORA_INI}–${_RES_HORA_FIN} · ${_RES_MONITOR}</div>
+      <div style="height:4px;border-radius:2px;background:var(--border2);margin-bottom:8px">
+        <div style="width:${pct}%;height:100%;border-radius:2px;background:${barColor}"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${ocupadas}/${_RES_MAX_PLAZAS} · ${
+        resDelDia.length ? resDelDia.map(r=>esc(r.NOMBRE_CLIENTE||'—')).join(', ') : 'Sin reservas'
+      }</div>
+      ${libres > 0 ? `<button class="btn btn-secondary" style="font-size:12px;width:100%" onclick="modalReserva(null,'${fecha}')">+ Añadir</button>` : ''}
+    </div>`;
+  };
+
   const proximas = DB.reservas
     .filter(r => r.FECHA >= hoy && r.ESTADO !== 'CANCELADA')
-    .sort((a,b) => (a.FECHA+a.HORA_INICIO).localeCompare(b.FECHA+b.HORA_INICIO))
+    .sort((a,b) => a.FECHA.localeCompare(b.FECHA))
     .slice(0,8);
 
   const filaProx = r => {
-    const svc = DB.serviciosReservas.find(s => String(s.ID_SERVICIO) === String(r.ID_SERVICIO));
-    const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
-    const dia   = new Date(r.FECHA+'T12:00:00');
-    const diaStr = _RES_DIA_FULL[dia.getDay()] + ' ' + dia.getDate() + '/' + (dia.getMonth()+1);
+    const color  = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
+    const dia    = new Date(r.FECHA+'T12:00:00');
+    const diaStr = _RES_DIA_FULL[dia.getDay()] + ' ' + dia.getDate()+'/'+(dia.getMonth()+1);
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2)">
       <div style="width:4px;height:40px;border-radius:2px;background:${color};flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600">${esc(r.NOMBRE_CLIENTE||'—')}</div>
-        <div style="font-size:11px;color:var(--text3)">${esc(svc?.NOMBRE||'Servicio')} · ${diaStr} ${r.HORA_INICIO||''}–${r.HORA_FIN||''}</div>
+        <div style="font-size:11px;color:var(--text3)">${diaStr} · ${_RES_HORA_INI}–${_RES_HORA_FIN}</div>
       </div>
       <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color}22;color:${color}">${r.ESTADO||'PENDIENTE'}</span>
       <button class="btn btn-sm btn-secondary" onclick='modalReserva(${JSON.stringify(r)})'>Ver</button>
@@ -13334,11 +13354,17 @@ function _resDashboardHtml() {
         <div class="kpi"><div class="kpi-n">${hoyRes.length}</div><div class="kpi-l">Hoy</div></div>
         <div class="kpi"><div class="kpi-n">${semRes.length}</div><div class="kpi-l">Esta semana</div></div>
         <div class="kpi"><div class="kpi-n" style="color:var(--amber,#f59e0b)">${pendientes.length}</div><div class="kpi-l">Pendientes</div></div>
-        <div class="kpi"><div class="kpi-n" style="color:var(--green)">${fmtEur(ingresosMes)}</div><div class="kpi-l">Ingresos este mes</div></div>
+        <div class="kpi"><div class="kpi-n">${activas.length}</div><div class="kpi-l">Total activas</div></div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Próximas sesiones</div>
+        <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+          ${proxDias.map(diaCard).join('')}
+        </div>
       </div>
       <div class="card" style="padding:18px 20px">
-        <div style="font-size:13px;font-weight:700;margin-bottom:12px">Próximas citas</div>
-        ${proximas.length ? proximas.map(filaProx).join('') : '<p style="color:var(--text3);font-size:13px;margin:0">Sin citas próximas</p>'}
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px">Próximas reservas</div>
+        ${proximas.length ? proximas.map(filaProx).join('') : '<p style="color:var(--text3);font-size:13px;margin:0">Sin reservas próximas</p>'}
       </div>
     </div>`;
 }
@@ -13346,7 +13372,7 @@ function _resDashboardHtml() {
 // ── CALENDARIO ──────────────────────────────────────────────────────────────
 function _resLunes(d) {
   const r = new Date(d); r.setHours(0,0,0,0);
-  const dow = r.getDay(); // 0=dom
+  const dow = r.getDay();
   r.setDate(r.getDate() - (dow === 0 ? 6 : dow - 1));
   return r;
 }
@@ -13354,129 +13380,75 @@ function _resLunes(d) {
 function _resCalHtml() {
   const lunes = new Date(+_resLunes(new Date()) + _resCalOffset * 7 * 86400000);
   const dias  = Array.from({length:7}, (_,i) => new Date(+lunes + i*86400000));
-  const hIni  = _resHoraIni(); const hFin = _resHoraFin();
-  const iniMin = _resMins(hIni), finMin = _resMins(hFin);
-  const slots = [];
-  for (let m = iniMin; m < finMin; m += 30) {
-    slots.push(String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'));
-  }
+  const hoy   = new Date().toISOString().slice(0,10);
+  const diasDisp = _resDiasDisp();
 
   const lunes_str   = lunes.toLocaleDateString('es-ES',{day:'numeric',month:'short'});
   const domingo_str = dias[6].toLocaleDateString('es-ES',{day:'numeric',month:'short'});
-  const hoy         = new Date().toISOString().slice(0,10);
-  const diasDisp    = _resDiasDisp();
 
-  // Reservas de esta semana
-  const semFechas = dias.map(d => d.toISOString().slice(0,10));
-  const semRes    = DB.reservas.filter(r => semFechas.includes(r.FECHA) && r.ESTADO !== 'CANCELADA');
-
-  const colStyle = (dow) => {
-    const isDisp = diasDisp.includes(dow);
-    return isDisp ? 'background:var(--bg2)' : 'background:transparent;opacity:.45';
-  };
-
-  // Cabeceras de días
-  const headers = dias.map((d,i) => {
+  const diaCard = (d) => {
     const dow    = d.getDay();
     const fecha  = d.toISOString().slice(0,10);
     const esHoy  = fecha === hoy;
     const isDisp = diasDisp.includes(dow);
-    return `<div style="text-align:center;padding:6px 2px;font-size:12px;font-weight:${esHoy?'800':'600'};
-      color:${esHoy?'var(--primary)':'var(--text)'};border-bottom:2px solid ${esHoy?'var(--primary)':'var(--border)'};
-      ${!isDisp?'opacity:.4':''}">
-      <div>${_RES_DIA_NAMES[dow]}</div>
-      <div style="font-size:14px;margin-top:1px">${d.getDate()}</div>
-      ${isDisp?`<div style="font-size:9px;color:var(--green);font-weight:700;margin-top:1px">DISPONIBLE</div>`:'<div style="font-size:9px;margin-top:1px">&nbsp;</div>'}
-    </div>`;
-  }).join('');
+    const esPasado = fecha < hoy;
 
-  // Cuerpo del calendario
-  const slotH = 28; // px por slot de 30min
-  const totalH = slots.length * slotH;
-
-  // Columnas de días con reservas superpuestas
-  const colsDias = dias.map((d,i) => {
-    const dow   = d.getDay();
-    const fecha = d.toISOString().slice(0,10);
-    const isDisp = diasDisp.includes(dow);
-    const resDelDia = semRes.filter(r => r.FECHA === fecha);
-
-    // Slots vacíos clicables (solo días disponibles)
-    const slotsHtml = isDisp ? slots.map((s,si) => {
-      const [h,m] = s.split(':').map(Number);
-      const minSlot = h*60 + m;
-      const yaOcupado = resDelDia.some(r => {
-        const [rh,rm] = (r.HORA_INICIO||'0:0').split(':').map(Number);
-        const rfin    = r.HORA_FIN ? r.HORA_FIN.split(':').map(Number) : [rh+1,rm];
-        const rIni = rh*60+rm, rFin = rfin[0]*60+rfin[1];
-        return minSlot >= rIni && minSlot < rFin;
-      });
-      if (yaOcupado) return '';
-      return `<div style="position:absolute;top:${si*slotH}px;left:0;right:0;height:${slotH-1}px;cursor:pointer;border-radius:3px"
-        title="Añadir cita ${s}"
-        onmouseenter="this.style.background='rgba(var(--primary-rgb,99,102,241),.1)'"
-        onmouseleave="this.style.background=''"
-        onclick="modalReserva(null,'${fecha}','${s}')"></div>`;
-    }).join('') : '';
-
-    // Bloques de reservas
-    const resHtml = resDelDia.map(r => {
-      const [sh,sm]  = (r.HORA_INICIO||'09:00').split(':').map(Number);
-      const [eh,em]  = (r.HORA_FIN||'10:00').split(':').map(Number);
-      const topMin   = (sh*60+sm) - iniMin;
-      const durMin   = (eh*60+em) - (sh*60+sm);
-      const topPx    = (topMin/30) * slotH;
-      const hPx      = Math.max((durMin/30) * slotH - 2, 20);
-      const svc      = DB.serviciosReservas.find(s => String(s.ID_SERVICIO) === String(r.ID_SERVICIO));
-      const color    = svc?.COLOR || _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6366f1';
-      return `<div style="position:absolute;top:${topPx}px;left:1px;right:1px;height:${hPx}px;
-        background:${color}ee;border-radius:4px;padding:2px 4px;overflow:hidden;cursor:pointer;
-        border-left:3px solid ${color}"
-        onclick='modalReserva(${JSON.stringify(r)})' title="${esc(r.NOMBRE_CLIENTE)} ${r.HORA_INICIO}–${r.HORA_FIN}">
-        <div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_CLIENTE||'—')}</div>
-        <div style="font-size:9px;color:rgba(255,255,255,.85)">${r.HORA_INICIO}–${r.HORA_FIN}</div>
+    if (!isDisp) {
+      return `<div style="padding:12px;border-radius:var(--r);border:1px solid var(--border);opacity:.3;min-height:80px;display:flex;flex-direction:column;justify-content:flex-start">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">${_RES_DIA_NAMES[dow]}</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text3);margin-top:2px">${d.getDate()}</div>
       </div>`;
-    }).join('');
+    }
 
-    return `<div style="position:relative;min-height:${totalH}px;border-left:1px solid var(--border2);${colStyle(dow)}">
-      ${slotsHtml}${resHtml}
+    const ocupadas = _resOcupadas(fecha);
+    const libres   = _RES_MAX_PLAZAS - ocupadas;
+    const pct      = (ocupadas / _RES_MAX_PLAZAS) * 100;
+    const barColor = libres === 0 ? 'var(--red,#ef4444)' : libres <= 2 ? 'var(--amber,#f59e0b)' : 'var(--green)';
+    const resDelDia = DB.reservas.filter(r => r.FECHA === fecha && r.ESTADO !== 'CANCELADA');
+
+    return `<div style="padding:12px;border-radius:var(--r);border:1px solid ${esHoy?'var(--primary)':'var(--border)'};
+      background:${esHoy?'rgba(var(--primary-rgb,99,102,241),.06)':'var(--bg2)'};${esPasado?'opacity:.6':''}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${esHoy?'var(--primary)':'var(--text3)'}">${_RES_DIA_NAMES[dow]}</div>
+          <div style="font-size:20px;font-weight:700;color:${esHoy?'var(--primary)':'var(--text)'};line-height:1.1">${d.getDate()}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:17px;font-weight:800;color:${barColor};font-variant-numeric:tabular-nums">${ocupadas}<span style="font-size:11px;font-weight:500;color:var(--text3)">/${_RES_MAX_PLAZAS}</span></div>
+          <div style="font-size:9px;font-weight:700;color:${barColor};text-transform:uppercase">${libres===0?'completo':libres+' libre'+(libres>1?'s':'')}</div>
+        </div>
+      </div>
+      <div style="height:3px;border-radius:2px;background:var(--border2);margin-bottom:6px">
+        <div style="width:${pct}%;height:100%;border-radius:2px;background:${barColor}"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">${_RES_HORA_INI}–${_RES_HORA_FIN}</div>
+      ${resDelDia.length ? `<div style="font-size:11px;line-height:1.7;margin-bottom:6px">${
+        resDelDia.map(r => {
+          const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
+          return `<div style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+            onclick='modalReserva(${JSON.stringify(r)})'>
+            <div style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0"></div>
+            <span style="overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_CLIENTE||'—')}</span>
+          </div>`;
+        }).join('')
+      }</div>` : ''}
+      ${!esPasado && libres > 0 ? `<button class="btn btn-secondary" style="font-size:11px;width:100%;padding:4px 0;margin-top:4px" onclick="modalReserva(null,'${fecha}')">+ Reserva</button>` : ''}
     </div>`;
-  }).join('');
-
-  // Columna de horas
-  const horasHtml = slots.map((s,i) => {
-    const esPar = s.endsWith(':00');
-    return `<div style="position:absolute;top:${i*slotH}px;left:0;right:0;height:${slotH}px;
-      font-size:10px;color:var(--text3);text-align:right;padding-right:6px;line-height:${slotH}px;
-      border-top:1px solid ${esPar?'var(--border2)':'transparent'};white-space:nowrap">
-      ${esPar?s:''}</div>`;
-  }).join('');
+  };
 
   return `
-    <div class="card" style="padding:14px 16px;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <div class="card" style="padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
         <button class="btn btn-secondary" style="padding:5px 10px;font-size:13px" onclick="_resCalSemana(-1)">‹</button>
-        <span style="font-size:13px;font-weight:600;flex:1;text-align:center">
-          ${lunes_str} — ${domingo_str}
-        </span>
+        <span style="font-size:13px;font-weight:600;flex:1;text-align:center">${lunes_str} — ${domingo_str}</span>
         <button class="btn btn-secondary" onclick="_resCalSemana(0)" style="font-size:12px;padding:4px 8px">Hoy</button>
         <button class="btn btn-secondary" style="padding:5px 10px;font-size:13px" onclick="_resCalSemana(1)">›</button>
       </div>
-      <div style="overflow-x:auto">
-        <div style="min-width:580px">
-          <div style="display:grid;grid-template-columns:44px repeat(7,1fr);margin-bottom:4px">
-            <div></div>${headers}
-          </div>
-          <div style="display:grid;grid-template-columns:44px repeat(7,1fr);position:relative">
-            <div style="position:relative;min-height:${totalH}px">${horasHtml}</div>
-            ${colsDias}
-          </div>
-        </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">
+        ${dias.map(diaCard).join('')}
       </div>
     </div>`;
 }
-
-function _resCalBind() {}
 
 function _resCalSemana(d) {
   if (d === 0) _resCalOffset = 0;
@@ -13484,52 +13456,25 @@ function _resCalSemana(d) {
   _resRenderTab();
 }
 
-// ── SERVICIOS ───────────────────────────────────────────────────────────────
-function _resServiciosHtml() {
-  const lista = DB.serviciosReservas;
-  return `
-    <div class="card" style="padding:14px 20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:700">Servicios de entrenamiento</div>
-        <button class="btn btn-primary" style="font-size:13px" onclick="modalServicioReserva()">+ Nuevo servicio</button>
-      </div>
-      ${lista.length === 0 ? '<p style="color:var(--text3);font-size:13px">Sin servicios configurados. Añade el primero.</p>' :
-        `<div style="display:grid;gap:10px">` +
-        lista.map(s => {
-          const activo = String(s.ACTIVO||'SÍ').toUpperCase().startsWith('S');
-          return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2)">
-            <div style="width:16px;height:16px;border-radius:50%;background:${esc(s.COLOR||'#6366f1')};flex-shrink:0"></div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:600">${esc(s.NOMBRE||'—')}</div>
-              <div style="font-size:11px;color:var(--text3)">${s.DURACION||60} min · ${fmtEur(s.PRECIO)} · ${esc(s.DESCRIPCION||'')}</div>
-            </div>
-            ${activo ? '' : '<span style="font-size:11px;color:var(--red);font-weight:600">Inactivo</span>'}
-            <button class="btn btn-sm btn-secondary" onclick='modalServicioReserva(${JSON.stringify(s)})'>Editar</button>
-          </div>`;
-        }).join('') + `</div>`
-      }
-    </div>`;
-}
-
 // ── HISTORIAL ───────────────────────────────────────────────────────────────
 function _resHistorialHtml() {
-  const lista = [...DB.reservas].sort((a,b) => (b.FECHA+b.HORA_INICIO).localeCompare(a.FECHA+a.HORA_INICIO));
+  const lista = [...DB.reservas].sort((a,b) => b.FECHA.localeCompare(a.FECHA));
   return `
     <div class="card" style="padding:14px 20px">
       <div style="font-size:13px;font-weight:700;margin-bottom:12px">Historial de reservas</div>
       ${lista.length === 0 ? '<p style="color:var(--text3);font-size:13px;margin:0">Sin reservas registradas.</p>' :
         `<div class="table-wrap"><table>
-          <thead><tr><th>Fecha</th><th>Hora</th><th>Cliente</th><th>Servicio</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Horario</th><th>Cliente</th><th>Plazas</th><th>Estado</th><th></th></tr></thead>
           <tbody>${lista.map(r => {
-            const svc   = DB.serviciosReservas.find(s => String(s.ID_SERVICIO) === String(r.ID_SERVICIO));
             const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
             const d     = new Date(r.FECHA+'T12:00:00');
             const dStr  = _RES_DIA_NAMES[d.getDay()] + ' ' + d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();
+            const ocup  = _resOcupadas(r.FECHA);
             return `<tr>
               <td style="font-size:12px">${dStr}</td>
-              <td class="mono" style="font-size:12px">${r.HORA_INICIO||'—'}–${r.HORA_FIN||'—'}</td>
-              <td><strong>${esc(r.NOMBRE_CLIENTE||'—')}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.EMAIL||'')} ${r.TELEFONO?'· '+r.TELEFONO:''}</span></td>
-              <td style="font-size:12px">${esc(svc?.NOMBRE||'—')}</td>
+              <td class="mono" style="font-size:12px">${_RES_HORA_INI}–${_RES_HORA_FIN}</td>
+              <td><strong>${esc(r.NOMBRE_CLIENTE||'—')}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.EMAIL||'')}${r.TELEFONO?' · '+r.TELEFONO:''}</span></td>
+              <td style="font-size:12px;font-variant-numeric:tabular-nums">${ocup}/${_RES_MAX_PLAZAS}</td>
               <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color}22;color:${color}">${r.ESTADO||'PENDIENTE'}</span></td>
               <td><button class="btn btn-sm btn-secondary" onclick='modalReserva(${JSON.stringify(r)})'>Ver</button></td>
             </tr>`;
@@ -13540,37 +13485,45 @@ function _resHistorialHtml() {
 }
 
 // ── MODAL RESERVA ────────────────────────────────────────────────────────────
-function modalReserva(r, fechaDefault, horaDefault) {
+function modalReserva(r, fechaDefault) {
   r = r || {};
-  const isNew = !r.ID_RESERVA;
-  const svcOps = DB.serviciosReservas
-    .filter(s => String(s.ACTIVO||'SÍ').toUpperCase().startsWith('S') || String(s.ID_SERVICIO)===String(r.ID_SERVICIO))
-    .map(s => `<option value="${s.ID_SERVICIO}" ${String(r.ID_SERVICIO)===String(s.ID_SERVICIO)?'selected':''}>${esc(s.NOMBRE)} (${s.DURACION||60} min · ${fmtEur(s.PRECIO)})</option>`)
-    .join('');
+  const isNew  = !r.ID_RESERVA;
+  const fecha  = r.FECHA || fechaDefault || '';
+  const libres = fecha ? _resPlazasLibres(fecha) : null;
 
   const estadoOps = _RES_ESTADOS.map(e =>
     `<option value="${e}" ${(r.ESTADO||'PENDIENTE')===e?'selected':''}>${e}</option>`).join('');
 
-  const wa = _resWA();
-  const waBtn = (r.TELEFONO && wa)
+  let capacidadHtml = '';
+  if (fecha && isNew) {
+    if (libres <= 0) {
+      capacidadHtml = `<div style="background:var(--red,#ef4444)1a;border:1px solid var(--red,#ef4444)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--red,#ef4444);font-weight:600;margin-bottom:12px">⛔ Sesión completa — no quedan plazas para esta fecha.</div>`;
+    } else if (libres <= 2) {
+      capacidadHtml = `<div style="background:var(--amber,#f59e0b)1a;border:1px solid var(--amber,#f59e0b)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--amber,#f59e0b);font-weight:600;margin-bottom:12px">⚠️ Quedan ${libres} plaza${libres>1?'s':''} para esta sesión.</div>`;
+    } else {
+      capacidadHtml = `<div style="background:var(--green)1a;border:1px solid var(--green)44;border-radius:6px;padding:10px 12px;font-size:13px;color:var(--green);font-weight:600;margin-bottom:12px">✅ ${libres} de ${_RES_MAX_PLAZAS} plazas disponibles · ${_RES_HORA_INI}–${_RES_HORA_FIN} · Monitor: ${_RES_MONITOR}</div>`;
+    }
+  }
+
+  const waBtn = (r.TELEFONO)
     ? `<a class="btn btn-secondary" style="font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:5px"
-        href="https://wa.me/${wa.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, tu cita está confirmada para el '+r.FECHA+' a las '+r.HORA_INICIO+'.')}"
+        href="https://wa.me/${r.TELEFONO.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, tu reserva está confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.')}"
         target="_blank">📲 WhatsApp cliente</a>`
     : '';
   const emailBtn = r.EMAIL
     ? `<a class="btn btn-secondary" style="font-size:12px;text-decoration:none"
-        href="mailto:${esc(r.EMAIL)}?subject=${encodeURIComponent('Confirmación de cita — SM Academia')}&body=${encodeURIComponent('Hola '+r.NOMBRE_CLIENTE+',\n\nTu cita ha sido confirmada para el '+r.FECHA+' a las '+r.HORA_INICIO+'.\n\nUn saludo,\nSM Academia')}"
+        href="mailto:${esc(r.EMAIL)}?subject=${encodeURIComponent('Confirmación de reserva — SM Academia')}&body=${encodeURIComponent('Hola '+r.NOMBRE_CLIENTE+',\n\nTu reserva ha sido confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.\n\nUn saludo,\nSM Academia')}"
         >✉️ Email cliente</a>`
     : '';
-
   const notifBtns = (!isNew && (waBtn || emailBtn))
     ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">${waBtn}${emailBtn}</div>`
     : '';
 
   openModal(isNew ? 'Nueva reserva' : 'Editar reserva', `
+    ${capacidadHtml}
     <div class="form-grid">
-      <div class="field"><label>Servicio <span class="req">*</span></label>
-        <select id="rv-svc" onchange="_resAutoHoraFin()">${svcOps}</select></div>
+      <div class="field"><label>Fecha <span class="req">*</span></label>
+        <input id="rv-fecha" type="date" value="${esc(fecha)}"></div>
       <div class="field"><label>Estado</label>
         <select id="rv-estado">${estadoOps}</select></div>
       <div class="field"><label>Nombre cliente <span class="req">*</span></label>
@@ -13579,12 +13532,6 @@ function modalReserva(r, fechaDefault, horaDefault) {
         <input id="rv-tel" type="tel" value="${esc(r.TELEFONO||'')}"></div>
       <div class="field span2"><label>Email</label>
         <input id="rv-email" type="email" value="${esc(r.EMAIL||'')}"></div>
-      <div class="field"><label>Fecha <span class="req">*</span></label>
-        <input id="rv-fecha" type="date" value="${esc(r.FECHA||fechaDefault||'')}"></div>
-      <div class="field"><label>Hora inicio <span class="req">*</span></label>
-        <input id="rv-hini" type="time" value="${esc(r.HORA_INICIO||horaDefault||'')}" oninput="_resAutoHoraFin()"></div>
-      <div class="field"><label>Hora fin</label>
-        <input id="rv-hfin" type="time" value="${esc(r.HORA_FIN||'')}"></div>
       <div class="field span2"><label>Notas (visibles al cliente)</label>
         <textarea id="rv-notas" rows="2">${esc(r.NOTAS||'')}</textarea></div>
       <div class="field span2"><label>Notas internas</label>
@@ -13598,47 +13545,32 @@ function modalReserva(r, fechaDefault, horaDefault) {
   );
 }
 
-function _resAutoHoraFin() {
-  const svcId = document.getElementById('rv-svc')?.value;
-  const hIni  = document.getElementById('rv-hini')?.value;
-  if (!svcId || !hIni) return;
-  const svc = DB.serviciosReservas.find(s => String(s.ID_SERVICIO) === svcId);
-  if (!svc || !svc.DURACION) return;
-  const [h,m] = hIni.split(':').map(Number);
-  const totalMin = h*60 + m + Number(svc.DURACION);
-  const hFin = String(Math.floor(totalMin/60)).padStart(2,'0') + ':' + String(totalMin%60).padStart(2,'0');
-  const el = document.getElementById('rv-hfin');
-  if (el && !el._manual) el.value = hFin;
-}
-
 async function guardarReserva(id) {
   const btn = document.getElementById('rv-save-btn');
   if (btn) btn.disabled = true;
   try {
     const nombre = document.getElementById('rv-nombre')?.value.trim();
     const fecha  = document.getElementById('rv-fecha')?.value;
-    const hIni   = document.getElementById('rv-hini')?.value;
     if (!nombre) throw new Error('El nombre del cliente es obligatorio');
     if (!fecha)  throw new Error('La fecha es obligatoria');
-    if (!hIni)   throw new Error('La hora de inicio es obligatoria');
-
+    if (!_resFechaEsDisp(fecha)) throw new Error('La fecha debe ser Martes, Jueves o Domingo');
+    if (!id) {
+      const libres = _resPlazasLibres(fecha);
+      if (libres <= 0) throw new Error('La sesión de ese día está completa (8/8 plazas)');
+    }
     const row = {
-      ID_SERVICIO:     document.getElementById('rv-svc')?.value || '',
-      NOMBRE_CLIENTE:  nombre.toUpperCase(),
-      EMAIL:           document.getElementById('rv-email')?.value.trim() || '',
-      TELEFONO:        document.getElementById('rv-tel')?.value.trim() || '',
-      FECHA:           fecha,
-      HORA_INICIO:     hIni,
-      HORA_FIN:        document.getElementById('rv-hfin')?.value || '',
-      ESTADO:          document.getElementById('rv-estado')?.value || 'PENDIENTE',
-      NOTAS:           document.getElementById('rv-notas')?.value.trim() || '',
-      NOTAS_INTERNAS:  document.getElementById('rv-notas-int')?.value.trim() || '',
-      FECHA_CREACION:  id ? undefined : new Date().toISOString().slice(0,10),
+      NOMBRE_CLIENTE: nombre.toUpperCase(),
+      EMAIL:          document.getElementById('rv-email')?.value.trim() || '',
+      TELEFONO:       document.getElementById('rv-tel')?.value.trim() || '',
+      FECHA:          fecha,
+      HORA_INICIO:    _RES_HORA_INI,
+      HORA_FIN:       _RES_HORA_FIN,
+      MONITOR:        _RES_MONITOR,
+      ESTADO:         document.getElementById('rv-estado')?.value || 'PENDIENTE',
+      NOTAS:          document.getElementById('rv-notas')?.value.trim() || '',
+      NOTAS_INTERNAS: document.getElementById('rv-notas-int')?.value.trim() || '',
     };
-    if (!id) delete row.FECHA_CREACION; // se autogenera en APPEND
-    Object.keys(row).forEach(k => { if (row[k] === undefined) delete row[k]; });
     if (!id) row.FECHA_CREACION = new Date().toISOString().slice(0,10);
-
     await writeToSheet('RESERVAS', row, id || null);
     await loadAllData();
     showToast('Reserva guardada');
@@ -13660,61 +13592,6 @@ async function _resCambiarEstado(id, estado) {
   _resRenderTab();
 }
 
-// ── MODAL SERVICIO ───────────────────────────────────────────────────────────
-function modalServicioReserva(s) {
-  s = s || {};
-  const isNew = !s.ID_SERVICIO;
-  openModal(isNew ? 'Nuevo servicio' : 'Editar servicio', `
-    <div class="form-grid">
-      <div class="field span2"><label>Nombre <span class="req">*</span></label>
-        <input id="rs-nombre" value="${esc(s.NOMBRE||'')}"></div>
-      <div class="field span2"><label>Descripción</label>
-        <input id="rs-desc" value="${esc(s.DESCRIPCION||'')}"></div>
-      <div class="field"><label>Duración (minutos)</label>
-        <select id="rs-dur">
-          ${[30,45,60,90,120].map(d=>`<option value="${d}" ${Number(s.DURACION||60)===d?'selected':''}>${d} min</option>`).join('')}
-        </select></div>
-      <div class="field"><label>Precio (€)</label>
-        <input id="rs-precio" type="number" min="0" step="0.01" value="${esc(String(s.PRECIO||''))}"></div>
-      <div class="field"><label>Color en calendario</label>
-        <input id="rs-color" type="color" value="${esc(s.COLOR||'#6366f1')}" style="height:38px;padding:2px 4px;width:100%"></div>
-      <div class="field"><label>Activo</label>
-        <select id="rs-activo">
-          <option value="SÍ" ${String(s.ACTIVO||'SÍ').toUpperCase().startsWith('S')?'selected':''}>Sí</option>
-          <option value="NO" ${String(s.ACTIVO||'').toUpperCase()==='NO'?'selected':''}>No</option>
-        </select></div>
-    </div>`,
-    `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-     <button class="btn btn-primary" id="rs-save-btn" onclick="guardarServicioReserva('${s.ID_SERVICIO||''}')">Guardar</button>`,
-    'sm'
-  );
-}
-
-async function guardarServicioReserva(id) {
-  const btn = document.getElementById('rs-save-btn');
-  if (btn) btn.disabled = true;
-  try {
-    const nombre = document.getElementById('rs-nombre')?.value.trim();
-    if (!nombre) throw new Error('El nombre es obligatorio');
-    const row = {
-      NOMBRE:      nombre,
-      DESCRIPCION: document.getElementById('rs-desc')?.value.trim() || '',
-      DURACION:    document.getElementById('rs-dur')?.value || '60',
-      PRECIO:      document.getElementById('rs-precio')?.value || '0',
-      COLOR:       document.getElementById('rs-color')?.value || '#6366f1',
-      ACTIVO:      document.getElementById('rs-activo')?.value || 'SÍ',
-    };
-    await writeToSheet('SERVICIOS_RESERVAS', row, id || null);
-    await loadAllData();
-    showToast('Servicio guardado');
-    closeModal();
-    _resRenderTab();
-  } catch(err) {
-    showToast(err.message || 'Error al guardar', 'error');
-    if (btn) btn.disabled = false;
-  }
-}
-
 // ── CONFIGURACIÓN DEL MÓDULO ─────────────────────────────────────────────────
 function _resModalConfig() {
   const dias = _resDiasDisp();
@@ -13726,18 +13603,15 @@ function _resModalConfig() {
 
   openModal('Configuración de Reservas', `
     <div class="form-grid">
+      <div class="field span2">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;font-size:13px">
+          <strong>Sesión fija:</strong> ${_RES_HORA_INI}–${_RES_HORA_FIN} · Máx. ${_RES_MAX_PLAZAS} plazas · Monitor: ${_RES_MONITOR}
+        </div>
+      </div>
       <div class="field span2"><label style="margin-bottom:6px;display:block">Días disponibles</label>
         <div style="display:flex;flex-wrap:wrap;gap:12px">${diaChecks}</div>
       </div>
-      <div class="field"><label>Hora inicio</label>
-        <input id="rcfg-hini" type="time" value="${_resHoraIni()}"></div>
-      <div class="field"><label>Hora fin</label>
-        <input id="rcfg-hfin" type="time" value="${_resHoraFin()}"></div>
-      <div class="field"><label>Duración por defecto (min)</label>
-        <select id="rcfg-dur">
-          ${[30,45,60,90,120].map(d=>`<option value="${d}" ${_resDurDef()===d?'selected':''}>${d} min</option>`).join('')}
-        </select></div>
-      <div class="field"><label>WhatsApp del entrenador</label>
+      <div class="field span2"><label>WhatsApp del entrenador</label>
         <input id="rcfg-wa" type="tel" placeholder="+34 600 000 000" value="${esc(_resWA())}"></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -13749,14 +13623,11 @@ function _resModalConfig() {
 function _resGuardarConfig() {
   const dias = [...document.querySelectorAll('.res-dia-chk:checked')].map(c => Number(c.value));
   _resCfg.dias = dias;
-  _resCfg.hIni = document.getElementById('rcfg-hini')?.value || '17:00';
-  _resCfg.hFin = document.getElementById('rcfg-hfin')?.value || '18:30';
-  _resCfg.dur  = Number(document.getElementById('rcfg-dur')?.value)  || 60;
   _resCfg.wa   = document.getElementById('rcfg-wa')?.value.trim() || '';
   _resSaveCfg();
   closeModal();
   showToast('Configuración guardada');
-  reservas(); // re-render
+  reservas();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
