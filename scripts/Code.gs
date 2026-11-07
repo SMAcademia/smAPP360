@@ -122,6 +122,14 @@ function doPost(e) {
       result = subirNominaPdf_(body);
     } else if (action === 'ENVIAR_AVISOS_NOMINAS') {
       result = enviarAvisosNominas_(body);
+    } else if (action === 'VERIFICAR_CLIENTE_RESERVA') {
+      result = verificarClienteReserva_(body);
+    } else if (action === 'CREAR_RESERVA_PUBLICA') {
+      result = crearReservaPublica_(body);
+    } else if (action === 'CANCELAR_RESERVA_PUBLICA') {
+      result = cancelarReservaPublica_(body);
+    } else if (action === 'GET_RESERVA_TOKEN') {
+      result = getReservaPorToken_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1493,4 +1501,323 @@ function enviarAvisosNominas_(body) {
     }
   }
   return { ok: true, enviados: enviados, errores: errores };
+}
+
+// ===========================================================================
+//  RESERVAS PÚBLICAS — reservar.html
+// ===========================================================================
+var RES_HORA_INI_   = '17:00';
+var RES_HORA_FIN_   = '18:30';
+var RES_MAX_PLAZAS_ = 8;
+var RES_APP_BASE_   = 'https://academiasmfutbol.github.io/sistema/';
+
+function verificarClienteReserva_(data) {
+  var book         = ss_();
+  var alumnos      = sheetToJSON(book, 'ALUMNOS');
+  var clientes     = sheetToJSON(book, 'CLIENTES');
+  var inscripciones= sheetToJSON(book, 'INSCRIPCIONES');
+  var reservas     = sheetToJSON(book, 'RESERVAS') || [];
+
+  var nombreBusq = stripAccents_((data.nombre || '').trim());
+  var telBusq    = String(data.telefono || '').replace(/\D/g, '').slice(-9);
+  if (!nombreBusq || telBusq.length < 9)
+    return { ok: false, error: 'Introduce nombre completo y teléfono de 9 dígitos.' };
+
+  // Buscar alumno por nombre normalizado
+  var alumno = null;
+  for (var i = 0; i < alumnos.length; i++) {
+    var a = alumnos[i];
+    var n = stripAccents_((a.NOMBRE + ' ' + (a.APELLIDOS || '')).trim());
+    if (n === nombreBusq) { alumno = a; break; }
+  }
+  if (!alumno) return { ok: false, error: 'Jugador no encontrado en el sistema.' };
+  if (!stripAccents_(String(alumno.LINEA || '')).includes('FUTBOL'))
+    return { ok: false, error: 'El jugador no pertenece a la línea SM Fútbol.' };
+
+  // Buscar tutor y verificar teléfono
+  var cliente = null;
+  for (var j = 0; j < clientes.length; j++) {
+    if (String(clientes[j].ID_CLIENTE) === String(alumno.ID_CLIENTE)) { cliente = clientes[j]; break; }
+  }
+  if (!cliente) return { ok: false, error: 'Perfil del tutor no encontrado.' };
+
+  var telCliente = String(cliente['TELÉFONO'] || cliente.TELEFONO || '').replace(/\D/g, '').slice(-9);
+  if (telCliente !== telBusq) return { ok: false, error: 'El teléfono no coincide con el registrado.' };
+
+  // Inscripciones activas con días asignados
+  var insActivas = inscripciones.filter(function(i) {
+    return String(i.ID_ALUMNO) === String(alumno.ID_ALUMNO) &&
+           String(i.ESTADO || '').toUpperCase() === 'ACTIVA' &&
+           (i.DIAS_SEMANA || i.DIA_SEMANA);
+  });
+  if (!insActivas.length)
+    return { ok: false, error: 'No hay inscripciones activas con días asignados.' };
+
+  // Cuota mensual y uso actual
+  var now    = new Date();
+  var quota  = cuotaMensual_(insActivas, now.getFullYear(), now.getMonth());
+  var mesStr = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth(), 1), 'Europe/Madrid', 'yyyy-MM');
+  var usadoMes = reservas.filter(function(r) {
+    return String(r.ID_ALUMNO) === String(alumno.ID_ALUMNO) &&
+           String(r.FECHA || '').startsWith(mesStr) &&
+           String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+  }).length;
+
+  // Slots disponibles y reservas activas del cliente
+  var slots = slotsDisponibles_(inscripciones, reservas, alumno.ID_ALUMNO, now);
+  var hoy   = Utilities.formatDate(now, 'Europe/Madrid', 'yyyy-MM-dd');
+  var misRes = reservas.filter(function(r) {
+    return String(r.ID_ALUMNO) === String(alumno.ID_ALUMNO) &&
+           (r.FECHA || '') >= hoy &&
+           String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+  }).sort(function(a, b) { return (a.FECHA || '') < (b.FECHA || '') ? -1 : 1; })
+    .map(function(r) {
+      return { id: r.ID_RESERVA, fecha: r.FECHA, fechaFmt: formatFechaEs_(r.FECHA || ''),
+               hora: RES_HORA_INI_ + '–' + RES_HORA_FIN_, estado: r.ESTADO || 'CONFIRMADA',
+               token: r.TOKEN_CANCEL || '' };
+    });
+
+  return { ok: true, idAlumno: String(alumno.ID_ALUMNO),
+           nombre: (alumno.NOMBRE + ' ' + (alumno.APELLIDOS || '')).trim(),
+           email: String(cliente.EMAIL || ''), telefono: telCliente,
+           quota: quota, usadoMes: usadoMes, slots: slots, misReservas: misRes };
+}
+
+function crearReservaPublica_(data) {
+  var book         = ss_();
+  var alumnos      = sheetToJSON(book, 'ALUMNOS');
+  var clientes     = sheetToJSON(book, 'CLIENTES');
+  var inscripciones= sheetToJSON(book, 'INSCRIPCIONES');
+  var reservas     = sheetToJSON(book, 'RESERVAS') || [];
+
+  var nombreBusq = stripAccents_((data.nombre || '').trim());
+  var telBusq    = String(data.telefono || '').replace(/\D/g, '').slice(-9);
+  var fecha      = String(data.fecha || '');
+  if (!nombreBusq || !telBusq || !/^\d{4}-\d{2}-\d{2}$/.test(fecha))
+    return { ok: false, error: 'Datos incompletos.' };
+
+  // Re-verificar cliente
+  var alumno = null;
+  for (var i = 0; i < alumnos.length; i++) {
+    var a = alumnos[i];
+    if (stripAccents_((a.NOMBRE + ' ' + (a.APELLIDOS || '')).trim()) === nombreBusq) { alumno = a; break; }
+  }
+  if (!alumno || !stripAccents_(String(alumno.LINEA || '')).includes('FUTBOL'))
+    return { ok: false, error: 'Verificación fallida.' };
+
+  var cliente = null;
+  for (var j = 0; j < clientes.length; j++) {
+    if (String(clientes[j].ID_CLIENTE) === String(alumno.ID_CLIENTE)) { cliente = clientes[j]; break; }
+  }
+  var telCliente = String(cliente ? (cliente['TELÉFONO'] || cliente.TELEFONO || '') : '').replace(/\D/g, '').slice(-9);
+  if (telCliente !== telBusq) return { ok: false, error: 'Verificación fallida.' };
+
+  // 24 horas de antelación
+  var now = new Date();
+  var fechaObj = new Date(fecha + 'T' + RES_HORA_INI_ + ':00');
+  if ((fechaObj.getTime() - now.getTime()) < 24 * 3600000)
+    return { ok: false, error: 'La reserva debe hacerse con al menos 24 horas de antelación.' };
+
+  // Cuota mensual
+  var insActivas = inscripciones.filter(function(i) {
+    return String(i.ID_ALUMNO) === String(alumno.ID_ALUMNO) &&
+           String(i.ESTADO || '').toUpperCase() === 'ACTIVA' &&
+           (i.DIAS_SEMANA || i.DIA_SEMANA);
+  });
+  var quota   = cuotaMensual_(insActivas, now.getFullYear(), now.getMonth());
+  var mesStr  = fecha.slice(0, 7);
+  var usadoMes = reservas.filter(function(r) {
+    return String(r.ID_ALUMNO) === String(alumno.ID_ALUMNO) &&
+           String(r.FECHA || '').startsWith(mesStr) &&
+           String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+  }).length;
+  if (usadoMes >= quota)
+    return { ok: false, error: 'Límite mensual alcanzado (' + quota + ' reservas). Podrás reservar el próximo mes.' };
+
+  // ¿Ya tiene reserva este día?
+  if (reservas.some(function(r) {
+    return r.FECHA === fecha && String(r.ID_ALUMNO) === String(alumno.ID_ALUMNO) &&
+           String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+  })) return { ok: false, error: 'Ya tienes una reserva para esta fecha.' };
+
+  // Capacidad del día
+  var dow = new Date(fecha + 'T12:00:00').getDay();
+  var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  var abonadosDia = inscripciones.filter(function(i) {
+    if (String(i.ESTADO || '').toUpperCase() !== 'ACTIVA') return false;
+    var parts = String(i.DIAS_SEMANA || i.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
+    return parts.some(function(p) {
+      var norm = stripAccents_(p.trim()).slice(0, 3);
+      var idx = NAMES.findIndex(function(n) { return n.startsWith(norm); });
+      return idx === dow;
+    });
+  }).length;
+  var reservasDia = reservas.filter(function(r) {
+    return r.FECHA === fecha && String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+  }).length;
+  if (abonadosDia + reservasDia >= RES_MAX_PLAZAS_)
+    return { ok: false, error: 'No quedan plazas para esta fecha. Elige otro día.' };
+
+  // Crear reserva
+  var sheet = book.getSheetByName('RESERVAS');
+  if (!sheet) return { ok: false, error: 'Hoja RESERVAS no encontrada. Contacta con la academia.' };
+
+  var existentes = sheetToJSON(book, 'RESERVAS') || [];
+  var nextNum = existentes.length + 1;
+  var idReserva = 'RESERVA-' + String(nextNum).padStart(3, '0');
+  var token     = Utilities.getUuid();
+  var ahora     = Utilities.formatDate(now, 'Europe/Madrid', 'yyyy-MM-dd HH:mm:ss');
+  var nombreAlu = (alumno.NOMBRE + ' ' + (alumno.APELLIDOS || '')).trim();
+
+  appendRow('RESERVAS', {
+    ID_RESERVA: idReserva, ID_ALUMNO: String(alumno.ID_ALUMNO),
+    NOMBRE_ALUMNO: nombreAlu, EMAIL_CLIENTE: String(cliente ? (cliente.EMAIL || '') : ''),
+    TELEFONO_CLIENTE: telCliente, FECHA: fecha,
+    HORA_INI: RES_HORA_INI_, HORA_FIN: RES_HORA_FIN_,
+    ESTADO: 'CONFIRMADA', FECHA_CREACION: ahora, TOKEN_CANCEL: token, FUENTE: 'PUBLICA'
+  });
+
+  // Email de confirmación
+  var emailDest  = String(cliente ? (cliente.EMAIL || '') : '');
+  var fechaFmt   = formatFechaEs_(fecha);
+  var cancelUrl  = RES_APP_BASE_ + 'reservar.html?cancelar=' + token;
+  if (emailDest) {
+    try {
+      MailApp.sendEmail({
+        to: emailDest,
+        subject: '✅ Reserva confirmada – ' + fechaFmt + ' – SM Academia',
+        htmlBody: '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">' +
+          '<div style="background:#1a6b3a;padding:24px;text-align:center">' +
+          '<h1 style="color:#fff;font-size:20px;margin:0">SM Academia</h1></div>' +
+          '<div style="padding:24px">' +
+          '<h2 style="color:#1a6b3a;font-size:18px;margin-top:0">✅ Reserva confirmada</h2>' +
+          '<p style="margin:4px 0"><strong>Jugador:</strong> ' + nombreAlu + '</p>' +
+          '<p style="margin:4px 0"><strong>Fecha:</strong> ' + fechaFmt + '</p>' +
+          '<p style="margin:4px 0"><strong>Horario:</strong> ' + RES_HORA_INI_ + ' – ' + RES_HORA_FIN_ + '</p>' +
+          '<p style="margin:4px 0 20px"><strong>Referencia:</strong> ' + idReserva + '</p>' +
+          '<p style="font-size:13px;color:#555">¿Necesitas cancelar? Hazlo con al menos 24 h de antelación:</p>' +
+          '<a href="' + cancelUrl + '" style="display:inline-block;background:#ef4444;color:#fff;' +
+          'padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;margin-bottom:24px">Cancelar reserva</a>' +
+          '<p style="font-size:11px;color:#999;margin-top:24px">SM Academia · <a href="' + RES_APP_BASE_ + '" style="color:#999">' + RES_APP_BASE_ + '</a></p>' +
+          '</div></div>',
+        name: 'SM Academia', replyTo: EMAIL_EMPRESA.director
+      });
+    } catch(e) { /* email fallido, reserva igualmente creada */ }
+  }
+
+  return { ok: true, idReserva: idReserva, fecha: fecha, fechaFmt: fechaFmt,
+           hora: RES_HORA_INI_ + ' – ' + RES_HORA_FIN_,
+           email: emailDest, token: token };
+}
+
+function cancelarReservaPublica_(data) {
+  var token = String(data.token || '').trim();
+  if (!token) return { ok: false, error: 'Token inválido.' };
+
+  var book    = ss_();
+  var reservas = sheetToJSON(book, 'RESERVAS') || [];
+  var reserva  = null;
+  for (var i = 0; i < reservas.length; i++) {
+    if (String(reservas[i].TOKEN_CANCEL || '') === token) { reserva = reservas[i]; break; }
+  }
+  if (!reserva) return { ok: false, error: 'Reserva no encontrada.' };
+  if (String(reserva.ESTADO || '').toUpperCase() === 'CANCELADA')
+    return { ok: false, error: 'Esta reserva ya estaba cancelada.' };
+
+  var fechaObj = new Date((reserva.FECHA || '') + 'T' + RES_HORA_INI_ + ':00');
+  if ((fechaObj.getTime() - new Date().getTime()) < 24 * 3600000)
+    return { ok: false, error: 'No es posible cancelar con menos de 24 horas de antelación.' };
+
+  updateRow('RESERVAS', reserva.ID_RESERVA, { ESTADO: 'CANCELADA' });
+  return { ok: true, idReserva: reserva.ID_RESERVA,
+           fecha: reserva.FECHA, fechaFmt: formatFechaEs_(reserva.FECHA || ''),
+           nombre: reserva.NOMBRE_ALUMNO || '' };
+}
+
+function getReservaPorToken_(data) {
+  var token = String(data.token || '').trim();
+  if (!token) return { ok: false, error: 'Token inválido.' };
+  var reservas = sheetToJSON(ss_(), 'RESERVAS') || [];
+  for (var i = 0; i < reservas.length; i++) {
+    var r = reservas[i];
+    if (String(r.TOKEN_CANCEL || '') === token) {
+      return { ok: true, idReserva: r.ID_RESERVA, nombre: r.NOMBRE_ALUMNO || '',
+               fecha: r.FECHA || '', fechaFmt: formatFechaEs_(r.FECHA || ''),
+               hora: RES_HORA_INI_ + ' – ' + RES_HORA_FIN_, estado: r.ESTADO || 'CONFIRMADA' };
+    }
+  }
+  return { ok: false, error: 'Reserva no encontrada.' };
+}
+
+// ── Helpers internos ────────────────────────────────────────────────────────
+
+function cuotaMensual_(insActivas, year, month) {
+  var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  var uniqueDays = [];
+  insActivas.forEach(function(ins) {
+    String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean)
+      .forEach(function(p) {
+        var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
+        if (idx >= 0 && uniqueDays.indexOf(idx) === -1) uniqueDays.push(idx);
+      });
+  });
+  if (!uniqueDays.length) return 4;
+  var total = 0, daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (var d = 1; d <= daysInMonth; d++) {
+    if (uniqueDays.indexOf(new Date(year, month, d).getDay()) >= 0) total++;
+  }
+  return total;
+}
+
+function slotsDisponibles_(inscripciones, reservas, idAlumno, now) {
+  var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  // Días de sesión = unión de todos los días de inscripciones activas
+  var sessionDays = [];
+  var allActivas = inscripciones.filter(function(i) {
+    return String(i.ESTADO || '').toUpperCase() === 'ACTIVA' && (i.DIAS_SEMANA || i.DIA_SEMANA);
+  });
+  allActivas.forEach(function(ins) {
+    String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean)
+      .forEach(function(p) {
+        var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
+        if (idx >= 0 && sessionDays.indexOf(idx) === -1) sessionDays.push(idx);
+      });
+  });
+
+  var slots = [];
+  for (var i = 1; i <= 45 && slots.length < 12; i++) {
+    var date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    var dow  = date.getDay();
+    if (sessionDays.indexOf(dow) === -1) continue;
+    if ((date.getTime() - now.getTime()) < 24 * 3600000) continue;
+
+    var fechaStr = Utilities.formatDate(date, 'Europe/Madrid', 'yyyy-MM-dd');
+    var abonadosDia = allActivas.filter(function(ins) {
+      var parts = String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
+      return parts.some(function(p) {
+        var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
+        return idx === dow;
+      });
+    }).length;
+    var reservasDia = reservas.filter(function(r) {
+      return r.FECHA === fechaStr && String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+    }).length;
+    var libres = Math.max(0, RES_MAX_PLAZAS_ - abonadosDia - reservasDia);
+    var yaReservado = reservas.some(function(r) {
+      return r.FECHA === fechaStr && String(r.ID_ALUMNO) === String(idAlumno) &&
+             String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
+    });
+    slots.push({ fecha: fechaStr, fechaFmt: formatFechaEs_(fechaStr), dow: dow,
+                 libres: libres, yaReservado: yaReservado });
+  }
+  return slots;
+}
+
+function formatFechaEs_(fecha) {
+  if (!fecha) return '';
+  var DIAS  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
+               'septiembre','octubre','noviembre','diciembre'];
+  var d = new Date(fecha + 'T12:00:00');
+  return DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()];
 }

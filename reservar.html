@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reservar sesión · SM Academia</title>
+<style>
+:root {
+  --green:   #1a6b3a;
+  --green2:  #145530;
+  --green-l: #e8f5ed;
+  --red:     #ef4444;
+  --red-l:   #fef2f2;
+  --amber:   #f59e0b;
+  --amber-l: #fffbeb;
+  --bg:      #f5f7f5;
+  --card:    #ffffff;
+  --text1:   #111827;
+  --text2:   #374151;
+  --text3:   #6b7280;
+  --border:  #e5e7eb;
+  --radius:  10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:     #0f1a13;
+    --card:   #1a2820;
+    --text1:  #f0fdf4;
+    --text2:  #d1fae5;
+    --text3:  #6ee7b7;
+    --border: #2d4a37;
+    --green-l:#0f2a1a;
+    --red-l:  #2a1010;
+    --amber-l:#2a2008;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text1);min-height:100vh}
+header{background:var(--green);padding:16px 20px;display:flex;align-items:center;gap:12px}
+header img{width:40px;height:40px;border-radius:8px;object-fit:cover}
+header h1{color:#fff;font-size:17px;font-weight:700;line-height:1.2}
+header p{color:#a7f3d0;font-size:12px;margin-top:1px}
+.wrap{max-width:480px;margin:0 auto;padding:20px 16px 48px}
+.card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);padding:20px;margin-bottom:14px}
+.card-title{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--text1)}
+label{display:block;font-size:13px;font-weight:600;color:var(--text2);margin-bottom:5px}
+input{width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;color:var(--text1);background:var(--card);outline:none;transition:border .2s}
+input:focus{border-color:var(--green)}
+.field{margin-bottom:14px}
+.btn{display:block;width:100%;padding:13px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .15s}
+.btn:active{opacity:.85}
+.btn-primary{background:var(--green);color:#fff}
+.btn-danger{background:var(--red);color:#fff}
+.btn-ghost{background:transparent;color:var(--green);border:1.5px solid var(--green);font-size:14px;padding:10px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-green{background:var(--green-l);color:var(--green)}
+.badge-red{background:var(--red-l);color:var(--red)}
+.badge-amber{background:var(--amber-l);color:#b45309}
+.quota-bar{background:var(--border);border-radius:4px;height:6px;margin-top:8px}
+.quota-fill{height:100%;border-radius:4px;background:var(--green);transition:width .4s}
+.slot{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .15s,background .15s}
+.slot:hover:not(.slot-full):not(.slot-ya){border-color:var(--green);background:var(--green-l)}
+.slot-full{opacity:.5;cursor:not-allowed}
+.slot-ya{border-color:var(--green);background:var(--green-l)}
+.slot-info{font-size:14px;font-weight:600}
+.slot-sub{font-size:12px;color:var(--text3);margin-top:2px}
+.res-item{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.res-item:last-child{border-bottom:none}
+.res-info{font-size:14px;font-weight:600}
+.res-sub{font-size:12px;color:var(--text3);margin-top:2px}
+.msg{padding:14px;border-radius:8px;font-size:14px;margin-bottom:14px}
+.msg-error{background:var(--red-l);color:var(--red);border:1px solid #fca5a5}
+.msg-ok{background:var(--green-l);color:var(--green);border:1px solid #6ee7b7}
+.msg-info{background:var(--amber-l);color:#92400e;border:1px solid #fcd34d}
+.spinner{display:inline-block;width:18px;height:18px;border:3px solid #ffffff44;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+.success-icon{font-size:48px;text-align:center;margin-bottom:12px}
+.text-center{text-align:center}
+h2{font-size:18px;font-weight:700;margin-bottom:4px}
+.sub{font-size:13px;color:var(--text3);margin-bottom:16px}
+.detail-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+.detail-row:last-child{border-bottom:none}
+.detail-label{color:var(--text3)}
+.detail-val{font-weight:600}
+a{color:var(--green);text-decoration:none}
+.back-link{font-size:13px;color:var(--text3);display:flex;align-items:center;gap:5px;margin-bottom:16px;cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>SM Academia</h1>
+    <p>Reserva de entrenamiento personal</p>
+  </div>
+</header>
+
+<div class="wrap" id="app">
+  <!-- screens rendered by JS -->
+</div>
+
+<script>
+var GAS = 'https://script.google.com/macros/s/AKfycbzRPAbr64l1xmFBhMIKxQoovkNCFCQEVOZ7zoUT_M0HqfLuqysdak-gPBgmGkqCCNfueQ/exec';
+var state = { screen: 'id', nombre: '', telefono: '', data: null };
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ var d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+function post(action, body){
+  return fetch(GAS, {
+    method:'POST',
+    body: JSON.stringify(Object.assign({ action: action }, body))
+  }).then(function(r){ return r.json(); });
+}
+
+function render(){
+  var app = $('app');
+  var s = state.screen;
+
+  if (s === 'id')       app.innerHTML = screenId();
+  else if (s === 'dash') app.innerHTML = screenDash();
+  else if (s === 'pick') app.innerHTML = screenPick();
+  else if (s === 'confirm') app.innerHTML = screenConfirm();
+  else if (s === 'done')  app.innerHTML = screenDone();
+  else if (s === 'cancel') app.innerHTML = screenCancel();
+  else if (s === 'cancelled') app.innerHTML = screenCancelled();
+}
+
+// ── Pantalla 1: Identificación ────────────────────────────────────────────
+function screenId(){
+  return '<div class="card">' +
+    '<div class="card-title">Accede con tus datos</div>' +
+    '<div class="field"><label>Nombre completo del jugador</label>' +
+    '<input id="inp-nombre" type="text" placeholder="Nombre Apellido Apellido" autocomplete="name" autocapitalize="words"></div>' +
+    '<div class="field"><label>Teléfono del tutor (registrado en la academia)</label>' +
+    '<input id="inp-tel" type="tel" placeholder="6xx xxx xxx" autocomplete="tel"></div>' +
+    '<div id="id-err" class="msg msg-error hidden"></div>' +
+    '<button class="btn btn-primary" id="btn-id" onclick="doLogin()">Acceder</button>' +
+    '</div>' +
+    '<p style="font-size:12px;color:var(--text3);text-align:center;margin-top:12px">' +
+    'Solo jugadores con inscripción activa en SM Fútbol pueden reservar.</p>';
+}
+
+function doLogin(){
+  var nombre  = $('inp-nombre').value.trim();
+  var telefono= $('inp-tel').value.trim();
+  if (!nombre || !telefono){ showErr('id-err','Rellena todos los campos.'); return; }
+  setBtnLoading('btn-id', true);
+  post('VERIFICAR_CLIENTE_RESERVA', { nombre: nombre, telefono: telefono })
+    .then(function(r){
+      setBtnLoading('btn-id', false);
+      if (!r.ok){ showErr('id-err', r.error); return; }
+      state.nombre   = nombre;
+      state.telefono = telefono;
+      state.data     = r;
+      state.screen   = 'dash';
+      render();
+    }).catch(function(){ setBtnLoading('btn-id', false); showErr('id-err','Error de conexión. Inténtalo de nuevo.'); });
+}
+
+// ── Pantalla 2: Dashboard ─────────────────────────────────────────────────
+function screenDash(){
+  var d = state.data;
+  var pct = Math.min(100, Math.round((d.usadoMes / d.quota) * 100));
+  var restante = d.quota - d.usadoMes;
+
+  var resHtml = '';
+  if (d.misReservas && d.misReservas.length) {
+    resHtml = '<div class="card-title" style="margin-bottom:10px">Mis próximas reservas</div>';
+    d.misReservas.forEach(function(r){
+      resHtml += '<div class="res-item">' +
+        '<div><div class="res-info">' + esc(r.fechaFmt) + '</div>' +
+        '<div class="res-sub">' + esc(r.hora) + '</div></div>' +
+        '<button onclick="initCancel(\'' + esc(r.token) + '\',\'' + esc(r.fechaFmt) + '\',\'' + esc(r.id) + '\')" ' +
+        'style="background:none;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer">Cancelar</button>' +
+        '</div>';
+    });
+  } else {
+    resHtml = '<p style="font-size:13px;color:var(--text3)">Sin reservas próximas.</p>';
+  }
+
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">' +
+    '<div><div style="font-size:16px;font-weight:700">Hola, ' + esc(d.nombre.split(' ')[0]) + ' ⚽</div>' +
+    '<div style="font-size:12px;color:var(--text3)">Entrenamiento personal</div></div>' +
+    '<button onclick="doLogout()" style="background:none;border:none;font-size:12px;color:var(--text3);cursor:pointer">Salir</button>' +
+    '</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Cuota del mes</div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:14px">' +
+    '<span>' + d.usadoMes + ' de ' + d.quota + ' reservas usadas</span>' +
+    '<span style="color:' + (restante > 0 ? 'var(--green)' : 'var(--red)') + ';font-weight:700">' + restante + ' disponibles</span>' +
+    '</div>' +
+    '<div class="quota-bar" style="margin-top:8px"><div class="quota-fill" style="width:' + pct + '%;background:' + (pct >= 100 ? 'var(--red)' : 'var(--green)') + '"></div></div>' +
+    '</div>' +
+    '<div class="card">' + resHtml + '</div>' +
+    (restante > 0
+      ? '<button class="btn btn-primary" onclick="goPickSlot()">+ Nueva reserva</button>'
+      : '<div class="msg msg-info">Has alcanzado el límite de reservas para este mes.</div>') +
+    '<div id="dash-err" class="msg msg-error hidden" style="margin-top:12px"></div>';
+}
+
+function doLogout(){ state = { screen:'id', nombre:'', telefono:'', data:null }; render(); }
+function goPickSlot(){ state.screen = 'pick'; render(); }
+
+function initCancel(token, fechaFmt, idRes){
+  state.cancelToken   = token;
+  state.cancelFechaFmt= fechaFmt;
+  state.cancelId      = idRes;
+  state.screen = 'cancel';
+  render();
+}
+
+// ── Pantalla 3: Seleccionar fecha ─────────────────────────────────────────
+function screenPick(){
+  var d    = state.data;
+  var DIAS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  var slotsHtml = '';
+  if (!d.slots || !d.slots.length) {
+    slotsHtml = '<div class="msg msg-info">No hay sesiones disponibles en los próximos días.</div>';
+  } else {
+    d.slots.forEach(function(s){
+      var full = s.libres === 0;
+      var ya   = s.yaReservado;
+      var cls  = 'slot' + (full ? ' slot-full' : '') + (ya ? ' slot-ya' : '');
+      var onclick = (!full && !ya) ? ' onclick="selectSlot(\'' + s.fecha + '\',\'' + esc(s.fechaFmt) + '\')"' : '';
+      var badge   = ya
+        ? '<span class="badge badge-green">Ya reservado</span>'
+        : full
+          ? '<span class="badge badge-red">Completo</span>'
+          : '<span class="badge badge-green">' + s.libres + ' libre' + (s.libres !== 1 ? 's' : '') + '</span>';
+      slotsHtml += '<div class="' + cls + '"' + onclick + '>' +
+        '<div><div class="slot-info">' + esc(s.fechaFmt) + '</div>' +
+        '<div class="slot-sub">17:00 – 18:30</div></div>' +
+        badge + '</div>';
+    });
+  }
+
+  return '<div class="back-link" onclick="goBack()">← Volver</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Elige una fecha</div>' +
+    slotsHtml +
+    '</div>';
+}
+
+function selectSlot(fecha, fechaFmt){
+  state.selectedFecha    = fecha;
+  state.selectedFechaFmt = fechaFmt;
+  state.screen = 'confirm';
+  render();
+}
+
+function goBack(){
+  state.screen = (state.screen === 'pick' || state.screen === 'confirm') ? 'dash' : 'id';
+  render();
+}
+
+// ── Pantalla 4: Confirmar reserva ─────────────────────────────────────────
+function screenConfirm(){
+  return '<div class="back-link" onclick="state.screen=\'pick\';render()">← Cambiar fecha</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Confirma tu reserva</div>' +
+    '<div class="detail-row"><span class="detail-label">Jugador</span><span class="detail-val">' + esc(state.data.nombre) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(state.selectedFechaFmt) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Horario</span><span class="detail-val">17:00 – 18:30</span></div>' +
+    (state.data.email ? '<div class="detail-row"><span class="detail-label">Confirmación a</span><span class="detail-val">' + esc(state.data.email) + '</span></div>' : '') +
+    '</div>' +
+    '<div id="confirm-err" class="msg msg-error hidden"></div>' +
+    '<button class="btn btn-primary" id="btn-confirm" onclick="doConfirm()">Confirmar reserva</button>';
+}
+
+function doConfirm(){
+  setBtnLoading('btn-confirm', true);
+  post('CREAR_RESERVA_PUBLICA', { nombre: state.nombre, telefono: state.telefono, fecha: state.selectedFecha })
+    .then(function(r){
+      setBtnLoading('btn-confirm', false);
+      if (!r.ok){ showErr('confirm-err', r.error); return; }
+      state.doneData = r;
+      state.screen   = 'done';
+      // Reload data for dashboard
+      post('VERIFICAR_CLIENTE_RESERVA', { nombre: state.nombre, telefono: state.telefono })
+        .then(function(v){ if (v.ok) state.data = v; });
+      render();
+    }).catch(function(){ setBtnLoading('btn-confirm', false); showErr('confirm-err','Error de conexión.'); });
+}
+
+// ── Pantalla 5: Reserva hecha ─────────────────────────────────────────────
+function screenDone(){
+  var r = state.doneData;
+  return '<div class="card text-center">' +
+    '<div class="success-icon">✅</div>' +
+    '<h2>¡Reserva confirmada!</h2>' +
+    '<p class="sub">' + (r.email ? 'Hemos enviado la confirmación a ' + esc(r.email) : 'Guarda los detalles de tu reserva') + '</p>' +
+    '<div class="detail-row"><span class="detail-label">Jugador</span><span class="detail-val">' + esc(state.data.nombre) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(r.fechaFmt) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Horario</span><span class="detail-val">' + esc(r.hora) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Referencia</span><span class="detail-val">' + esc(r.idReserva) + '</span></div>' +
+    '</div>' +
+    '<p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 16px">Puedes cancelar hasta 24 horas antes desde el email de confirmación o desde tu área personal.</p>' +
+    '<button class="btn btn-ghost" onclick="state.screen=\'dash\';render()">Volver a mis reservas</button>';
+}
+
+// ── Pantalla 6: Cancelar (desde dashboard) ────────────────────────────────
+function screenCancel(){
+  return '<div class="back-link" onclick="state.screen=\'dash\';render()">← Volver</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Cancelar reserva</div>' +
+    '<div class="msg msg-error">Esta acción no se puede deshacer.</div>' +
+    '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(state.cancelFechaFmt) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Referencia</span><span class="detail-val">' + esc(state.cancelId) + '</span></div>' +
+    '</div>' +
+    '<div id="cancel-err" class="msg msg-error hidden"></div>' +
+    '<button class="btn btn-danger" id="btn-cancel" onclick="doCancel()">Sí, cancelar reserva</button>' +
+    '<button class="btn btn-ghost" style="margin-top:10px" onclick="state.screen=\'dash\';render()">No, volver</button>';
+}
+
+function doCancel(){
+  setBtnLoading('btn-cancel', true);
+  post('CANCELAR_RESERVA_PUBLICA', { token: state.cancelToken })
+    .then(function(r){
+      setBtnLoading('btn-cancel', false);
+      if (!r.ok){ showErr('cancel-err', r.error); return; }
+      state.cancelledData = r;
+      state.screen = 'cancelled';
+      post('VERIFICAR_CLIENTE_RESERVA', { nombre: state.nombre, telefono: state.telefono })
+        .then(function(v){ if (v.ok) state.data = v; });
+      render();
+    }).catch(function(){ setBtnLoading('btn-cancel', false); showErr('cancel-err','Error de conexión.'); });
+}
+
+// ── Pantalla 7: Cancelar por email (URL token) ────────────────────────────
+function screenCancelByToken(){
+  var token = state.cancelByToken;
+  if (!state.tokenReservaData) {
+    // Loading
+    post('GET_RESERVA_TOKEN', { token: token })
+      .then(function(r){
+        if (!r.ok){ $('app').innerHTML = '<div class="card"><div class="msg msg-error">' + esc(r.error) + '</div></div>'; return; }
+        state.tokenReservaData = r;
+        $('app').innerHTML = screenCancelByTokenReady();
+      }).catch(function(){ $('app').innerHTML = '<div class="card"><div class="msg msg-error">Error de conexión.</div></div>'; });
+    return '<div class="card text-center" style="padding:30px"><div class="spinner" style="border-top-color:var(--green);border-color:var(--border)"></div> Cargando...</div>';
+  }
+  return screenCancelByTokenReady();
+}
+
+function screenCancelByTokenReady(){
+  var r = state.tokenReservaData;
+  if (r.estado && r.estado.toUpperCase() === 'CANCELADA') {
+    return '<div class="card text-center"><div style="font-size:40px;margin-bottom:12px">❌</div>' +
+      '<h2>Ya cancelada</h2><p class="sub">Esta reserva ya estaba cancelada.</p></div>';
+  }
+  return '<div class="back-link" onclick="location.href=\'reservar.html\'">← Área personal</div>' +
+    '<div class="card">' +
+    '<div class="card-title">Cancelar reserva</div>' +
+    '<div class="msg msg-error">Esta acción no se puede deshacer.</div>' +
+    '<div class="detail-row"><span class="detail-label">Jugador</span><span class="detail-val">' + esc(r.nombre) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(r.fechaFmt) + '</span></div>' +
+    '<div class="detail-row"><span class="detail-label">Referencia</span><span class="detail-val">' + esc(r.idReserva) + '</span></div>' +
+    '</div>' +
+    '<div id="cancel-err" class="msg msg-error hidden"></div>' +
+    '<button class="btn btn-danger" id="btn-cancel" onclick="doCancelByToken()">Sí, cancelar reserva</button>';
+}
+
+function doCancelByToken(){
+  setBtnLoading('btn-cancel', true);
+  post('CANCELAR_RESERVA_PUBLICA', { token: state.cancelByToken })
+    .then(function(r){
+      setBtnLoading('btn-cancel', false);
+      if (!r.ok){ showErr('cancel-err', r.error); return; }
+      state.cancelledData = r;
+      state.screen = 'cancelled';
+      render();
+    }).catch(function(){ setBtnLoading('btn-cancel', false); showErr('cancel-err','Error de conexión.'); });
+}
+
+// ── Pantalla 8: Cancelado ─────────────────────────────────────────────────
+function screenCancelled(){
+  var r = state.cancelledData;
+  return '<div class="card text-center">' +
+    '<div style="font-size:48px;margin-bottom:12px">✅</div>' +
+    '<h2>Reserva cancelada</h2>' +
+    '<p class="sub">Tu reserva del <strong>' + esc(r.fechaFmt || '') + '</strong> ha sido cancelada correctamente.</p>' +
+    '</div>' +
+    (state.nombre
+      ? '<button class="btn btn-ghost" style="margin-top:14px" onclick="state.screen=\'dash\';render()">Volver a mis reservas</button>'
+      : '<button class="btn btn-ghost" style="margin-top:14px" onclick="location.href=\'reservar.html\'">Área personal</button>');
+}
+
+// ── Helpers UI ────────────────────────────────────────────────────────────
+function showErr(id, msg){ var el=$(id); if(el){el.textContent=msg; el.classList.remove('hidden');} }
+function setBtnLoading(id, on){
+  var btn=$(id); if(!btn) return;
+  if(on){ btn.disabled=true; btn._orig=btn.innerHTML; btn.innerHTML='<span class="spinner"></span>Cargando...'; }
+  else  { btn.disabled=false; btn.innerHTML=btn._orig||btn.innerHTML; }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+(function(){
+  var params = new URLSearchParams(location.search);
+  var cancelToken = params.get('cancelar');
+  if (cancelToken) {
+    state.screen       = 'cancelByToken';
+    state.cancelByToken= cancelToken;
+    var app = $('app');
+    app.innerHTML = screenCancelByToken();
+    // screenCancelByToken already triggers the POST if data not loaded
+  } else {
+    render();
+  }
+})();
+</script>
+</body>
+</html>
