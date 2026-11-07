@@ -62,6 +62,8 @@ input:focus{border-color:var(--green)}
 .slot:hover:not(.slot-full):not(.slot-ya){border-color:var(--green);background:var(--green-l)}
 .slot-full{opacity:.5;cursor:not-allowed}
 .slot-ya{border-color:var(--green);background:var(--green-l)}
+.slot-lista{border-color:var(--amber);cursor:pointer}
+.slot-lista:hover{background:var(--amber-l)}
 .slot-info{font-size:14px;font-weight:600}
 .slot-sub{font-size:12px;color:var(--text3);margin-top:2px}
 .res-item{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
@@ -219,14 +221,15 @@ function screenPick(){
     slotsHtml = '<div class="msg msg-info">No hay sesiones disponibles en los próximos días.</div>';
   } else {
     d.slots.forEach(function(s){
-      var full = s.libres === 0;
-      var ya   = s.yaReservado;
-      var cls  = 'slot' + (full ? ' slot-full' : '') + (ya ? ' slot-ya' : '');
-      var onclick = (!full && !ya) ? ' onclick="selectSlot(\'' + s.fecha + '\',\'' + esc(s.fechaFmt) + '\')"' : '';
+      var ya    = s.yaReservado;
+      var lista = s.listaEspera && !ya;
+      var full  = s.libres === 0 && !lista;
+      var cls  = 'slot' + (ya ? ' slot-ya' : '') + (lista ? ' slot-lista' : '');
+      var onclick = (!ya) ? ' onclick="selectSlot(\'' + s.fecha + '\',\'' + esc(s.fechaFmt) + '\',' + (lista?'true':'false') + ')"' : '';
       var badge   = ya
         ? '<span class="badge badge-green">Ya reservado</span>'
-        : full
-          ? '<span class="badge badge-red">Completo</span>'
+        : lista
+          ? '<span class="badge badge-amber">Lista de espera</span>'
           : '<span class="badge badge-green">' + s.libres + ' libre' + (s.libres !== 1 ? 's' : '') + '</span>';
       slotsHtml += '<div class="' + cls + '"' + onclick + '>' +
         '<div><div class="slot-info">' + esc(s.fechaFmt) + '</div>' +
@@ -242,9 +245,10 @@ function screenPick(){
     '</div>';
 }
 
-function selectSlot(fecha, fechaFmt){
-  state.selectedFecha    = fecha;
-  state.selectedFechaFmt = fechaFmt;
+function selectSlot(fecha, fechaFmt, listaEspera){
+  state.selectedFecha      = fecha;
+  state.selectedFechaFmt   = fechaFmt;
+  state.selectedListaEspera= !!listaEspera;
   state.screen = 'confirm';
   render();
 }
@@ -256,9 +260,13 @@ function goBack(){
 
 // ── Pantalla 4: Confirmar reserva ─────────────────────────────────────────
 function screenConfirm(){
+  var listaMsg = state.selectedListaEspera
+    ? '<div class="msg msg-info" style="margin-bottom:12px">Esta sesión está completa. Tu solicitud entrará en <strong>lista de espera</strong> y te avisaremos si se confirma una plaza.</div>'
+    : '';
   return '<div class="back-link" onclick="state.screen=\'pick\';render()">← Cambiar fecha</div>' +
+    listaMsg +
     '<div class="card">' +
-    '<div class="card-title">Confirma tu reserva</div>' +
+    '<div class="card-title">' + (state.selectedListaEspera ? 'Solicitar plaza (lista de espera)' : 'Confirma tu reserva') + '</div>' +
     '<div class="detail-row"><span class="detail-label">Jugador</span><span class="detail-val">' + esc(state.data.nombre) + '</span></div>' +
     '<div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-val">' + esc(state.selectedFechaFmt) + '</span></div>' +
     '<div class="detail-row"><span class="detail-label">Horario</span><span class="detail-val">17:00 – 18:30</span></div>' +
