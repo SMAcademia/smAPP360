@@ -13254,6 +13254,7 @@ function reservas() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva reserva', () => modalReserva(), 'btn-primary');
   topbarBtn('⚙ Configuración', () => _resModalConfig(), 'btn-secondary');
+  topbarBtn('📄 Política de reservas', () => window.open('https://claude.ai/artifact/LYwaASfdBWC8vL8PsRZUkW','_blank'), 'btn-secondary');
 
   render(`
     <div style="display:grid;gap:16px">
