@@ -1511,6 +1511,10 @@ var RES_HORA_FIN_   = '18:30';
 var RES_MAX_PLAZAS_ = 8;
 var RES_APP_BASE_   = 'https://academiasmfutbol.github.io/sistema/';
 
+function esFutbol_(linea) {
+  return stripAccents_(String(linea || '')).toUpperCase().includes('FUTBOL');
+}
+
 function verificarClienteReserva_(data) {
   var book         = ss_();
   var alumnos      = sheetToJSON(book, 'ALUMNOS');
