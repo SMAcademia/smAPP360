@@ -13304,7 +13304,7 @@ function _resAbonados(fecha) {
         const act = (DB.actividades || []).find(a => String(a.ID) === String(ins.ID_ACTIVIDAD));
         if (!act || !sinTildes((act.NOMBRE || '').toLowerCase()).includes(filtro)) return false;
       }
-      return _resParseDias(ins.DIAS_SEMANA).includes(dow);
+      return _resParseDias(ins.DIAS_SEMANA || ins.DIA_SEMANA).includes(dow);
     })
     .map(ins => {
       const alu  = (DB.alumnos || []).find(a => String(a.ID_ALUMNO) === String(ins.ID_ALUMNO));
