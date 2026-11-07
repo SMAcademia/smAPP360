@@ -13355,6 +13355,9 @@ function reservas() {
     </div>`);
 
   _resRenderTab();
+
+  // Recarga datos frescos en segundo plano y actualiza el tab cuando lleguen
+  loadAllData().then(() => _resRenderTab()).catch(()=>{});
 }
 
 function _resTab(t) {
