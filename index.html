@@ -4588,6 +4588,24 @@ function _renderGmFiltros() {
   );
 }
 
+function _gmToggleAll(v) {
+  document.querySelectorAll('.gm-row-chk').forEach(c => { c.checked = v; });
+  _gmSyncAllChk();
+}
+function _gmSyncAllChk() {
+  const all  = document.querySelectorAll('.gm-row-chk');
+  const chkd = document.querySelectorAll('.gm-row-chk:checked');
+  const allChk = document.getElementById('gm-chk-all');
+  if (allChk) { allChk.checked = chkd.length === all.length; allChk.indeterminate = chkd.length > 0 && chkd.length < all.length; }
+  const btn = document.getElementById('gm-gen-btn');
+  if (btn) btn.textContent = 'Generar ' + chkd.length + ' pago' + (chkd.length !== 1 ? 's' : '');
+  const lbl = document.getElementById('gm-sel-label');
+  if (lbl) lbl.textContent = chkd.length + ' seleccionado' + (chkd.length !== 1 ? 's' : '');
+  const preview = [...all].map((c,i) => ({ idx: i, checked: c.checked }));
+  const totalSel = preview.filter(x=>x.checked).reduce((s,x) => s + (_gmData[x.idx]?.total||0), 0);
+  const totLbl = document.getElementById('gm-total-lbl');
+  if (totLbl) totLbl.textContent = typeof fmtEur === 'function' ? fmtEur(totalSel) : totalSel.toFixed(2) + ' €';
+}
 function _gmPreview() {
   _gmLinea = document.getElementById('gm-linea')?.value ?? _gmLinea;
   _gmMes   = (document.getElementById('gm-mes')?.value || '').trim();
@@ -4695,34 +4713,42 @@ function _gmPreview() {
   }
   const totalGral = preview.reduce((s,p)=>s+p.total,0);
   const bodyHtml = ''
-    +'<p style="margin-bottom:12px">Se crearán <strong>'+_gmData.length+' pagos PENDIENTES</strong> (1 por familia) para <strong>'+esc(_gmMes)+'</strong> · '+esc(_gmLinea||'Todas las líneas')+'.<br>'
-    +'<span style="font-size:12px;color:var(--text3)">Familias con pago ya registrado este mes quedan excluidas. Hermanos agrupados en un único pago. Los descuentos se leen de cada inscripción.</span></p>'
-    +'<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Familia</th><th>Alumnos</th><th>Actividad/es</th><th>Importe</th></tr></thead><tbody>'
-    +preview.map(p=>
-      '<tr><td>'+esc(p.familia)+'</td>'
+    +'<p style="margin-bottom:12px">Se crearán pagos PENDIENTES (1 por familia) para <strong>'+esc(_gmMes)+'</strong> · '+esc(_gmLinea||'Todas las líneas')+'.<br>'
+    +'<span style="font-size:12px;color:var(--text3)">Desmarca las filas que no quieras generar ahora. Hermanos agrupados en un único pago.</span></p>'
+    +'<div class="table-wrap"><table style="font-size:12px"><thead><tr>'
+    +'<th style="width:28px;padding:6px 4px"><input type="checkbox" id="gm-chk-all" checked title="Seleccionar / deseleccionar todo" onchange="_gmToggleAll(this.checked)"></th>'
+    +'<th>Familia</th><th>Alumnos</th><th>Actividad/es</th><th>Importe</th></tr></thead><tbody>'
+    +preview.map((p,i)=>
+      '<tr>'
+      +'<td style="padding:6px 4px"><input type="checkbox" class="gm-row-chk" data-i="'+i+'" checked onchange="_gmSyncAllChk()"></td>'
+      +'<td>'+esc(p.familia)+'</td>'
       +'<td>'+esc(p.alumnos)+(p.tieneDto?' <span style="font-size:10px;color:var(--green)">dto.</span>':'')+'</td>'
       +'<td style="font-size:11px;color:var(--text3)">'+esc(p.servicios)+'</td>'
       +'<td style="font-weight:700;font-variant-numeric:tabular-nums">'+fmtEur(p.total)+'</td></tr>'
     ).join('')
     +'</tbody></table></div>'
     +'<div style="margin-top:12px;padding:10px;background:var(--bg2);border-radius:8px;display:flex;justify-content:space-between;align-items:center">'
-    +'<span>Total</span><strong style="font-size:16px">'+fmtEur(totalGral)+'</strong></div>';
+    +'<span id="gm-sel-label">'+_gmData.length+' seleccionado'+(_gmData.length!==1?'s':'')+'</span>'
+    +'<strong id="gm-total-lbl" style="font-size:16px">'+fmtEur(totalGral)+'</strong></div>';
   openModal(
     'Generar pagos — '+esc(_gmMes),
     bodyHtml,
-    '<button class="btn" onclick="ejecutarGenerarPagosMasivo()">Generar '+_gmData.length+' pagos</button>'
+    '<button class="btn" id="gm-gen-btn" onclick="ejecutarGenerarPagosMasivo()">Generar '+_gmData.length+' pagos</button>'
     +'<button class="btn btn-secondary" onclick="_renderGmFiltros()">← Atrás</button>',
     true
   );
 }
 
 async function ejecutarGenerarPagosMasivo() {
+  const checkedIdxs = new Set([...document.querySelectorAll('.gm-row-chk:checked')].map(c=>Number(c.dataset.i)));
+  const dataToProcess = _gmData.filter((_,i) => checkedIdxs.has(i));
+  if (!dataToProcess.length) { showToast('No hay pagos seleccionados','error'); return; }
   const btns = document.querySelectorAll('#modal-footer .btn');
   btns.forEach(b=>b.disabled=true);
   const hoy = new Date().toISOString().slice(0,10);
   let ok = 0;
   try {
-    for (const r of _gmData) {
+    for (const r of dataToProcess) {
       await writeToSheet('PAGOS', {
         ID_ALUMNO:      '',
         ID_CLIENTE:     r.cliId,
@@ -13314,7 +13340,8 @@ function reservas() {
   document.getElementById('topbar-actions').innerHTML = '';
   topbarBtn('+ Nueva reserva', () => modalReserva(), 'btn-primary');
   topbarBtn('⚙ Configuración', () => _resModalConfig(), 'btn-secondary');
-  topbarBtn('📄 Política de reservas', () => window.open('https://claude.ai/artifact/LYwaASfdBWC8vL8PsRZUkW','_blank'), 'btn-secondary');
+  topbarBtn('📄 Política de reservas', () => window.open('politica-reservas.html','_blank'), 'btn-secondary');
+  topbarBtn('🔄 Recargar datos', () => { loadAllData().then(reservas).catch(e=>showToast(e.message,'error')); }, 'btn-secondary');
 
   render(`
     <div style="display:grid;gap:16px">
