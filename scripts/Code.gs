@@ -1655,7 +1655,7 @@ function crearReservaPublica_(data) {
   var reservasDia = reservas.filter(function(r) {
     return r.FECHA === fecha && String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
   }).length;
-  if (abonadosDia + reservasDia >= RES_MAX_PLAZAS_)
+  if (reservasDia >= RES_MAX_PLAZAS_)
     return { ok: false, error: 'No quedan plazas para esta fecha. Elige otro día.' };
 
   // Crear reserva
@@ -1792,7 +1792,7 @@ function slotsDisponibles_(inscripciones, reservas, idAlumno, now) {
     if ((date.getTime() - now.getTime()) < 24 * 3600000) continue;
 
     var fechaStr = Utilities.formatDate(date, 'Europe/Madrid', 'yyyy-MM-dd');
-    var abonadosDia = allActivas.filter(function(ins) {
+    var _abonadosDia = allActivas.filter(function(ins) {
       var parts = String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
       return parts.some(function(p) {
         var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
@@ -1802,7 +1802,7 @@ function slotsDisponibles_(inscripciones, reservas, idAlumno, now) {
     var reservasDia = reservas.filter(function(r) {
       return r.FECHA === fechaStr && String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
     }).length;
-    var libres = Math.max(0, RES_MAX_PLAZAS_ - abonadosDia - reservasDia);
+    var libres = Math.max(0, RES_MAX_PLAZAS_ - reservasDia);
     var yaReservado = reservas.some(function(r) {
       return r.FECHA === fechaStr && String(r.ID_ALUMNO) === String(idAlumno) &&
              String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
