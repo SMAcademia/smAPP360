@@ -1644,6 +1644,21 @@ function crearReservaPublica_(data) {
            String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
   })) return { ok: false, error: 'Ya tienes una reserva para esta fecha.' };
 
+  // ¿Es abonado SM Fútbol en este día de la semana? No necesita reservar su propia plaza
+  var dowCheck = new Date(fecha + 'T12:00:00').getDay();
+  var NAMES_AB = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  var esAbonado = inscripciones.some(function(ins) {
+    if (String(ins.ID_ALUMNO) !== String(alumno.ID_ALUMNO)) return false;
+    if (String(ins.ESTADO || '').toUpperCase() !== 'ACTIVA') return false;
+    if (!esFutbol_(String(ins.LINEA || ''))) return false;
+    var parts = String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
+    return parts.some(function(p) {
+      var idx = NAMES_AB.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0,3)); });
+      return idx === dowCheck;
+    });
+  });
+  if (esAbonado) return { ok: false, error: 'Ya tienes plaza en esta sesión por tu mensualidad. No es necesario reservar.' };
+
   // Capacidad del día: abonados SM Fútbol únicos + reservas públicas
   var dow = new Date(fecha + 'T12:00:00').getDay();
   var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
@@ -1836,9 +1851,22 @@ function slotsDisponibles_(inscripciones, reservas, idAlumno, now) {
       return r.FECHA === fechaStr && String(r.ID_ALUMNO) === String(idAlumno) &&
              String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
     });
+
+    // El alumno ya tiene plaza por mensualidad en este día de semana
+    var esAbonado = inscripciones.some(function(ins) {
+      if (String(ins.ID_ALUMNO) !== String(idAlumno)) return false;
+      if (String(ins.ESTADO || '').toUpperCase() !== 'ACTIVA') return false;
+      if (!esFutbol_(String(ins.LINEA || ''))) return false;
+      var parts = String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
+      return parts.some(function(p) {
+        var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
+        return idx === dow;
+      });
+    });
+
     slots.push({ fecha: fechaStr, fechaFmt: formatFechaEs_(fechaStr), dow: dow,
                  libres: libres, listaEspera: listaEspera, yaReservado: yaReservado,
-                 abonadosDia: abonadosDia });
+                 esAbonado: esAbonado, abonadosDia: abonadosDia });
   }
   return slots;
 }
