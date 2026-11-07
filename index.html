@@ -5718,7 +5718,7 @@ const _CATS_BANCO = [
   { id:'ss',       grupo:'empresa',  label:'Seguridad Social / RETA',   color:'#1565c0',
     kw:['SEGURIDAD SOCIAL','SS.SS','RETA','MUTUA PATRONAL','CUOTA AUTONOMO','CUOTA AUTÓNOMO','COTIZACION','MUTUALIA','FRATERNIDAD'] },
   { id:'aeat',     grupo:'empresa',  label:'Hacienda / AEAT',            color:'#1565c0',
-    kw:['HACIENDA','AEAT','AGENCIA TRIBUTARIA','MODELO ','IRPF','CUOTA IVA','IMPUESTO SOCIEDAD','RETENCIONES','LIQUIDACION TRIBUTARIA','AUTOLIQUIDACION','DECLARACION'] },
+    kw:['HACIENDA','AEAT','AGENCIA TRIBUTARIA','MODELO ','IRPF','CUOTA IVA','IMPUESTO SOCIEDAD','RETENCIONES','LIQUIDACION TRIBUTARIA','AUTOLIQUIDACION','DECLARACION','ADEUDO DE IMPUESTO','IMPUESTO VALOR ANADIDO','IMPUESTO SOBRE','RECIBO IMPUESTO'] },
   { id:'embargo',  grupo:'empresa',  label:'Embargo / Apremio',          color:'#b71c1c',
     kw:['EMBARGO','DILIGENCIA DE EMBARGO','APREMIO','PROVIDENCIA DE APREMIO','PROCEDIMIENTO EJECUTIVO'] },
   { id:'decathlon',grupo:'empresa',  label:'Decathlon',                  color:'#1565c0',
@@ -5748,19 +5748,19 @@ const _CATS_BANCO = [
   { id:'gasolina', grupo:'domestico',label:'Gasolina / Combustible',     color:'#2e7d32',
     kw:['REPSOL ','CEPSA ','BP ','SHELL ','GALP','GASOLINA','COMBUSTIBLE','ESTACION SERVICIO','GASOLINERA','TOTAL FINA','ESSO ','DISA','PCAN'] },
   { id:'hipoteca', grupo:'domestico',label:'Hipoteca / Alquiler',        color:'#2e7d32',
-    kw:['HIPOTECA','PRESTAMO HIPOTECARIO','PRÉSTAMO HIPOTECARIO','ALQUILER','ARRENDAMIENTO'] },
+    kw:['HIPOTECA','PRESTAMO HIPOTECARIO','PRÉSTAMO HIPOTECARIO','ALQUILER','ARRENDAMIENTO','CUOTA HIPOTECA','AMORTIZACION PRESTAMO'] },
   { id:'seg-hogar',grupo:'domestico',label:'Seguro hogar / salud',       color:'#2e7d32',
     kw:['SEGURO HOGAR','SEGURO SALUD','SEGURO VIDA','SANITAS','ADESLAS','ASISA','DKV','CIGNA'] },
 
   // ── ALIMENTACIÓN ──────────────────────────────────────────────────────────
-  { id:'super',    grupo:'alimentacion',label:'Supermercado',            color:'#e65100',
-    kw:['MERCADONA','CARREFOUR','LIDL','ALDI','DIA ','HIPERCOR','CONSUM','ALCAMPO','EROSKI','BON PREU','EL CORTE INGLES','SPAR ','COVIRAN','BM SUPERMERCADOS','FROIZ','AH ','SIMPLY','SUPERSOL'] },
+  { id:'super',    grupo:'alimentacion',label:'Supermercado / Alimentación', color:'#e65100',
+    kw:['MERCADONA','CARREFOUR','LIDL','ALDI','DIA ','HIPERCOR','CONSUM','ALCAMPO','EROSKI','BON PREU','EL CORTE INGLES','SPAR ','COVIRAN','BM SUPERMERCADOS','FROIZ','AH ','SIMPLY','SUPERSOL','SUPERMERCADO','DESPENSA','FRUTERIA','FRUTAS Y VERDURAS','CARNICERIA','HIPERMERCADO','CASH AND CARRY','MAKRO','MAXOR','GRAN SUPERFICIE'] },
   { id:'dom',      grupo:'alimentacion',label:'🛵 Comida a domicilio',   color:'#e65100',
     kw:['GLOVO','UBER EATS','UBEREATS','JUST EAT','JUSTEAT','DELIVEROO','RAPPI','DELIVERY','DOMINO\'S','DOMINOS','TELEPIZZA','PIZZA HUT','WINGSTOP','PAPA JOHN'] },
   { id:'fastfood', grupo:'alimentacion',label:'🍔 Fast food',            color:'#e65100',
     kw:['MCDONALDS','MC DONALDS','MCDONALD','KFC ','BURGER KING','BURGERKING','SUBWAY ','FIVE GUYS','TACO BELL','POPEYES','VIPS ','GOIKO'] },
-  { id:'rest',     grupo:'alimentacion',label:'🍽️ Restaurantes',         color:'#e65100',
-    kw:['RESTAURANTE','CAFETERIA','CAFETERÍA','HELADERIA','PASTELERIA','PANADERIA','CHURRERIA','ASADOR','MARISQUERIA','TAPAS','SIDRERIA','KEBAB'] },
+  { id:'rest',     grupo:'alimentacion',label:'🍽️ Restaurantes / Comida', color:'#e65100',
+    kw:['RESTAURANTE','CAFETERIA','CAFETERÍA','HELADERIA','PASTELERIA','PANADERIA','CHURRERIA','ASADOR','MARISQUERIA','TAPAS','SIDRERIA','KEBAB','PIZZA ','PIZZERIA','HAMBURGUES','BURGUER','ASADOR','FREIDURÍA','FREIDURIA','CEVICHERIA','SUSHI'] },
 
   // ── OCIO / PERSONAL ───────────────────────────────────────────────────────
   { id:'tabaco',   grupo:'ocio',     label:'🚬 Tabaco / Estanco',        color:'#6a1b9a',
@@ -5780,9 +5780,15 @@ const _CATS_BANCO = [
   { id:'transporte',grupo:'ocio',    label:'🚕 Transporte / Taxi',       color:'#6a1b9a',
     kw:['UBER ','CABIFY','BOLT ','TAXI','GUAGUA','GLOBAL','EMT ','METRO ','RENFE','IBERIA','RYANAIR','VUELING','EASYJET','BINTER'] },
 
-  // ── TRANSFERENCIAS (no son gastos per se) ─────────────────────────────────
+  // ── DOMICILIACIONES EMPRESA ───────────────────────────────────────────────
+  { id:'alquiler-dom',grupo:'empresa',  label:'Alquiler / Arrendamiento',  color:'#1565c0',
+    kw:['RENTBOX','RENTA MENSUAL ALQUILER','RENTA MENSUAL','ARRENDAMIENTO','CUOTA ARRENDAMIENTO'] },
+  { id:'pepper',   grupo:'empresa',    label:'Seguros / Servicios financieros', color:'#1565c0',
+    kw:['PEPPER ASSETS','PEPPER SERVICES','COFIDIS','CETELEM','FINIBER'] },
+
+  // ── TRANSFERENCIAS (movimientos internos, no son gastos) ──────────────────
   { id:'transf',   grupo:'transferencia',label:'Transferencias / Bizum', color:'#546e7a',
-    kw:['TRANSFERENCIA EMITIDA','ORDEN DE TRANSFERENCIA','BIZUM ENVIADO','TRASPASO A','REINTEGRO'] },
+    kw:['TRANSFERENCIA EMITIDA','ORDEN DE TRANSFERENCIA','BIZUM ENVIADO','BIZUM','TRASPASO A','TRASPASO ','TRANSFERENCIA A ','REINTEGRO','DEVOLUCION TRANSFERENCIA'] },
 ];
 
 // Map de categorías del sistema banco → grupo análisis
@@ -5844,12 +5850,10 @@ function analisisBancoSec() {
     return fechaStr.slice(5,7) === mesActivo || fechaStr.slice(0,7).slice(5) === mesActivo;
   });
 
-  const totalGastos = gastos.reduce((s,m) => s + Math.abs(parseFloat(m.IMPORTE)||0), 0);
-
   // ── Categorizar ───────────────────────────────────────────────────────────
   const porCat   = {};   // catId → { cat, total, items }
   const porGrupo = {};   // grupoId → total
-  const porProv  = {};   // proveedor → total
+  const porProv  = {};   // proveedor → total (solo gastos reales)
 
   gastos.forEach(m => {
     const catExist = String(m['CATEGORÍA'] || m.CATEGORIA || m.LABEL_CAT || '');
@@ -5863,18 +5867,26 @@ function analisisBancoSec() {
 
     porGrupo[cat.grupo] = (porGrupo[cat.grupo]||0) + imp;
 
-    if (!porProv[prov]) porProv[prov] = { total: 0, n: 0, cat };
-    porProv[prov].total += imp;
-    porProv[prov].n++;
+    // Proveedores: excluir transferencias internas
+    if (cat.grupo !== 'transferencia') {
+      if (!porProv[prov]) porProv[prov] = { total: 0, n: 0, cat };
+      porProv[prov].total += imp;
+      porProv[prov].n++;
+    }
   });
 
-  // ── KPIs por grupo ────────────────────────────────────────────────────────
+  // Gastos reales = todo excepto transferencias internas
+  const totalGastos = Object.entries(porGrupo)
+    .filter(([g]) => g !== 'transferencia')
+    .reduce((s, [,v]) => s + v, 0);
+  const totalTransf = porGrupo['transferencia'] || 0;
+
+  // ── KPIs por grupo (transferencias excluidas del % — no son gastos reales) ──
   const GRUPOS = [
     { id:'empresa',        label:'Empresa / Declarable', icon:'🏢', col:'var(--blue)'  },
     { id:'domestico',      label:'Doméstico',             icon:'🏠', col:'var(--g2)'   },
     { id:'alimentacion',   label:'Alimentación',          icon:'🛒', col:'#e65100'     },
     { id:'ocio',           label:'Ocio / Personal',       icon:'🎯', col:'#6a1b9a'     },
-    { id:'transferencia',  label:'Transferencias',        icon:'↔️', col:'#546e7a'     },
     { id:'sin-categorizar',label:'Sin categorizar',       icon:'⚠️', col:'#9e9e9e'     },
   ];
 
@@ -5885,9 +5897,15 @@ function analisisBancoSec() {
       <div style="font-size:20px;margin-bottom:4px">${g.icon}</div>
       <div class="kpi-n" style="font-size:20px;color:${g.col}">${fmtEur(tot)}</div>
       <div class="kpi-l">${g.label}</div>
-      <div class="kpi-sub" style="color:${g.col}">${pct.toFixed(1)}% del total</div>
+      <div class="kpi-sub" style="color:${g.col}">${pct.toFixed(1)}%</div>
     </div>`;
-  }).join('');
+  }).join('')
+  + (totalTransf > 0 ? `<div class="kpi" style="border-top-color:#546e7a;opacity:.7">
+      <div style="font-size:20px;margin-bottom:4px">↔️</div>
+      <div class="kpi-n" style="font-size:20px;color:#546e7a">${fmtEur(totalTransf)}</div>
+      <div class="kpi-l">Movimientos internos</div>
+      <div class="kpi-sub" style="color:#546e7a">Traspasos / Bizum — no computan</div>
+    </div>` : '');
 
   // ── Desglose por categoría ────────────────────────────────────────────────
   function grupoCard(grupoId, label, icon, col) {
@@ -5930,7 +5948,15 @@ function analisisBancoSec() {
     </div>`;
   }
 
-  const desgloseHtml = GRUPOS.map(g => grupoCard(g.id, g.icon+' '+g.label, g.icon, g.col)).join('');
+  const desgloseHtml = GRUPOS.map(g => grupoCard(g.id, g.icon+' '+g.label, g.icon, g.col)).join('')
+    + (totalTransf > 0 ? `<div class="card" style="padding:14px 20px;margin-bottom:14px;opacity:.75">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:20px">↔️</span>
+          <div class="card-title" style="margin:0">Movimientos internos</div>
+          <strong style="margin-left:auto;color:#546e7a">${fmtEur(totalTransf)}</strong>
+        </div>
+        <p style="font-size:12px;color:var(--text3);margin:0">Traspasos entre cuentas y Bizum — no son gastos reales, se excluyen del análisis.</p>
+      </div>` : '');
 
   // ── Top proveedores ───────────────────────────────────────────────────────
   const topProvs = Object.entries(porProv)
@@ -7262,10 +7288,12 @@ function analisisIngresos() {
   }, 0);
 
   // Desglose por línea (meses actuales)
+  // EXTRAESCOLARES = AMPA (misma fuente de ingresos, mismo pagador externo)
   const byLinea = {};
   for (const p of DB.pagos) {
     if (String(p.ESTADO||'').toUpperCase() !== 'PAGADO') continue;
-    const linea = String(p.LINEA||'Sin línea').toUpperCase() || 'SIN LÍNEA';
+    let linea = String(p.LINEA||'Sin línea').toUpperCase() || 'SIN LÍNEA';
+    if (linea === 'EXTRAESCOLARES') linea = 'AMPA';
     byLinea[linea] = (byLinea[linea]||0) + (parseFloat(p.TOTAL_RECIBIDO||p.IMPORTE)||0);
   }
   const lineasOrdenadas = Object.entries(byLinea).sort((a,b) => b[1]-a[1]);
