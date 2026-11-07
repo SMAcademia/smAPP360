@@ -1644,19 +1644,21 @@ function crearReservaPublica_(data) {
   var dow = new Date(fecha + 'T12:00:00').getDay();
   var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
   var seenCap = {};
-  var abonadosDia = inscripciones.filter(function(i) {
-    if (String(i.ESTADO || '').toUpperCase() !== 'ACTIVA') return false;
-    if (!esFutbol_(String(i.LINEA || ''))) return false;
-    var key = String(i.ID_ALUMNO || i.NOMBRE_ALUMNO || '');
-    if (seenCap[key]) return false;
-    seenCap[key] = true;
+  inscripciones.forEach(function(i) {
+    if (String(i.ESTADO || '').toUpperCase() !== 'ACTIVA') return;
+    if (!esFutbol_(String(i.LINEA || ''))) return;
     var parts = String(i.DIAS_SEMANA || i.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
-    return parts.some(function(p) {
+    var tieneDia = parts.some(function(p) {
       var norm = stripAccents_(p.trim()).slice(0, 3);
       var idx = NAMES.findIndex(function(n) { return n.startsWith(norm); });
       return idx === dow;
     });
-  }).length;
+    if (tieneDia) {
+      var key = String(i.ID_ALUMNO || i.NOMBRE_ALUMNO || '');
+      if (key) seenCap[key] = true;
+    }
+  });
+  var abonadosDia = Object.keys(seenCap).length;
   var reservasDia = reservas.filter(function(r) {
     return r.FECHA === fecha && String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
   }).length;
@@ -1777,16 +1779,11 @@ function cuotaMensual_(insActivas, year, month) {
 function slotsDisponibles_(inscripciones, reservas, idAlumno, now) {
   var NAMES = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
 
-  // Solo inscripciones SM Fútbol activas, deduplicadas por alumno
-  var seen = {};
+  // Solo inscripciones SM Fútbol activas (todas, sin dedup global)
   var smFutbolActivas = inscripciones.filter(function(i) {
     if (String(i.ESTADO || '').toUpperCase() !== 'ACTIVA') return false;
     if (!esFutbol_(String(i.LINEA || ''))) return false;
-    if (!(i.DIAS_SEMANA || i.DIA_SEMANA)) return false;
-    var key = String(i.ID_ALUMNO || i.NOMBRE_ALUMNO || '');
-    if (seen[key]) return false;
-    seen[key] = true;
-    return true;
+    return !!(i.DIAS_SEMANA || i.DIA_SEMANA);
   });
 
   // Días de sesión = unión de todos los días de las inscripciones SM Fútbol
@@ -1808,14 +1805,20 @@ function slotsDisponibles_(inscripciones, reservas, idAlumno, now) {
 
     var fechaStr = Utilities.formatDate(date, 'Europe/Madrid', 'yyyy-MM-dd');
 
-    // Abonados SM Fútbol únicos para este día de semana
-    var abonadosDia = smFutbolActivas.filter(function(ins) {
+    // Abonados: alumnos SM Fútbol únicos (por ID_ALUMNO) con este día en su inscripción
+    var seenAlu = {};
+    smFutbolActivas.forEach(function(ins) {
       var parts = String(ins.DIAS_SEMANA || ins.DIA_SEMANA || '').split(/[,;\s]+/).filter(Boolean);
-      return parts.some(function(p) {
+      var tieneDia = parts.some(function(p) {
         var idx = NAMES.findIndex(function(n) { return n.startsWith(stripAccents_(p.trim()).slice(0, 3)); });
         return idx === dow;
       });
-    }).length;
+      if (tieneDia) {
+        var key = String(ins.ID_ALUMNO || ins.NOMBRE_ALUMNO || '');
+        if (key) seenAlu[key] = true;
+      }
+    });
+    var abonadosDia = Object.keys(seenAlu).length;
 
     var reservasDia = reservas.filter(function(r) {
       return r.FECHA === fechaStr && String(r.ESTADO || '').toUpperCase() !== 'CANCELADA';
