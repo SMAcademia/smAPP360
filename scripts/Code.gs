@@ -136,6 +136,8 @@ function doPost(e) {
       result = crearReservaPendiente_(body);
     } else if (action === 'CONFIRMAR_PAGO_RESERVA') {
       result = confirmarPagoReserva_(body);
+    } else if (action === 'ENVIAR_AVISO_RESERVA_ADMIN') {
+      result = enviarAvisoReservaAdmin_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1779,6 +1781,48 @@ function getReservaPorToken_(data) {
     }
   }
   return { ok: false, error: 'Reserva no encontrada.' };
+}
+
+// ── Aviso por email al crear reserva desde el panel admin ──────────────────
+
+function enviarAvisoReservaAdmin_(data) {
+  var email     = String(data.email    || '').trim();
+  var nombre    = String(data.nombre   || '').trim();
+  var fecha     = String(data.fecha    || '').trim();
+  var hIni      = String(data.horaIni  || RES_HORA_INI_).trim();
+  var hFin      = String(data.horaFin  || RES_HORA_FIN_).trim();
+  var notas     = String(data.notas    || '').trim();
+  var idReserva = String(data.idReserva|| '').trim();
+
+  if (!email) return { ok: false, error: 'Sin dirección de email.' };
+
+  var fechaFmt = formatFechaEs_(fecha) || fecha;
+
+  try {
+    MailApp.sendEmail({
+      to:      email,
+      subject: '📅 Reserva confirmada – ' + fechaFmt + ' – SM Academia',
+      htmlBody:
+        '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">' +
+        '<div style="background:#1a6b3a;padding:24px;text-align:center">' +
+        '<h1 style="color:#fff;font-size:20px;margin:0">SM Academia</h1></div>' +
+        '<div style="padding:24px">' +
+        '<h2 style="color:#1a6b3a;font-size:18px;margin-top:0">📅 Tienes una reserva</h2>' +
+        '<p style="margin:4px 0"><strong>Nombre:</strong> ' + nombre + '</p>' +
+        '<p style="margin:4px 0"><strong>Fecha:</strong> ' + fechaFmt + '</p>' +
+        '<p style="margin:4px 0"><strong>Horario:</strong> ' + hIni + ' – ' + hFin + '</p>' +
+        (idReserva ? '<p style="margin:4px 0"><strong>Referencia:</strong> ' + idReserva + '</p>' : '') +
+        (notas ? '<p style="margin:12px 0 4px"><strong>Notas:</strong></p><p style="margin:0;color:#374151">' + notas + '</p>' : '') +
+        '<p style="font-size:13px;color:#555;margin-top:20px">Para cualquier consulta o cancelación, contacta con la academia.</p>' +
+        '<p style="font-size:11px;color:#999;margin-top:24px">SM Academia · <a href="' + RES_APP_BASE_ + '" style="color:#999">' + RES_APP_BASE_ + '</a></p>' +
+        '</div></div>',
+      name:    'SM Academia',
+      replyTo: EMAIL_EMPRESA.director
+    });
+    return { ok: true };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
 }
 
 // ── Stripe helpers ──────────────────────────────────────────────────────────

@@ -601,6 +601,20 @@ function gasRequest(action, params, timeoutMs) {
 }
 
 // ── Escritura via POST (no JSONP): payload ilimitado, retry, LockService en GAS ──
+async function gasPost(action, body) {
+  const payload = JSON.stringify(Object.assign({ action }, body));
+  const ctrl    = new AbortController();
+  const timer   = setTimeout(() => ctrl.abort(), 32000);
+  try {
+    const res  = await fetch(GAS_URL, { method: 'POST', body: payload, signal: ctrl.signal });
+    clearTimeout(timer);
+    return await res.json();
+  } catch(e) {
+    clearTimeout(timer);
+    return { ok: false, error: e.message || 'Error de conexión' };
+  }
+}
+
 async function writeToSheet(sheetName, rowObj, id) {
   const action  = id ? 'UPDATE' : 'APPEND';
   const payload = JSON.stringify({ action, sheet: sheetName, row: rowObj, ...(id ? { id } : {}) });
@@ -13943,9 +13957,26 @@ async function guardarReserva(id) {
       NOTAS_INTERNAS: document.getElementById('rv-notas-int')?.value.trim() || '',
     };
     if (!id) row.FECHA_CREACION = new Date().toISOString().slice(0,10);
-    await writeToSheet('RESERVAS', row, id || null);
+    const saved = await writeToSheet('RESERVAS', row, id || null);
+    // Enviar aviso por email a la familia si es una reserva NUEVA con email
+    if (!id && row.EMAIL) {
+      const idCreada = saved?.id || '';
+      gasPost('ENVIAR_AVISO_RESERVA_ADMIN', {
+        email:     row.EMAIL,
+        nombre:    row.NOMBRE_CLIENTE,
+        fecha:     row.FECHA,
+        horaIni:   row.HORA_INICIO,
+        horaFin:   row.HORA_FIN,
+        notas:     row.NOTAS || '',
+        idReserva: idCreada
+      }).then(r => {
+        if (!r.ok) showToast('Reserva guardada · aviso de email fallido', 'warning');
+      }).catch(() => {});
+      showToast('Reserva guardada · email enviado a familia ✉️');
+    } else {
+      showToast('Reserva guardada');
+    }
     await loadAllData();
-    showToast('Reserva guardada');
     closeModal();
     _resRenderTab();
   } catch(err) {
