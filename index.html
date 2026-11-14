@@ -349,7 +349,7 @@ tr:hover td{background:#f8f8f8}
       <div class="nav-section" id="nav-reservas">
         <div class="nav-section-label">Entrenamiento</div>
         <div class="nav-item" onclick="navigate('reservas')" data-page="reservas">
-          <span class="nav-icon">🗓️</span><span>Reservas</span>
+          <span class="nav-icon">🗓️</span><span>Reservas</span><span id="badge-reservas" style="display:none;margin-left:auto;background:var(--red);color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;min-width:16px;text-align:center"></span>
         </div>
       </div>
 
@@ -545,6 +545,8 @@ function _arRerender() {
   if (!currentPage) return;
   const fn = MODULES[currentPage];
   if (fn) try { fn(); } catch(_) {}
+  _refreshBadgeSolicitudes();
+  _refreshBadgeReservas();
 }
 
 function _arUpdateChip() {
@@ -1019,6 +1021,14 @@ function _refreshBadgeSolicitudes() {
   el.style.display = n > 0 ? '' : 'none';
 }
 
+function _refreshBadgeReservas() {
+  const el = document.getElementById('badge-reservas');
+  if (!el) return;
+  const n = (DB.reservas||[]).filter(r => ['PENDIENTE','PENDIENTE_PAGO'].includes(String(r.ESTADO||'PENDIENTE').toUpperCase())).length;
+  el.textContent = n;
+  el.style.display = n > 0 ? '' : 'none';
+}
+
 function applyRoleVisibility() {
   const rol = currentUser?.rol;
   const adminLike  = ['ADMIN','COORDINADOR'].includes(rol);
@@ -1085,6 +1095,7 @@ function applyRoleVisibility() {
   const navSol = document.querySelector('[data-page="solicitudes"]');
   if (navSol) navSol.style.display = adminLike ? '' : 'none';
   _refreshBadgeSolicitudes();
+  _refreshBadgeReservas();
 
   // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
@@ -13584,9 +13595,9 @@ function _resDashboardHtml() {
         <div style="width:${pct}%;height:100%;border-radius:2px;background:${barColor}"></div>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${total}/${_RES_MAX_PLAZAS} · ${desglose}</div>
-      ${nAbonados ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${abonadosDia.map(a=>'📌 '+esc(a.NOMBRE||'—')).join(' · ')}</div>` : ''}
-      ${resDelDia.length ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${resDelDia.map(r=>'• '+esc(r.NOMBRE_CLIENTE||'—')).join(' · ')}</div>` : ''}
-      ${libres > 0 ? `<button class="btn btn-secondary" style="font-size:12px;width:100%" onclick="modalReserva(null,'${fecha}')">+ Añadir</button>` : ''}
+      ${nAbonados ? `<div style="font-size:10px;line-height:1.7;margin-bottom:4px">${abonadosDia.map(a=>`<div style="color:var(--primary)">📌 ${esc(a.NOMBRE||'—')}</div>`).join('')}</div>` : ''}
+      ${resDelDia.length ? `<div style="font-size:10px;line-height:1.7;margin-bottom:4px">${resDelDia.map(r=>{const c=_RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE']||'#6b7280';return`<div style="display:flex;align-items:center;gap:5px"><span style="width:5px;height:5px;border-radius:50%;background:${c};flex-shrink:0;display:inline-block"></span>${esc(r.NOMBRE_CLIENTE||'—')}</div>`;}).join('')}</div>` : ''}
+      ${libres > 0 ? `<button class="btn btn-secondary" style="font-size:12px;width:100%;margin-top:6px" onclick="modalReserva(null,'${fecha}')">+ Añadir</button>` : ''}
     </div>`;
   };
 
@@ -13703,6 +13714,9 @@ function _resCalHtml() {
     </div>`;
   };
 
+  const sesionDias = dias.filter(d => diasDisp.includes(d.getDay()));
+  const cols = sesionDias.length || 3;
+
   return `
     <div class="card" style="padding:14px 16px">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
@@ -13711,8 +13725,8 @@ function _resCalHtml() {
         <button class="btn btn-secondary" onclick="_resCalSemana(0)" style="font-size:12px;padding:4px 8px">Hoy</button>
         <button class="btn btn-secondary" style="padding:5px 10px;font-size:13px" onclick="_resCalSemana(1)">›</button>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">
-        ${dias.map(diaCard).join('')}
+      <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px">
+        ${sesionDias.map(diaCard).join('')}
       </div>
     </div>`;
 }
@@ -13977,6 +13991,7 @@ async function guardarReserva(id) {
       showToast('Reserva guardada');
     }
     await loadAllData();
+    _refreshBadgeReservas();
     closeModal();
     _resRenderTab();
   } catch(err) {
@@ -13991,6 +14006,7 @@ async function _resCambiarEstado(id, estado) {
   if (!r) return;
   await writeToSheet('RESERVAS', { ...r, ESTADO: estado }, id);
   await loadAllData();
+  _refreshBadgeReservas();
   showToast('Estado actualizado');
   _resRenderTab();
 }
