@@ -13596,7 +13596,7 @@ function _resDashboardHtml() {
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${total}/${_RES_MAX_PLAZAS} · ${desglose}</div>
       ${nAbonados ? `<div style="font-size:10px;line-height:1.7;margin-bottom:4px">${abonadosDia.map(a=>`<div style="color:var(--primary)">📌 ${esc(a.NOMBRE||'—')}</div>`).join('')}</div>` : ''}
-      ${resDelDia.length ? `<div style="font-size:10px;line-height:1.7;margin-bottom:4px">${resDelDia.map(r=>{const c=_RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE']||'#6b7280';return`<div style="display:flex;align-items:center;gap:5px"><span style="width:5px;height:5px;border-radius:50%;background:${c};flex-shrink:0;display:inline-block"></span>${esc(r.NOMBRE_CLIENTE||'—')}</div>`;}).join('')}</div>` : ''}
+      ${resDelDia.length ? `<div style="font-size:10px;line-height:1.7;margin-bottom:4px">${resDelDia.map(r=>{const c=_RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE']||'#6b7280';return`<div style="display:flex;align-items:center;gap:5px"><span style="width:5px;height:5px;border-radius:50%;background:${c};flex-shrink:0;display:inline-block"></span>${esc(r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'—')}</div>`;}).join('')}</div>` : ''}
       ${libres > 0 ? `<button class="btn btn-secondary" style="font-size:12px;width:100%;margin-top:6px" onclick="modalReserva(null,'${fecha}')">+ Añadir</button>` : ''}
     </div>`;
   };
@@ -13613,7 +13613,7 @@ function _resDashboardHtml() {
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2)">
       <div style="width:4px;height:40px;border-radius:2px;background:${color};flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600">${esc(r.NOMBRE_CLIENTE||'—')}</div>
+        <div style="font-size:13px;font-weight:600">${esc(r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'—')}</div>
         <div style="font-size:11px;color:var(--text3)">${diaStr} · ${_RES_HORA_INI}–${_RES_HORA_FIN}</div>
       </div>
       <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color}22;color:${color}">${r.ESTADO||'PENDIENTE'}</span>
@@ -13706,7 +13706,7 @@ function _resCalHtml() {
           const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
           return `<div style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick='modalReserva(${JSON.stringify(r)})'>
             <div style="width:5px;height:5px;border-radius:50%;background:${color};flex-shrink:0"></div>
-            <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_CLIENTE||'—')}</span>
+            <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'—')}</span>
           </div>`;
         }).join('')
       }</div>` : ''}
@@ -13869,7 +13869,7 @@ function _resHistorialHtml() {
             return `<tr>
               <td style="font-size:12px">${dStr}</td>
               <td class="mono" style="font-size:12px">${_RES_HORA_INI}–${_RES_HORA_FIN}</td>
-              <td><strong>${esc(r.NOMBRE_CLIENTE||'—')}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.EMAIL||'')}${r.TELEFONO?' · '+r.TELEFONO:''}</span></td>
+              <td><strong>${esc(r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'—')}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.EMAIL_CLIENTE||r.EMAIL||'')}${(r.TELEFONO_CLIENTE||r.TELEFONO)?' · '+(r.TELEFONO_CLIENTE||r.TELEFONO):''}</span></td>
               <td style="font-size:12px;font-variant-numeric:tabular-nums">${ocup}/${_RES_MAX_PLAZAS}</td>
               <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color}22;color:${color}">${r.ESTADO||'PENDIENTE'}</span></td>
               <td><button class="btn btn-sm btn-secondary" onclick='modalReserva(${JSON.stringify(r)})'>Ver</button></td>
@@ -13881,6 +13881,19 @@ function _resHistorialHtml() {
 }
 
 // ── MODAL RESERVA ────────────────────────────────────────────────────────────
+let _rvAluList = [];
+function _rvSelAlumno() {
+  const sel = document.getElementById('rv-alu-sel');
+  if (!sel || !sel.value) return;
+  const a = _rvAluList[parseInt(sel.value, 10)] || {};
+  const nEl = document.getElementById('rv-nombre');
+  const eEl = document.getElementById('rv-email');
+  const tEl = document.getElementById('rv-tel');
+  if (nEl) nEl.value = ((a.NOMBRE||'')+' '+(a.APELLIDOS||'')).trim().toUpperCase();
+  if (eEl) eEl.value = a.EMAIL||'';
+  if (tEl) tEl.value = a.TELEFONO||'';
+}
+
 function modalReserva(r, fechaDefault) {
   r = r || {};
   const isNew  = !r.ID_RESERVA;
@@ -13905,39 +13918,58 @@ function modalReserva(r, fechaDefault) {
     }
   }
 
-  const waBtn = (r.TELEFONO)
+  const _rNombre = r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'';
+  const _rTel    = r.TELEFONO_CLIENTE||r.TELEFONO||'';
+  const _rEmail  = r.EMAIL_CLIENTE||r.EMAIL||'';
+  const waBtn = _rTel
     ? `<a class="btn btn-secondary" style="font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:5px"
-        href="https://wa.me/${r.TELEFONO.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, tu reserva está confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.')}"
+        href="https://wa.me/${_rTel.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, tu reserva está confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.')}"
         target="_blank">📲 WhatsApp cliente</a>`
     : '';
-  const emailBtn = r.EMAIL
+  const emailBtn = _rEmail
     ? `<a class="btn btn-secondary" style="font-size:12px;text-decoration:none"
-        href="mailto:${esc(r.EMAIL)}?subject=${encodeURIComponent('Confirmación de reserva — SM Academia')}&body=${encodeURIComponent('Hola '+r.NOMBRE_CLIENTE+',\n\nTu reserva ha sido confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.\n\nUn saludo,\nSM Academia')}"
+        href="mailto:${esc(_rEmail)}?subject=${encodeURIComponent('Confirmación de reserva — SM Academia')}&body=${encodeURIComponent('Hola '+_rNombre+',\n\nTu reserva ha sido confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.\n\nUn saludo,\nSM Academia')}"
         >✉️ Email cliente</a>`
     : '';
   const notifBtns = (!isNew && (waBtn || emailBtn))
     ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">${waBtn}${emailBtn}</div>`
     : '';
 
+  const aluFutbol = isNew ? (DB.inscripciones||[])
+    .filter(i => String(i.LINEA||'').toUpperCase()==='FUTBOL' && String(i.ESTADO||'').toUpperCase()==='ACTIVA')
+    .sort((a,b)=>((a.NOMBRE||'')+' '+(a.APELLIDOS||'')).localeCompare((b.NOMBRE||'')+' '+(b.APELLIDOS||''),'es'))
+    : [];
+  if (isNew) _rvAluList = aluFutbol;
+  const selectorAlu = isNew && aluFutbol.length ? `
+    <div class="field span2">
+      <label>Alumno SM Fútbol (opcional)</label>
+      <select id="rv-alu-sel" onchange="_rvSelAlumno()">
+        <option value=''>— Externo / escribir manualmente —</option>
+        ${aluFutbol.map((a,i)=>`<option value="${i}">${esc((a.NOMBRE||'')+' '+(a.APELLIDOS||''))}</option>`).join('')}
+      </select>
+    </div>` : '';
+  const selectorScript = '';
+
   openModal(isNew ? 'Nueva reserva' : 'Editar reserva', `
     ${capacidadHtml}
     <div class="form-grid">
+      ${selectorAlu}
       <div class="field"><label>Fecha <span class="req">*</span></label>
         <input id="rv-fecha" type="date" value="${esc(fecha)}"></div>
       <div class="field"><label>Estado</label>
         <select id="rv-estado">${estadoOps}</select></div>
-      <div class="field"><label>Nombre cliente <span class="req">*</span></label>
-        <input id="rv-nombre" class="upper" value="${esc(r.NOMBRE_CLIENTE||'')}"></div>
+      <div class="field"><label>Nombre <span class="req">*</span></label>
+        <input id="rv-nombre" class="upper" value="${esc(_rNombre||'')}"></div>
       <div class="field"><label>Teléfono (WhatsApp)</label>
-        <input id="rv-tel" type="tel" value="${esc(r.TELEFONO||'')}"></div>
+        <input id="rv-tel" type="tel" value="${esc(_rTel||'')}"></div>
       <div class="field span2"><label>Email</label>
-        <input id="rv-email" type="email" value="${esc(r.EMAIL||'')}"></div>
+        <input id="rv-email" type="email" value="${esc(_rEmail||'')}"></div>
       <div class="field span2"><label>Notas (visibles al cliente)</label>
         <textarea id="rv-notas" rows="2">${esc(r.NOTAS||'')}</textarea></div>
       <div class="field span2"><label>Notas internas</label>
         <textarea id="rv-notas-int" rows="2">${esc(r.NOTAS_INTERNAS||'')}</textarea></div>
     </div>
-    ${notifBtns}`,
+    ${notifBtns}${selectorScript}`,
     `${!isNew ? `<button class="btn btn-secondary" style="color:var(--red)" onclick="if(confirm('¿Cancelar esta reserva?')){_resCambiarEstado('${r.ID_RESERVA}','CANCELADA')}">Cancelar cita</button>` : ''}
      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
      <button class="btn btn-primary" id="rv-save-btn" onclick="guardarReserva('${r.ID_RESERVA||''}')">Guardar</button>`,
@@ -13959,9 +13991,9 @@ async function guardarReserva(id) {
       if (libres <= 0) throw new Error('La sesión de ese día está completa (8/8 plazas)');
     }
     const row = {
-      NOMBRE_CLIENTE: nombre.toUpperCase(),
-      EMAIL:          document.getElementById('rv-email')?.value.trim() || '',
-      TELEFONO:       document.getElementById('rv-tel')?.value.trim() || '',
+      NOMBRE_ALUMNO:    nombre.toUpperCase(),
+      EMAIL_CLIENTE:    document.getElementById('rv-email')?.value.trim() || '',
+      TELEFONO_CLIENTE: document.getElementById('rv-tel')?.value.trim() || '',
       FECHA:          fecha,
       HORA_INICIO:    _RES_HORA_INI,
       HORA_FIN:       _RES_HORA_FIN,
@@ -13973,11 +14005,11 @@ async function guardarReserva(id) {
     if (!id) row.FECHA_CREACION = new Date().toISOString().slice(0,10);
     const saved = await writeToSheet('RESERVAS', row, id || null);
     // Enviar aviso por email a la familia si es una reserva NUEVA con email
-    if (!id && row.EMAIL) {
+    if (!id && row.EMAIL_CLIENTE) {
       const idCreada = saved?.id || '';
       gasPost('ENVIAR_AVISO_RESERVA_ADMIN', {
-        email:     row.EMAIL,
-        nombre:    row.NOMBRE_CLIENTE,
+        email:     row.EMAIL_CLIENTE,
+        nombre:    row.NOMBRE_ALUMNO,
         fecha:     row.FECHA,
         horaIni:   row.HORA_INICIO,
         horaFin:   row.HORA_FIN,
@@ -13985,7 +14017,7 @@ async function guardarReserva(id) {
         idReserva: idCreada
       }).then(r => {
         if (!r.ok) showToast('Reserva guardada · aviso de email fallido', 'warning');
-      }).catch(() => {});
+      }).catch(()=>{});
       showToast('Reserva guardada · email enviado a familia ✉️');
     } else {
       showToast('Reserva guardada');
