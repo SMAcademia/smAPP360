@@ -633,20 +633,23 @@ function nuevaPreinscripcion(data) {
   var nombreNorm    = stripAccents_(nombreNormRaw);
   var emailNorm     = String(emailRaw).toLowerCase().trim();
 
+  var actividadInteres = d.ACTIVIDAD_INTERES || d.actividad_interes ||
+    (Array.isArray(d.actividades) ? d.actividades.join(', ') : (d.actividades || ''));
+  var lineaNorm = String(d.LINEA || (stripAccents_(actividadInteres).indexOf('FUTBOL') !== -1 ? 'FUTBOL' : 'EXTRAESCOLARES')).toUpperCase();
+
+  // Clave de dedup: mismo alumno + mismo email + misma línea (permite apuntarse a Fútbol Y Extraescolares)
   var existing = sheetToJSON(book, 'PREINSCRIPCIONES');
   var dup = existing.some(function(r) {
     if (String(r.ESTADO || '').toUpperCase() === 'RECHAZADA') return false;
     var mismoNombre = nombreNorm && stripAccents_(r.NOMBRE_ALUMNO) === nombreNorm;
     var mismoEmail  = emailNorm  && String(r.EMAIL_TUTOR || '').toLowerCase() === emailNorm;
-    return mismoNombre && mismoEmail;
+    var mismaLinea  = String(r.LINEA || '').toUpperCase() === lineaNorm;
+    return mismoNombre && mismoEmail && mismaLinea;
   });
 
-  if (dup) return { ok: false, error: 'Ya existe una preinscripcion para este alumno.' };
+  if (dup) return { ok: false, duplicate: true };
 
   var id = nextId_(sheet, 'PREINSCRIPCIONES', headers);
-
-  var actividadInteres = d.ACTIVIDAD_INTERES || d.actividad_interes ||
-    (Array.isArray(d.actividades) ? d.actividades.join(', ') : (d.actividades || ''));
 
   var rowObj = {
     ID:               id,
