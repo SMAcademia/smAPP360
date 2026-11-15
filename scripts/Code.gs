@@ -79,7 +79,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
-    var action = body.action || 'NUEVA_PREINSCRIPCION';
+    var action = body.action || (e && e.parameter && e.parameter.action) || 'NUEVA_PREINSCRIPCION';
     var result;
 
     if (action === 'APPEND') {
@@ -138,6 +138,15 @@ function doPost(e) {
       result = confirmarPagoReserva_(body);
     } else if (action === 'ENVIAR_AVISO_RESERVA_ADMIN') {
       result = enviarAvisoReservaAdmin_(body);
+    } else if (action === 'STRIPE_WEBHOOK') {
+      var whSecret = e && e.parameter && e.parameter.secret;
+      var props    = PropertiesService.getScriptProperties();
+      var stored   = props.getProperty('STRIPE_WEBHOOK_SECRET');
+      if (!stored || whSecret !== stored) {
+        result = { ok: false, error: 'unauthorized' };
+      } else {
+        result = stripeWebhook_(body);
+      }
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -1914,6 +1923,30 @@ function crearReservaPendiente_(data) {
   var sheet = book.getSheetByName('RESERVAS');
   if (!sheet) return { ok: false, error: 'Hoja RESERVAS no encontrada.' };
   var existentes = sheetToJSON(book, 'RESERVAS') || [];
+
+  // Prevenir doble pago: si ya existe PENDIENTE_PAGO para misma persona+fecha, reutilizar sesión Stripe
+  var nombreUpper = nombre.toUpperCase();
+  var dupPend = null;
+  for (var di = 0; di < existentes.length; di++) {
+    var er = existentes[di];
+    if (er.FECHA === fecha &&
+        String(er.NOMBRE_ALUMNO || '').toUpperCase() === nombreUpper &&
+        String(er.ESTADO || '').toUpperCase() === 'PENDIENTE_PAGO' &&
+        er.STRIPE_SESSION) { dupPend = er; break; }
+  }
+  if (dupPend) {
+    try {
+      var existSes = _stripeGet_('/checkout/sessions/' + dupPend.STRIPE_SESSION);
+      if (existSes.payment_status === 'paid')
+        return confirmarPagoReserva_({ sessionId: dupPend.STRIPE_SESSION, idReserva: dupPend.ID_RESERVA });
+      if (existSes.status === 'open' && existSes.url)
+        return { ok: true, idReserva: dupPend.ID_RESERVA, sessionId: dupPend.STRIPE_SESSION,
+                 checkoutUrl: existSes.url, fecha: dupPend.FECHA,
+                 fechaFmt: formatFechaEs_(dupPend.FECHA) };
+    } catch(dupE) {}
+    updateRow('RESERVAS', dupPend.ID_RESERVA, { ESTADO: 'CANCELADA' });
+  }
+
   var nextNum    = existentes.length + 1;
   var idReserva  = 'RESERVA-' + String(nextNum).padStart(3, '0');
   var token      = Utilities.getUuid();
@@ -2031,6 +2064,18 @@ function confirmarPagoReserva_(data) {
   return { ok: true, idReserva: idReserva, fecha: fecha, fechaFmt: fechaFmt,
            nombre: nombre, email: email, hora: RES_HORA_INI_ + ' – ' + RES_HORA_FIN_,
            token: reserva.TOKEN_CANCEL || '' };
+}
+
+// ── Stripe webhook (checkout.session.completed) ────────────────────────────
+
+function stripeWebhook_(evt) {
+  if (!evt || evt.type !== 'checkout.session.completed') return { ok: true, skipped: true };
+  var obj = evt.data && evt.data.object;
+  if (!obj) return { ok: false, error: 'missing event object' };
+  var sessionId = obj.id;
+  var idReserva = obj.metadata && obj.metadata.idReserva;
+  if (!sessionId || !idReserva) return { ok: false, error: 'missing sessionId or idReserva in metadata' };
+  return confirmarPagoReserva_({ sessionId: sessionId, idReserva: idReserva });
 }
 
 // ── Helpers internos ────────────────────────────────────────────────────────

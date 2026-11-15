@@ -352,7 +352,22 @@ function doExtPagar(){
     esAlcotan: state.extEsAlcotan
   }).then(function(r){
     if (!r.ok){ setBtnLoading('btn-ext-pay', false); showErr('ext-confirm-err', r.error); return; }
-    // Redirect to Stripe Checkout
+    if (!r.checkoutUrl) {
+      // Pago ya realizado y confirmado (doble intento prevenido en GAS)
+      state.doneData = r;
+      state.screen   = 'pago-done';
+      try { localStorage.setItem('smf_done', JSON.stringify(r)); } catch(e) {}
+      setBtnLoading('btn-ext-pay', false);
+      render();
+      return;
+    }
+    try {
+      localStorage.setItem('smf_pending', JSON.stringify({
+        idReserva: r.idReserva, sessionId: r.sessionId,
+        nombre: state.extNombre, email: state.extEmail,
+        fecha: r.fecha, fechaFmt: r.fechaFmt, ts: Date.now()
+      }));
+    } catch(e) {}
     location.href = r.checkoutUrl;
   }).catch(function(){ setBtnLoading('btn-ext-pay', false); showErr('ext-confirm-err','Error de conexión. Inténtalo de nuevo.'); });
 }
@@ -378,7 +393,7 @@ function screenPagoDone(){
     '<div class="detail-row"><span class="detail-label">Referencia</span><span class="detail-val">' + esc(r.idReserva||'') + '</span></div>' +
     '</div>' +
     '<p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 16px">Puedes cancelar hasta 24 horas antes desde el email de confirmación.</p>' +
-    '<button class="btn btn-ghost" onclick="location.href=\'reservar.html\'">Nueva reserva</button>';
+    '<button class="btn btn-ghost" onclick="nuevaReserva()">Nueva reserva</button>';
 }
 
 function screenPagoCancel(){
@@ -388,6 +403,11 @@ function screenPagoCancel(){
     '<p class="sub">No se ha realizado ningún cargo. Puedes intentarlo de nuevo.</p>' +
     '</div>' +
     '<button class="btn btn-primary" style="margin-top:14px" onclick="location.href=\'reservar.html\'">Intentar de nuevo</button>';
+}
+
+function nuevaReserva(){
+  try { localStorage.removeItem('smf_done'); } catch(e) {}
+  location.href = 'reservar.html';
 }
 
 function initCancel(token, fechaFmt, idRes){
@@ -599,6 +619,18 @@ function setBtnLoading(id, on){
   var sessionId   = params.get('session_id');
   var idReserva   = params.get('id');
 
+  // Restaurar pago ya confirmado desde localStorage (p.ej. el usuario recargó la página)
+  if (!pagoStatus && !cancelToken) {
+    var savedDone = null;
+    try { savedDone = JSON.parse(localStorage.getItem('smf_done') || 'null'); } catch(e) {}
+    if (savedDone && savedDone.idReserva) {
+      state.doneData = savedDone;
+      state.screen   = 'pago-done';
+      render();
+      return;
+    }
+  }
+
   if (cancelToken) {
     state.screen       = 'cancelByToken';
     state.cancelByToken= cancelToken;
@@ -617,6 +649,10 @@ function setBtnLoading(id, on){
         }
         state.doneData = r;
         state.screen   = 'pago-done';
+        try {
+          localStorage.setItem('smf_done', JSON.stringify(r));
+          localStorage.removeItem('smf_pending');
+        } catch(e) {}
         render();
       }).catch(function(){
         $('app').innerHTML = '<div class="card"><div class="msg msg-error">Error al verificar el pago. Contacta con la academia.</div></div>';
