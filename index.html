@@ -13926,7 +13926,7 @@ function modalReserva(r, fechaDefault) {
   const _rEmail  = r.EMAIL_CLIENTE||r.EMAIL||'';
   const waBtn = _rTel
     ? `<a class="btn btn-secondary" style="font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:5px"
-        href="https://wa.me/${_rTel.replace(/\D/g,'')}?text=${encodeURIComponent('Hola, tu reserva está confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.')}"
+        href="https://wa.me/${String(_rTel).replace(/\D/g,'')}?text=${encodeURIComponent('Hola, tu reserva está confirmada para el '+fecha+' de '+_RES_HORA_INI+' a '+_RES_HORA_FIN+'.')}"
         target="_blank">📲 WhatsApp cliente</a>`
     : '';
   const emailBtn = _rEmail
