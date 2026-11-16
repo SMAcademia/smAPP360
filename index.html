@@ -1508,6 +1508,9 @@ function fmtEur(v) {
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function jEsc(o) {
+  return JSON.stringify(o).replace(/'/g,'&#39;');
+}
 
 function badgeActivo(v) {
   return String(v||'').toUpperCase().startsWith('S')
@@ -13617,7 +13620,7 @@ function _resDashboardHtml() {
         <div style="font-size:11px;color:var(--text3)">${diaStr} · ${_RES_HORA_INI}–${_RES_HORA_FIN}</div>
       </div>
       <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color}22;color:${color}">${r.ESTADO||'PENDIENTE'}</span>
-      <button class="btn btn-sm btn-secondary" onclick='modalReserva(${JSON.stringify(r)})'>Ver</button>
+      <button class="btn btn-sm btn-secondary" onclick='modalReserva(${jEsc(r)})'>Ver</button>
     </div>`;
   };
 
@@ -13704,7 +13707,7 @@ function _resCalHtml() {
       ${resDelDia.length ? `<div style="font-size:10px;line-height:1.6;margin-bottom:4px">${
         resDelDia.map(r => {
           const color = _RES_ESTADO_COLOR[r.ESTADO||'PENDIENTE'] || '#6b7280';
-          return `<div style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick='modalReserva(${JSON.stringify(r)})'>
+          return `<div style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick='modalReserva(${jEsc(r)})'>
             <div style="width:5px;height:5px;border-radius:50%;background:${color};flex-shrink:0"></div>
             <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'—')}</span>
           </div>`;
@@ -13872,7 +13875,7 @@ function _resHistorialHtml() {
               <td><strong>${esc(r.NOMBRE_ALUMNO||r.NOMBRE_CLIENTE||'—')}</strong><br><span style="font-size:11px;color:var(--text3)">${esc(r.EMAIL_CLIENTE||r.EMAIL||'')}${(r.TELEFONO_CLIENTE||r.TELEFONO)?' · '+(r.TELEFONO_CLIENTE||r.TELEFONO):''}</span></td>
               <td style="font-size:12px;font-variant-numeric:tabular-nums">${ocup}/${_RES_MAX_PLAZAS}</td>
               <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color}22;color:${color}">${r.ESTADO||'PENDIENTE'}</span></td>
-              <td><button class="btn btn-sm btn-secondary" onclick='modalReserva(${JSON.stringify(r)})'>Ver</button></td>
+              <td><button class="btn btn-sm btn-secondary" onclick='modalReserva(${jEsc(r)})'>Ver</button></td>
             </tr>`;
           }).join('')}</tbody>
         </table></div>`
