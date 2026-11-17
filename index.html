@@ -3675,6 +3675,9 @@ let _comTipo      = 'COBRO';
 let _comNota      = '';
 let _comMsgCustom = null;
 let _comLastEjMsg = '';
+let _comSelIds    = new Set();
+let _comMsgManual = '';
+let _comBuscador  = '';
 
 const _COM_BIZUM     = '625 46 82 96';
 const _COM_IBAN      = 'ES69 0182 5036 7102 0163 5388';
@@ -3689,6 +3692,7 @@ const _COM_TIPOS = {
   CAMBIO:           { label: 'Aviso / Cambio',             icon: '📢', needsMes: false, needsFinanciero: false },
   PRESENTACION:     { label: 'Presentación curso',         icon: '📋', needsMes: false, needsFinanciero: false },
   RENOVACION_BONO:  { label: 'Renovación de bono',         icon: '🎫', needsMes: false, needsFinanciero: false },
+  SELECCION_MANUAL: { label: 'Selección manual',            icon: '🎯', needsMes: false, needsFinanciero: false },
 };
 
 function _ampaCuota(acts) {
@@ -3806,6 +3810,7 @@ function _comMesActual() {
 }
 
 function _renderCom() {
+  if (_comTipo === 'SELECCION_MANUAL') { _renderComSelManual(); return; }
   const cfg = _COM_TIPOS[_comTipo] || _COM_TIPOS.COBRO;
   const actsLinea = DB.actividades.filter(a =>
     (!_comFiltros.linea || (_comFiltros.linea==='EXTRAESCOLARES'&&esExtraescolar(a.LINEA||'')) || (_comFiltros.linea==='FUTBOL'&&esFutbol(a.LINEA||'')))
@@ -3962,7 +3967,152 @@ function _renderContactosAmpa() {
 
 function _comSetLinea(v) { _comFiltros.linea = v; _comFiltros.actIds = new Set(); _renderCom(); }
 function _comSetMes(v)   { _comFiltros.mes   = v; _renderCom(); }
-function _comSetTipo(v)  { _comTipo = v; _comNota = ''; _comMsgCustom = null; _renderCom(); }
+function _comSetTipo(v)  {
+  if (v !== 'SELECCION_MANUAL') _comSelIds.clear();
+  if (v === 'SELECCION_MANUAL') _comBuscador = '';
+  _comTipo = v; _comNota = ''; _comMsgCustom = null; _renderCom();
+}
+
+// ── Selección manual ────────────────────────────────────────────────────────
+function _comGetAllFamilias() {
+  return (DB.clientes || [])
+    .map(c => ({
+      cliId:    String(c.ID_CLIENTE),
+      nombre:   ((c.NOMBRE || '') + ' ' + (c.APELLIDOS || '')).trim(),
+      email:    c.EMAIL || '',
+      telefono: c['TELÉFONO'] || c.TELEFONO || '',
+    }))
+    .filter(f => f.nombre)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+function _comGetMsgManual(f) {
+  const tutor = (f.nombre || '').split(' ')[0];
+  return (_comMsgManual || '').replace(/\{NOMBRE\}/g, tutor).replace(/\{FAMILIA\}/g, f.nombre);
+}
+
+function _comToggleSel(cliId) {
+  if (_comSelIds.has(cliId)) _comSelIds.delete(cliId); else _comSelIds.add(cliId);
+  _comRefreshSel();
+}
+
+function _comSelTodas() {
+  const q = (_comBuscador || '').toLowerCase().trim();
+  _comGetAllFamilias()
+    .filter(f => !q || f.nombre.toLowerCase().includes(q) || f.email.toLowerCase().includes(q))
+    .forEach(f => _comSelIds.add(f.cliId));
+  _comRefreshSel();
+}
+
+function _comDeselTodas() { _comSelIds.clear(); _comRefreshSel(); }
+
+function _comSelItemHtml(f) {
+  const sel = _comSelIds.has(f.cliId);
+  return '<div onclick="_comToggleSel(\'' + esc(f.cliId) + '\')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;border:1.5px solid ' + (sel ? 'var(--green)' : 'var(--border)') + ';background:' + (sel ? '#22c55e18' : 'var(--bg2)') + ';user-select:none;transition:border-color .1s,background .1s">'
+    + '<div style="width:16px;height:16px;border-radius:3px;border:2px solid ' + (sel ? 'var(--green)' : 'var(--border2)') + ';background:' + (sel ? 'var(--green)' : 'transparent') + ';flex-shrink:0;display:flex;align-items:center;justify-content:center">'
+    + (sel ? '<svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '')
+    + '</div>'
+    + '<span style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.nombre) + '</span>'
+    + '</div>';
+}
+
+function _comSelTableHtml(sel) {
+  if (!sel.length) return '<tr><td colspan="2"><div class="empty"><div class="empty-icon">☝️</div><p>Selecciona familias en la lista de arriba</p></div></td></tr>';
+  return sel.map(f => {
+    const msg = _comGetMsgManual(f);
+    const tel = String(f.telefono || '').replace(/\D/g, '');
+    const wa  = tel ? 'https://wa.me/' + (tel.length === 9 ? '34' + tel : tel) + '?text=' + encodeURIComponent(msg) : '';
+    const mailHref = f.email
+      ? 'mailto:' + encodeURIComponent(f.email) + '?subject=' + encodeURIComponent('SM Academia — Inscripción AMPA') + '&body=' + encodeURIComponent(msg)
+      : '';
+    return '<tr>'
+      + '<td><strong>' + esc(f.nombre) + '</strong>' + (f.email ? '<br><span style="font-size:11px;color:var(--text3)">' + esc(f.email) + '</span>' : '') + '</td>'
+      + '<td style="white-space:nowrap">'
+      + (wa ? '<a href="' + wa + '" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;margin-right:4px">📲 WA</a>' : '<span style="font-size:11px;color:var(--text3)">Sin tel. </span>')
+      + (mailHref ? '<a href="' + mailHref + '" class="btn btn-sm btn-secondary">✉ Email</a>' : '')
+      + '</td></tr>';
+  }).join('');
+}
+
+function _comRefreshSel() {
+  const q       = (_comBuscador || '').toLowerCase().trim();
+  const todas   = _comGetAllFamilias();
+  const filtrad = q ? todas.filter(f => f.nombre.toLowerCase().includes(q) || f.email.toLowerCase().includes(q)) : todas;
+  const sel     = todas.filter(f => _comSelIds.has(f.cliId));
+
+  const listEl = document.getElementById('com-sel-list');
+  if (listEl) listEl.innerHTML = filtrad.map(_comSelItemHtml).join('') || '<p style="color:var(--text3);font-size:12px;margin:0">Sin resultados</p>';
+
+  const cntEl = document.getElementById('com-sel-cnt');
+  if (cntEl) cntEl.textContent = _comSelIds.size + ' seleccionadas';
+
+  const selCntEl = document.getElementById('com-sel-selcnt');
+  if (selCntEl) selCntEl.textContent = sel.length + ' familias';
+
+  const tbodyEl = document.getElementById('com-sel-tbody');
+  if (tbodyEl) tbodyEl.innerHTML = _comSelTableHtml(sel);
+}
+
+function _renderComSelManual() {
+  const MSG_DEFAULT = 'Hola {NOMBRE} 👋\n\n'
+    + 'Te informamos de que, según nuestros registros, todavía no consta tu inscripción como socio/a del AMPA del centro.\n\n'
+    + '⚠️ La inscripción en el AMPA es *obligatoria* para poder disfrutar de los servicios de SM Academia. Sin ella, no podrás continuar con las actividades.\n\n'
+    + '📋 Formaliza tu inscripción de forma urgente:\n'
+    + '• Cuota anual: *20 €*\n'
+    + '• Transferencia AMPA: ' + _COM_IBAN_AMPA + '\n'
+    + '• Concepto: nombre + apellidos + curso del alumno/a\n\n'
+    + 'Para cualquier consulta estamos a tu disposición.\n\n'
+    + '¡Muchas gracias! 🙏\nSM Academia · 📲 ' + _COM_BIZUM;
+
+  if (!_comMsgManual) _comMsgManual = MSG_DEFAULT;
+
+  const todas   = _comGetAllFamilias();
+  const q       = (_comBuscador || '').toLowerCase().trim();
+  const filtrad = q ? todas.filter(f => f.nombre.toLowerCase().includes(q) || f.email.toLowerCase().includes(q)) : todas;
+  const sel     = todas.filter(f => _comSelIds.has(f.cliId));
+
+  const tipoOps = Object.entries(_COM_TIPOS).map(([k, v]) =>
+    '<option value="' + k + '"' + (k === _comTipo ? ' selected' : '') + '>' + v.icon + ' ' + v.label + '</option>'
+  ).join('');
+
+  render('<div style="display:grid;gap:16px">'
+    // — Tipo
+    + '<div class="card" style="padding:16px 20px">'
+    + '<div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">'
+    + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Tipo de comunicación</label>'
+    + '<select style="min-width:240px" onchange="_comSetTipo(this.value)">' + tipoOps + '</select>'
+    + '</div>'
+    // — Mensaje
+    + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Mensaje</label>'
+    + '<textarea rows="8" style="width:100%;font-size:12px;line-height:1.65;resize:vertical;font-family:monospace" oninput="_comMsgManual=this.value">' + esc(_comMsgManual) + '</textarea>'
+    + '<div style="font-size:11px;color:var(--text3);margin-top:4px"><code>{NOMBRE}</code> se sustituye por el nombre del tutor/a</div>'
+    + '</div>'
+    // — Selector de familias
+    + '<div class="card" style="padding:14px 20px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    + '<div class="card-title" style="margin:0;flex:1">Familias (' + todas.length + ')</div>'
+    + '<span id="com-sel-cnt" style="font-size:12px;color:var(--text3)">' + _comSelIds.size + ' seleccionadas</span>'
+    + '<button class="btn btn-sm btn-secondary" onclick="_comSelTodas()">Sel. todo</button>'
+    + '<button class="btn btn-sm btn-secondary" onclick="_comDeselTodas()">Limpiar</button>'
+    + '</div>'
+    + '<div style="margin-bottom:8px"><input id="com-sel-search" type="search" placeholder="🔍 Buscar familia..." value="' + esc(_comBuscador) + '" oninput="_comBuscador=this.value;_comRefreshSel()" style="width:100%;font-size:13px"></div>'
+    + '<div id="com-sel-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:5px;max-height:300px;overflow-y:auto;padding:2px 0">'
+    + (filtrad.map(_comSelItemHtml).join('') || '<p style="color:var(--text3);font-size:12px;margin:0">Sin resultados</p>')
+    + '</div>'
+    + '</div>'
+    // — Tabla de envío
+    + '<div class="card" style="padding:14px 20px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    + '<div class="card-title" style="margin:0;flex:1">Enviar a seleccionadas</div>'
+    + '<span id="com-sel-selcnt" style="font-size:12px;font-weight:700;color:var(--green)">' + sel.length + ' familias</span>'
+    + '</div>'
+    + '<div class="table-wrap"><table style="font-size:13px">'
+    + '<thead><tr><th>Familia</th><th>Enviar</th></tr></thead>'
+    + '<tbody id="com-sel-tbody">' + _comSelTableHtml(sel) + '</tbody>'
+    + '</table></div>'
+    + '</div>'
+    + '</div>');
+}
 function _comToggleAct(id) {
   if (_comFiltros.actIds.has(id)) _comFiltros.actIds.delete(id); else _comFiltros.actIds.add(id);
   _renderCom();
