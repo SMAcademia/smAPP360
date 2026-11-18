@@ -201,6 +201,7 @@ tr:hover td{background:#f8f8f8}
 .toast.info{background:var(--blue)}
 @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
+.modal-spin{display:inline-block;animation:spin .7s linear infinite;margin-right:3px}
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
 .empty{text-align:center;padding:48px 20px;color:var(--text3)}
@@ -1238,6 +1239,8 @@ function render(html) { document.getElementById('page-content').innerHTML = html
 // ══════════════════════════════════════════════════════════════════════════
 //  UI UTILIDADES
 // ══════════════════════════════════════════════════════════════════════════
+let _wakeLock = null;
+
 function openModal(title, bodyHTML, footerHTML, size) {
   document.getElementById('modal-title').textContent  = title;
   const bodyEl = document.getElementById('modal-body');
@@ -1249,31 +1252,40 @@ function openModal(title, bodyHTML, footerHTML, size) {
   box.className = size === 'xl' ? 'modal xl' : (size === 'wide' || size === true) ? 'modal wide' : 'modal';
   document.getElementById('modal-overlay').classList.add('open');
 
-  // Evitar doble tap en botones de guardar: bloquear al primer clic,
-  // reactivar automáticamente a los 8 s si el modal no se cerró (error en guardado)
+  // Wake lock: evita que la pantalla se apague durante operaciones en móvil
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').then(wl => { _wakeLock = wl; }).catch(() => {});
+  }
+
+  // Bloquear botones al primer clic y mostrar indicador de guardado (36 s = timeout de writeToSheet)
   footerEl.querySelectorAll('button:not(.btn-outline)').forEach(btn => {
     const orig = btn.onclick;
     btn.onclick = function(e) {
       if (btn.disabled) return;
       btn.disabled = true;
       btn.style.opacity = '0.65';
+      btn._origHTML = btn.innerHTML;
+      if (btn.classList.contains('btn-primary') || btn.classList.contains('btn-danger')) {
+        btn.innerHTML = '<span class="modal-spin">⟳</span> Guardando…';
+      }
       btn._unblockTimer = setTimeout(() => {
         btn.disabled = false;
         btn.style.opacity = '';
-      }, 8000);
+        if (btn._origHTML !== undefined) { btn.innerHTML = btn._origHTML; delete btn._origHTML; }
+      }, 36000);
       if (orig) orig.call(this, e);
     };
   });
 }
 function closeModal() {
-  // Limpiar bloqueos de botones al cerrar
   document.querySelectorAll('#modal-footer button').forEach(btn => {
     clearTimeout(btn._unblockTimer);
     btn.disabled = false;
     btn.style.opacity = '';
+    if (btn._origHTML !== undefined) { btn.innerHTML = btn._origHTML; delete btn._origHTML; }
   });
   document.getElementById('modal-overlay').classList.remove('open');
-  // Si había un refresco pendiente (modal estaba abierto), re-renderizar ahora
+  if (_wakeLock) { try { _wakeLock.release(); } catch(_){} _wakeLock = null; }
   if (_arPending) { _arPending = false; _arRerender(); }
 }
 
@@ -1283,6 +1295,18 @@ function showToast(msg, type) {
   t.textContent = msg;
   document.getElementById('toast-container').appendChild(t);
   setTimeout(() => t.remove(), 3500);
+  // Error con modal abierto → restaurar botones automáticamente
+  if (type === 'error') {
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay && overlay.classList.contains('open')) {
+      document.querySelectorAll('#modal-footer button').forEach(btn => {
+        clearTimeout(btn._unblockTimer);
+        btn.disabled = false;
+        btn.style.opacity = '';
+        if (btn._origHTML !== undefined) { btn.innerHTML = btn._origHTML; delete btn._origHTML; }
+      });
+    }
+  }
 }
 
 function topbarBtn(label, onclick, type) {
