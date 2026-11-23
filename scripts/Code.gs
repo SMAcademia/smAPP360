@@ -638,50 +638,59 @@ function nuevaPreinscripcion(data) {
   // Acepta claves en mayusculas (manual/API) y minusculas (formulario web)
   var d = data;
   var nombreNormRaw = d.NOMBRE_ALUMNO   || d.nombre_alumno   || '';
-  var emailRaw      = d.EMAIL_TUTOR     || d.email_tutor1    || d.email_tutor    || '';
+  var emailRaw      = d.EMAIL_TUTOR1    || d.email_tutor1    || d.EMAIL_TUTOR || d.email_tutor || '';
   var nombreNorm    = stripAccents_(nombreNormRaw);
   var emailNorm     = String(emailRaw).toLowerCase().trim();
 
-  var actividadInteres = d.ACTIVIDAD_INTERES || d.actividad_interes ||
-    (Array.isArray(d.actividades) ? d.actividades.join(', ') : (d.actividades || ''));
-  var lineaNorm = String(d.LINEA || (stripAccents_(actividadInteres).indexOf('FUTBOL') !== -1 ? 'FUTBOL' : 'EXTRAESCOLARES')).toUpperCase();
+  var actividadInteres = d.ACTIVIDADES || d.actividades ||
+    d.ACTIVIDAD_INTERES || d.actividad_interes ||
+    (Array.isArray(d.actividades) ? d.actividades.join(', ') : '');
 
-  // Clave de dedup: mismo alumno + mismo email + misma línea (permite apuntarse a Fútbol Y Extraescolares)
+  // Dedup: mismo alumno + mismo email (la hoja no tiene columna LINEA)
   var existing = sheetToJSON(book, 'PREINSCRIPCIONES');
   var dup = existing.some(function(r) {
     if (String(r.ESTADO || '').toUpperCase() === 'RECHAZADA') return false;
-    var mismoNombre = nombreNorm && stripAccents_(r.NOMBRE_ALUMNO) === nombreNorm;
-    var mismoEmail  = emailNorm  && String(r.EMAIL_TUTOR || '').toLowerCase() === emailNorm;
-    var mismaLinea  = String(r.LINEA || '').toUpperCase() === lineaNorm;
-    return mismoNombre && mismoEmail && mismaLinea;
+    var mismoNombre = nombreNorm && stripAccents_(r.NOMBRE_ALUMNO || '') === nombreNorm;
+    var mismoEmail  = emailNorm  && String(r.EMAIL_TUTOR1 || r.EMAIL_TUTOR || '').toLowerCase() === emailNorm;
+    return mismoNombre && mismoEmail;
   });
 
   if (dup) return { ok: false, duplicate: true };
 
   var id = nextId_(sheet, 'PREINSCRIPCIONES', headers);
 
+  // Las claves coinciden exactamente con los encabezados de la hoja PREINSCRIPCIONES
   var rowObj = {
-    ID:               id,
-    FECHA_SOLICITUD:  Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
-    NOMBRE_ALUMNO:    String(nombreNormRaw).toUpperCase().trim(),
-    APELLIDOS_ALUMNO: String(d.APELLIDOS_ALUMNO || d.apellidos_alumno || '').toUpperCase().trim(),
-    FECHA_NAC:        d.FECHA_NAC   || d.fecha_nac   || '',
-    CURSO_ALUMNO:     d.CURSO_ALUMNO|| d.curso_alumno|| '',
-    CENTRO:           d.CENTRO      || d.centro      || 'ESCALERITAS',
-    NOMBRE_TUTOR:     String(d.NOMBRE_TUTOR    || d.nombre_tutor1    || d.nombre_tutor    || '').toUpperCase().trim(),
-    APELLIDOS_TUTOR:  String(d.APELLIDOS_TUTOR || d.apellidos_tutor1 || d.apellidos_tutor || '').toUpperCase().trim(),
-    RELACION_TUTOR:   d.RELACION_TUTOR || d.relacion_tutor1 || '',
-    NIF_TUTOR:        d.NIF_TUTOR      || d.nif_tutor1      || '',
-    EMAIL_TUTOR:      emailNorm,
-    'TELÉFONO_TUTOR': d.TELEFONO_TUTOR || d['TELÉFONO_TUTOR'] || d.telefono_tutor1 || '',
-    ACTIVIDAD_INTERES:actividadInteres,
-    DIAS_DISPONIBLES: d.DIAS_DISPONIBLES || d.dias_disponibles || '',
-    LINEA:            d.LINEA || (stripAccents_(actividadInteres).indexOf('FUTBOL') !== -1 ? 'FUTBOL' : 'EXTRAESCOLARES'),
-    AUTORIZA_IMAGEN:  d.AUTORIZA_IMAGEN || d.autoriza_imagen || 'NO',
-    SALUD:            d.SALUD || d.salud || '',
-    ESTADO:           'RECIBIDA',
-    NOTAS:            d.NOTAS || d.observaciones || d.notas || '',
-    CANAL:            d.CANAL || (d.nombre_alumno ? 'WEB' : 'MANUAL'),
+    ID_PREINSCRIPCION: id,
+    FECHA:             Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    ESTADO:            'RECIBIDA',
+    CURSO_ACADEMICO:   d.CURSO_ACADEMICO  || d.curso_academico  || '',
+    CENTRO:            d.CENTRO           || d.centro           || 'ESCALERITAS',
+    NOMBRE_ALUMNO:     String(nombreNormRaw).toUpperCase().trim(),
+    APELLIDOS_ALUMNO:  String(d.APELLIDOS_ALUMNO || d.apellidos_alumno || '').toUpperCase().trim(),
+    FECHA_NAC:         d.FECHA_NAC        || d.fecha_nac        || '',
+    CURSO_ALUMNO:      d.CURSO_ALUMNO     || d.curso_alumno     || '',
+    SALUD:             d.SALUD            || d.salud            || '',
+    OBSERVACIONES:     d.OBSERVACIONES    || d.observaciones    || d.NOTAS || d.notas || '',
+    NOMBRE_TUTOR1:     String(d.NOMBRE_TUTOR1    || d.nombre_tutor1    || d.NOMBRE_TUTOR    || d.nombre_tutor    || '').toUpperCase().trim(),
+    APELLIDOS_TUTOR1:  String(d.APELLIDOS_TUTOR1 || d.apellidos_tutor1 || d.APELLIDOS_TUTOR || d.apellidos_tutor || '').toUpperCase().trim(),
+    RELACION_TUTOR1:   d.RELACION_TUTOR1  || d.relacion_tutor1  || d.RELACION_TUTOR || d.relacion_tutor || '',
+    NIF_TUTOR1:        d.NIF_TUTOR1       || d.nif_tutor1       || d.NIF_TUTOR || d.nif_tutor || '',
+    TELEFONO_TUTOR1:   d.TELEFONO_TUTOR1  || d.telefono_tutor1  || d.TELEFONO_TUTOR || d['TELÉFONO_TUTOR'] || '',
+    EMAIL_TUTOR1:      emailNorm,
+    NOMBRE_TUTOR2:     String(d.NOMBRE_TUTOR2    || d.nombre_tutor2    || '').toUpperCase().trim(),
+    APELLIDOS_TUTOR2:  String(d.APELLIDOS_TUTOR2 || d.apellidos_tutor2 || '').toUpperCase().trim(),
+    RELACION_TUTOR2:   d.RELACION_TUTOR2  || d.relacion_tutor2  || '',
+    NIF_TUTOR2:        d.NIF_TUTOR2       || d.nif_tutor2       || '',
+    TELEFONO_TUTOR2:   d.TELEFONO_TUTOR2  || d.telefono_tutor2  || '',
+    EMAIL_TUTOR2:      String(d.EMAIL_TUTOR2 || d.email_tutor2 || '').toLowerCase().trim(),
+    AUTORIZA_IMAGEN:   d.AUTORIZA_IMAGEN  || d.autoriza_imagen  || 'NO',
+    ACEPTA_DATOS:      d.ACEPTA_DATOS     || d.acepta_datos     || '',
+    ACEPTA_DATOS_SALUD:d.ACEPTA_DATOS_SALUD || d.acepta_datos_salud || '',
+    SOCIO_AMPA:        d.SOCIO_AMPA       || d.socio_ampa       || '',
+    IBAN:              d.IBAN             || d.iban             || '',
+    ACTIVIDADES:       actividadInteres,
+    DIAS_DISPONIBLES:  d.DIAS_DISPONIBLES || d.dias_disponibles || '',
   };
 
   var newRow = headers.map(function(h) {
