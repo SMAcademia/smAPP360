@@ -5254,7 +5254,7 @@ function pagos(filtro) {
         ${btnFac}
         ${btnWA}
         ${btnWAconf}
-        ${(pendiente || String(p.ESTADO||'').toUpperCase()==='PARCIAL') ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;opacity:.85" onclick='anularPago("${esc(String(p.ID_PAGO||p.ID||''))}")' title="Anular pago">✕ Anular</button>` : ''}
+        ${!esAnulado ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;opacity:.85" onclick='anularPago("${esc(String(p.ID_PAGO||p.ID||''))}")' title="Anular pago">✕ Anular</button>` : ''}
       </td>
     </tr>`;
   } catch(e) { console.error('Error en fila pago', p, e); return `<tr><td colspan="11" style="color:var(--red);font-size:11px;padding:4px 8px">Error al renderizar pago ${esc(String(p.ID_PAGO||p.ID||''))} — ${esc(e.message)}</td></tr>`; }
@@ -5694,32 +5694,77 @@ function calcNeto2() {
 async function anularPago(pagoId) {
   const p = DB.pagos.find(x => String(x.ID_PAGO||x.ID||'') === String(pagoId));
   if (!p) { showToast('Pago no encontrado', 'error'); return; }
-  const alu = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
-  const nombre = alu ? (alu.NOMBRE + ' ' + (alu.APELLIDOS||'')).trim() : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'') || '—';
+  const alu    = DB.alumnos.find(a => String(a.ID_ALUMNO) === String(p.ID_ALUMNO));
+  const nombre = alu ? (alu.NOMBRE + ' ' + (alu.APELLIDOS||'')).trim()
+                     : (p.NOTAS||'').split('\n')[0].replace(/^Pagador:\s*/,'') || '—';
+  const facVinc = p.ID_FACTURA ? DB.facturas.find(f => String(f.ID_FACTURA) === String(p.ID_FACTURA)) : null;
+
   const conf = await new Promise(res => {
     openModal(
       'Anular pago',
-      `<p style="margin-bottom:12px">¿Anular el pago de <strong>${esc(nombre)}</strong>?</p>
-       <div style="background:var(--bg3);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.7">
-         <div><strong>Mes:</strong> ${esc(p.MES||'—')}</div>
-         <div><strong>Servicio:</strong> ${esc(_servicioVisible(p.SERVICIO))}</div>
-         <div><strong>Importe:</strong> ${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</div>
-       </div>
-       <p style="margin-top:12px;font-size:12px;color:var(--text3)">El pago quedará marcado como <strong>Anulado</strong> y no contará en los totales pendientes. La inscripción no se modifica.</p>`,
-      `<button class="btn btn-secondary" onclick="closeModal();window._anuConf(false)">Cancelar</button>
-       <button class="btn" style="background:#ef4444;color:#fff" onclick="closeModal();window._anuConf(true)">Anular pago</button>`
+      `<div style="display:flex;flex-direction:column;gap:14px">
+         <p style="margin:0">¿Anular el pago de <strong>${esc(nombre)}</strong>?</p>
+         <div style="background:var(--bg3);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.7">
+           <div><strong>Mes:</strong> ${esc(p.MES||'—')}</div>
+           <div><strong>Servicio:</strong> ${esc(_servicioVisible(p.SERVICIO))}</div>
+           <div><strong>Importe:</strong> ${fmtEur(p.TOTAL_ESPERADO||p.IMPORTE)}</div>
+           ${p.ID_FACTURA ? `<div><strong>Factura:</strong> ${esc(p.ID_FACTURA)}</div>` : ''}
+         </div>
+         ${facVinc ? `<div style="padding:10px 14px;background:#fff3cd;border-radius:8px;border-left:4px solid #ffc107;font-size:12px;color:#856404">
+           ⚠ La factura <strong>${esc(facVinc.ID_FACTURA)}</strong> (${fmtEur(facVinc.TOTAL)}) vinculada a este pago también quedará <strong>anulada</strong> (registro de anulación VeriFactu art. 11).
+         </div>` : ''}
+         <div class="field">
+           <label style="font-size:12px;font-weight:600;color:var(--text3)">Motivo de anulación <span class="req">*</span></label>
+           <input id="anu-pago-motivo" placeholder="Ej: Alumno incorrecto, importe erróneo…"
+             style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;box-sizing:border-box">
+         </div>
+         <p style="margin:0;font-size:12px;color:var(--text3)">El pago quedará marcado como <strong>Anulado</strong> y no contará en los totales. La inscripción no se modifica.</p>
+       </div>`,
+      `<button class="btn btn-outline" onclick="closeModal();window._anuConf(false)">Cancelar</button>
+       <button class="btn" style="background:#ef4444;color:#fff"
+         onclick="closeModal();window._anuConf(document.getElementById('anu-pago-motivo')?.value||'')">Anular pago</button>`
     );
     window._anuConf = res;
   });
   delete window._anuConf;
-  if (!conf) return;
+  if (conf === false) return;
+  const motivo = String(conf).trim();
+  if (!motivo) { showToast('Indica el motivo de anulación', 'error'); return; }
+
   const pid = String(p.ID_PAGO || p.ID || '');
   try {
     await writeToSheet('PAGOS', { ESTADO: 'ANULADO' }, pid);
     const idx = DB.pagos.findIndex(x => String(x.ID_PAGO||x.ID||'') === pid);
     if (idx !== -1) DB.pagos[idx].ESTADO = 'ANULADO';
-    showToast('Pago anulado correctamente', 'success');
-    pagos();
+
+    if (facVinc) {
+      // Anular la factura vinculada (VeriFactu RD 1007/2023 art. 11)
+      const originalId = String(facVinc.ID_FACTURA);
+      const today      = new Date().toISOString().slice(0, 10);
+      const sorted     = [...DB.facturas].sort((a, b) => String(a.FECHA_EXP) < String(b.FECHA_EXP) ? -1 : 1);
+      const hashAnt    = sorted[sorted.length - 1]?.HASH_ACTUAL || '0'.repeat(64);
+      const anuId      = 'ANU-' + originalId;
+      const cadena     = `${NIF_EMISOR}|${anuId}|${today}|0.00|${hashAnt}`;
+      const hashActual = await sha256hex(cadena);
+      const anuRow = {
+        ID_FACTURA: anuId, FECHA_EXP: today, SERIE: 'ANU', NUMERO: 0, TOTAL: 0,
+        CLIENTE_NOMBRE: facVinc.CLIENTE_NOMBRE||'', CLIENTE_NIF: facVinc.CLIENTE_NIF||'',
+        NIF_RECEPTOR:   facVinc.NIF_RECEPTOR||'',   NOMBRE_EMISOR: NOMBRE_EMISOR,
+        DOMICILIO_EMISOR: DOMICILIO_EMISOR,
+        CONCEPTO:         `Anulación de ${originalId} · ${motivo}`,
+        HASH_ANTERIOR:    hashAnt, HASH_ACTUAL: hashActual,
+        ESTADO_AEAT:      'ANULADA', BASE_IMPONIBLE: 0,
+        TIPO_IMPUESTO:    facVinc.TIPO_IMPUESTO||'EXENTO', CUOTA_IMPUESTO: 0,
+        NIF_EMISOR:       NIF_EMISOR, ID_CLIENTE: facVinc.ID_CLIENTE||'',
+        TIPO_FACTURA:     'ANULACION', FACTURA_REF: originalId,
+      };
+      await writeToSheet('FACTURAS', { ESTADO_AEAT: 'ANULADA' }, originalId);
+      await writeToSheet('FACTURAS', anuRow, null);
+      showToast(`Pago anulado · Factura ${originalId} → registro ${anuId} (VeriFactu)`, 'success');
+    } else {
+      showToast('Pago anulado correctamente', 'success');
+    }
+    loadAllData().then(pagos);
   } catch(e) {
     showToast('Error al anular: ' + (e.message||e), 'error');
   }
