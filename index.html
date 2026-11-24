@@ -2027,6 +2027,11 @@ function modalAlumno(a) {
     </div>`;
   }
 
+  const _centros = [...new Set((DB.alumnos||[]).map(a2=>(a2.CENTRO||'').trim().toUpperCase()).filter(Boolean))].sort();
+  const _centroActual = (a.CENTRO||'').trim().toUpperCase();
+  const _isNuevoCentro = _centroActual && !_centros.includes(_centroActual);
+  const _opsCentros = _centros.map(c=>`<option value="${esc(c)}" ${c===_centroActual&&!_isNuevoCentro?'selected':''}>${esc(c)}</option>`).join('');
+
   openModal(isNew ? 'Nuevo alumno' : 'Editar alumno', `
     <div class="form-grid">
       <div class="field"><label>Nombre <span class="req">*</span></label>
@@ -2041,7 +2046,15 @@ function modalAlumno(a) {
         </select></div>
       <div class="field" id="wrap-centro-alumno" style="${esExt?'':'display:none'}">
         <label>Centro escolar</label>
-        <input id="a-centro" class="upper" value="${esc(a.CENTRO||'')}"></div>
+        <select id="a-centro-sel" onchange="onCentroSelChange(this)">
+          <option value="">— Selecciona —</option>
+          ${_opsCentros}
+          <option value="__nuevo__" ${_isNuevoCentro?'selected':''}>— Nuevo centro... —</option>
+        </select>
+        <input id="a-centro-new" class="upper" placeholder="Nombre del nuevo centro"
+          value="${esc(_isNuevoCentro?_centroActual:'')}"
+          style="${_isNuevoCentro?'':'display:none'}margin-top:6px">
+      </div>
       <div class="field"><label>Fecha de nacimiento</label>
         <input id="a-fnac" type="date" value="${esc(a.FECHA_NAC||'')}"></div>
       <div class="field"><label>Curso escolar</label>
@@ -2069,7 +2082,7 @@ function modalAlumno(a) {
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="guardarAlumno(${isNew?'null':`'${a.ID_ALUMNO}'`})">Guardar</button>`
   );
-  ['a-nombre','a-apellidos','a-centro'].forEach(id => {
+  ['a-nombre','a-apellidos','a-centro-new'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.addEventListener('input', function(){ const p=this.selectionStart; this.value=this.value.toUpperCase(); try{this.setSelectionRange(p,p)}catch(_){} });
   });
@@ -2092,7 +2105,7 @@ function guardarAlumno(id) {
     NOMBRE:          nombre,
     APELLIDOS:       document.getElementById('a-apellidos').value.trim(),
     LINEA:           linea,
-    CENTRO:          esExtraescolar(linea) ? (document.getElementById('a-centro')?.value.trim()||'') : '',
+    CENTRO:          esExtraescolar(linea) ? (() => { const s = document.getElementById('a-centro-sel'); if (!s) return ''; return s.value === '__nuevo__' ? (document.getElementById('a-centro-new')?.value.trim()||'') : (s.value||''); })() : '',
     FECHA_NAC:       document.getElementById('a-fnac').value,
     CURSO:           document.getElementById('a-curso').value,
     ID_CLIENTE:      cliId,
@@ -3375,6 +3388,8 @@ function _rcActEntryHtml(aluIdx, actIdx) {
 function _aluCardHtml(aluIdx) {
   const cursos = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE'];
   const opsCursos = cursos.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+  const centros = [...new Set((DB.alumnos||[]).map(a=>(a.CENTRO||'').trim().toUpperCase()).filter(Boolean))].sort();
+  const opsCentros = centros.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
   return '<div class="alu-card" data-alu="' + aluIdx + '" style="border:1.5px solid var(--border2);border-radius:10px;padding:14px;margin-bottom:12px;position:relative">'
     + (aluIdx > 0 ? '<button type="button" onclick="quitarAluCard(' + aluIdx + ')" style="position:absolute;top:10px;right:10px;background:none;border:none;cursor:pointer;font-size:18px;color:var(--text3)" title="Eliminar alumno">×</button>' : '')
     + '<div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Alumno ' + (aluIdx + 1) + '</div>'
@@ -3383,7 +3398,13 @@ function _aluCardHtml(aluIdx) {
     + '<div class="field"><label>Apellidos</label><input class="upper alu-apellidos" placeholder="Apellidos"></div>'
     + '<div class="field"><label>Línea <span class="req">*</span></label><select class="alu-linea" onchange="onAluLineaChange(' + aluIdx + ')">'
     + '<option value="">— Selecciona —</option><option value="SM FÚTBOL">⚽ SM Fútbol</option><option value="EXTRAESCOLARES">🎒 SM Extraescolares</option></select></div>'
-    + '<div class="field alu-centro-wrap" style="display:none"><label>Centro escolar</label><input class="upper alu-centro" placeholder="Centro"></div>'
+    + '<div class="field alu-centro-wrap" style="display:none"><label>Centro escolar</label>'
+    + '<select class="alu-centro-sel" onchange="onCentroSelChange(this)">'
+    + '<option value="">— Selecciona —</option>' + opsCentros
+    + '<option value="__nuevo__">— Nuevo centro... —</option>'
+    + '</select>'
+    + '<input class="upper alu-centro-new" placeholder="Nombre del nuevo centro" style="display:none;margin-top:6px">'
+    + '</div>'
     + '<div class="field"><label>Fecha nac.</label><input type="date" class="alu-fnac"></div>'
     + '<div class="field"><label>Curso</label><select class="alu-curso"><option value="">— Curso —</option>' + opsCursos + '</select></div>'
     + '<div class="field"><label>Cesión imagen</label><select class="alu-img"><option value="SÍ">Sí</option><option value="NO">No</option></select></div>'
@@ -3541,6 +3562,13 @@ function onAluLineaChange(idx) {
   if (wrap) wrap.style.display = esExtraescolar(card.querySelector('.alu-linea')?.value||'') ? '' : 'none';
 }
 
+function onCentroSelChange(sel) {
+  const inp = sel.nextElementSibling;
+  if (!inp) return;
+  inp.style.display = sel.value === '__nuevo__' ? '' : 'none';
+  if (sel.value === '__nuevo__') setTimeout(() => inp.focus(), 50);
+}
+
 function addRcAct(aluIdx) {
   const list = document.querySelector('.rc-act-list[data-alu="' + aluIdx + '"]');
   if (!list) return;
@@ -3647,7 +3675,7 @@ async function guardarRegistroCompleto() {
             NOMBRE:          nombre,
             APELLIDOS:       apellidos,
             LINEA:           linea,
-            CENTRO:          esExtraescolar(linea) ? (card.querySelector('.alu-centro')?.value.trim() || '') : '',
+            CENTRO:          esExtraescolar(linea) ? (() => { const s = card.querySelector('.alu-centro-sel'); if (!s) return ''; return s.value === '__nuevo__' ? (card.querySelector('.alu-centro-new')?.value.trim()||'') : (s.value||''); })() : '',
             FECHA_NAC:       card.querySelector('.alu-fnac')?.value || '',
             CURSO:           card.querySelector('.alu-curso')?.value || '',
             ID_CLIENTE:      cliId,
