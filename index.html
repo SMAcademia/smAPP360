@@ -11295,9 +11295,15 @@ function _asesExportarCSV() {
 // ══════════════════════════════════════════════════════════════════════════
 function ampaSocios() {
   document.getElementById('topbar-actions').innerHTML = '';
+  // Filtrar por AMPA del usuario (socios sin AMPA asignada son visibles a todos)
+  const socios = DB.ampaSocios.filter(s =>
+    !isAmpa() || !currentUser?.ampaId ||
+    !String(s.AMPA||'').trim() ||
+    String(s.AMPA||'').toUpperCase() === currentUser.ampaId
+  );
   topbarBtn('+ Nuevo socio', () => modalSocio());
   topbarBtn('↓ Exportar PDF', () => {
-    const socsP = DB.ampaSocios;
+    const socsP = socios;
     const activP = socsP.filter(s=>String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').length;
     const bajasP = socsP.length - activP;
     const recP = socsP.filter(s=>String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').reduce((s,x)=>s+(parseFloat(x.CUOTA_ANUAL)||0),0);
@@ -11319,7 +11325,6 @@ function ampaSocios() {
     exportarPDF('Socios AMPA', kHtml+`<table><thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="7">Sin datos</td></tr>'}</tbody></table>`);
   }, 'btn-secondary');
 
-  const socios  = DB.ampaSocios;
   const activos = socios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO').length;
   const bajas   = socios.length - activos;
   const recauda = socios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO')
@@ -11439,6 +11444,15 @@ function modalSocio(s) {
           <option value="ACTIVO" ${String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO'?'selected':''}>Activo</option>
           <option value="BAJA"   ${String(s.ESTADO||'').toUpperCase()==='BAJA'?'selected':''}>Baja</option>
         </select></div>
+      <div class="field"><label>AMPA</label>
+        ${isAdmin() ? `<select id="s-ampa">
+          <option value="" ${!s.AMPA?'selected':''}>— Sin asignar —</option>
+          ${(() => {
+            const opts = [...new Set(['ESCALERITAS','ADARGOMA',...(DB.ampaSocios||[]).map(x=>String(x.AMPA||'').toUpperCase()).filter(Boolean)])].sort();
+            return opts.map(a=>`<option value="${a}" ${(s.AMPA||'').toUpperCase()===a?'selected':''}>${a}</option>`).join('');
+          })()}
+        </select>` : `<input id="s-ampa" readonly value="${esc(s.AMPA||currentUser?.ampaId||'')}" style="background:var(--bg2);color:var(--text2)">`}
+      </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-primary" onclick="guardarSocio(${isNew?'null':`'${id}'`})">Guardar</button>`);
@@ -11459,6 +11473,7 @@ function guardarSocio(id) {
     FECHA_ALTA: document.getElementById('s-falta').value,
     CUOTA_ANUAL:document.getElementById('s-cuota').value,
     ESTADO:     document.getElementById('s-est').value,
+    AMPA:       document.getElementById('s-ampa')?.value || currentUser?.ampaId || '',
   };
   writeToSheet('AMPA_SOCIOS', row, id)
     .then(()=>{ showToast('Socio guardado'); closeModal(); loadAllData().then(ampaSocios); })
@@ -11987,8 +12002,13 @@ function extraResumen() {
     return Object.values(map);
   }
 
-  // KPI: socios AMPA activos
-  const sociosActivos = DB.ampaSocios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO');
+  // KPI: socios AMPA activos (filtrados por centro del usuario)
+  const _sociosCentro = DB.ampaSocios.filter(s =>
+    !isAmpa() || !currentUser?.ampaId ||
+    !String(s.AMPA||'').trim() ||
+    String(s.AMPA||'').toUpperCase() === currentUser.ampaId
+  );
+  const sociosActivos = _sociosCentro.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO');
   const kSocios = sociosActivos.length;
 
   // KPI: alumnos únicos en extraescolares
