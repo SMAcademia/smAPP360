@@ -1115,6 +1115,13 @@ function applyRoleVisibility() {
       const el = document.querySelector(`[data-page="${page}"]`);
       if (el) el.style.display = 'none';
     });
+    // Ocultar análisis, comunicación y reservas para AMPA
+    ['analisis-ingresos','comunicacion'].forEach(page => {
+      const el = document.querySelector(`[data-page="${page}"]`);
+      if (el) el.style.display = 'none';
+    });
+    const navRes = document.getElementById('nav-reservas');
+    if (navRes) navRes.style.display = 'none';
   }
 }
 
@@ -1383,6 +1390,13 @@ ${htmlBody}
 
 // Formatear fecha ISO a DD/MM/AAAA
 function sinTildes(s) { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); }
+// Comprueba si un centro pertenece al AMPA del usuario actual (o del ampaId dado)
+function _centroAmpaMatch(centroStr, ampaId) {
+  const id = ampaId || currentUser?.ampaId;
+  if (!id) return true;
+  const c = sinTildes(centroStr||'');
+  return id === 'ESCALERITAS' ? c.includes('ESCALERITAS') : c.includes('ATLANTIDA') || c.includes('ADARGOMA');
+}
 const ORDEN_CURSOS = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE'];
 function cursoOrder(c){ const i=ORDEN_CURSOS.indexOf(c||''); return i===-1?ORDEN_CURSOS.length:i; }
 function sortAlumnos(lista){ return lista.slice().sort((a,b)=>{ const ci=cursoOrder(a.CURSO)-cursoOrder(b.CURSO); if(ci)return ci; return ((a.NOMBRE||'')+' '+(a.APELLIDOS||'')).localeCompare((b.NOMBRE||'')+' '+(b.APELLIDOS||''),'es'); }); }
@@ -9746,7 +9760,12 @@ function modalPersonal(p) {
         <input id="per-ape" class="upper" value="${esc(p.APELLIDOS||'')}"></div>
       <div class="field"><label>Rol</label>
         <select id="per-rol">
-          ${['ADMIN','COORDINADOR','MONITOR','ENTRENADOR','AMPA','FAMILIA'].map(r=>`<option value="${r}" ${p.ROL===r?'selected':''}>${r}</option>`).join('')}
+          ${['ADMIN','COORDINADOR','MONITOR','ENTRENADOR','AMPA_ESCALERITAS','AMPA_ADARGOMA','FAMILIA'].map(r=>`<option value="${r}" ${p.ROL===r?'selected':''}>${r}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Centro (Extraescolares)</label>
+        <select id="per-centro">
+          <option value="" ${!p.CENTRO?'selected':''}>— Sin asignar —</option>
+          ${['CEIP ESCALERITAS','CEIP ATLÁNTIDA'].map(c=>`<option value="${c}" ${p.CENTRO===c?'selected':''}>${c}</option>`).join('')}
         </select></div>
       <div class="field"><label>Email (para login Gmail)</label>
         <input id="per-email" type="email" value="${esc(p.EMAIL||'')}"></div>
@@ -9807,6 +9826,7 @@ function guardarPersonal(id) {
     CERTIFICADO_DELITOS: document.getElementById('per-cert').value.trim(),
     ACTIVO:              document.getElementById('per-activo').value,
     DOCS_DRIVE:          document.getElementById('per-docs').value.trim(),
+    CENTRO:              document.getElementById('per-centro').value,
   };
   writeToSheet('PERSONAL', row, id)
     .then(()=>{ showToast(id?'Trabajador actualizado':'Trabajador creado'); closeModal(); loadAllData().then(personal); })
@@ -11898,12 +11918,20 @@ function extraResumen() {
 
   // Inscripciones activas extraescolares (también incluye via actividad si falta LINEA en inscripción)
   const actExtrasIds = new Set(actExtras.map(a => String(a.ID)));
-  const insExtras = DB.inscripciones.filter(i => {
+  let insExtras = DB.inscripciones.filter(i => {
     if (String(i.ESTADO||'').toUpperCase() !== 'ACTIVA') return false;
     if (esExtraescolar(i.LINEA||'')) return true;
     // Fallback: la actividad es extraescolar aunque la inscripción no tenga LINEA
     return actExtrasIds.has(String(i.ID_ACTIVIDAD||''));
   });
+  // AMPA: mostrar solo alumnos de su centro
+  if (isAmpa() && currentUser?.ampaId) {
+    const aId = currentUser.ampaId;
+    const aluSet = new Set(
+      (DB.alumnos||[]).filter(a => _centroAmpaMatch(a.CENTRO, aId)).map(a => String(a.ID_ALUMNO))
+    );
+    insExtras = insExtras.filter(i => aluSet.has(String(i.ID_ALUMNO)));
+  }
 
   // Meses disponibles con registros de asistencia
   const mesesConAsist = [...new Set(DB.asistenciasExtra.map(a=>String(a.FECHA||'').slice(0,7)).filter(Boolean))].sort().reverse();
@@ -13101,7 +13129,11 @@ function listados() {
         .filter(i => String(i.ID_ACTIVIDAD)===actId && String(i.ESTADO||'').toUpperCase()==='ACTIVA')
         .map(i => String(i.ID_ALUMNO))
     );
-    return sortAlumnos((DB.alumnos||[]).filter(a => ids.has(String(a.ID_ALUMNO)) && String(a.ACTIVO||'S').toUpperCase().startsWith('S')));
+    return sortAlumnos((DB.alumnos||[]).filter(a =>
+      ids.has(String(a.ID_ALUMNO)) &&
+      String(a.ACTIVO||'S').toUpperCase().startsWith('S') &&
+      (!isAmpa() || !currentUser?.ampaId || _centroAmpaMatch(a.CENTRO, currentUser.ampaId))
+    ));
   }
 
   function filaAlu(a) {
@@ -14916,14 +14948,22 @@ function ausencias(filtr, trabFiltro) {
   if (trabFiltro !== undefined) _ausTrab = trabFiltro;
 
   // Determinar qué ausencias mostrar
-  const canSeeAll = canEdit || isAmpa();
-  const miId = (!canSeeAll) ? String(currentUser.id || '') : null;
+  const canSeeAll = canEdit;
+  const miId = (!canSeeAll && !isAmpa()) ? String(currentUser.id || '') : null;
 
   if (canEdit) topbarBtn('+ Registrar ausencia', () => modalAusencia());
   else if (isMonitor() || isEntrenador()) topbarBtn('+ Solicitar ausencia', () => modalAusencia(null, miId));
-  const base = miId
+  let base = miId
     ? DB.ausencias.filter(a => String(a.ID_MONITOR) === miId)
     : DB.ausencias;
+  // AMPA: filtrar por personal de su centro
+  if (isAmpa() && currentUser?.ampaId) {
+    const aId = currentUser.ampaId;
+    const centroSet = new Set(
+      (DB.personal||[]).filter(p => _centroAmpaMatch(p.CENTRO, aId)).map(p => String(p.ID_MONITOR))
+    );
+    base = base.filter(a => centroSet.has(String(a.ID_MONITOR)));
+  }
 
   // Hoy para comparar
   const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
