@@ -1101,7 +1101,7 @@ function applyRoleVisibility() {
 
   // Para AMPA: ocultar toda la gestión de nav-general y el pase de lista
   if (ampaRole) {
-    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard','documentacion']
+    ['preinscripciones','clientes','alumnos','actividades','inscripciones','pagos','facturas','dashboard']
       .forEach(page => {
         const el = document.querySelector(`[data-page="${page}"]`);
         if (el) el.style.display = 'none';
@@ -1215,7 +1215,7 @@ function navigate(page) {
   closeSidebar();
   if (page !== 'extra-resumen') _extraResMes = null; // resetear selector al salir
   // AMPA no tiene acceso a contabilidad
-  if (isAmpa() && ['banco','analisis-banco','gastos','fiscal','asesoria','presupuesto','pagadores-externos','documentacion','reservas'].includes(page)) {
+  if (isAmpa() && ['banco','analisis-banco','gastos','fiscal','asesoria','presupuesto','pagadores-externos','reservas'].includes(page)) {
     navigate('extra-resumen');
     return;
   }
@@ -9055,10 +9055,10 @@ function documentacionSec() {
     </div>` : '';
 
   render(`
-    <div class="card" style="padding:20px 24px;margin-bottom:16px">
+    ${isAmpa() ? '' : `<div class="card" style="padding:20px 24px;margin-bottom:16px">
       <div class="card-title" style="margin-bottom:16px">Protocolos de empresa</div>
       <div style="display:flex;flex-direction:column;gap:12px">${protCards}</div>
-    </div>
+    </div>`}
     <div class="card" style="padding:20px 24px;margin-bottom:16px">
       <div class="card-title" style="margin-bottom:4px">Mis documentos</div>
       <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Contratos, documentos informativos y otros documentos personales de tu relación laboral.</p>
