@@ -8945,7 +8945,7 @@ function documentacionSec() {
   // Mis documentos personales
   const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
   const _AMPA_DOCS_COMPARTIDOS = {
-    ADARGOMA:    [{ titulo: 'Contrato AMPA Adargoma 2026-2027', url: 'https://docs.google.com/document/d/1NJK85epIdQdOS0mHPp6eVye6PZLEcTj4jxwcYOTJaMY/edit' }],
+    ADARGOMA:    [{ titulo: 'Contrato de Colaboración - AMPA Adargoma y SM Academia (2026-2027).pdf', url: 'https://drive.google.com/file/d/1jab3I8LvJL6w7IPpy8OD7rGgeV6JVLyX/view' }],
     ESCALERITAS: [],
   };
   const misDocs = [..._parseDocs(miPer?.DOCS_DRIVE), ...(_AMPA_DOCS_COMPARTIDOS[currentUser?.ampaId] || [])];
