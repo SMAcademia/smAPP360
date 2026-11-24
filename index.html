@@ -2315,7 +2315,17 @@ function modalActividad(a) {
       <div class="field"><label>Precio (€)</label>
         <input id="ac-precio" type="number" step="0.01" value="${esc(a.PRECIO||'')}"></div>
       <div class="field"><label>Centro</label>
-        <input id="ac-centro" class="upper" value="${esc(a.CENTRO||'')}"></div>
+        <select id="ac-centro">
+          <option value="" ${!a.CENTRO?'selected':''}>— Todos los centros —</option>
+          ${(() => {
+            const base = ['CEIP ESCALERITAS','CEIP ATLÁNTIDA'];
+            const extra = [...new Set(
+              (DB.actividades||[]).map(x => (x.CENTRO||'').trim()).filter(Boolean)
+            )];
+            extra.forEach(c => { if (!base.includes(c)) base.push(c); });
+            return base.sort().map(c=>`<option value="${c}" ${a.CENTRO===c?'selected':''}>${c}</option>`).join('');
+          })()}
+        </select></div>
       <div class="field"><label>Subvencionada</label>
         <select id="ac-subv">
           <option value="NO" ${String(a.SUBVENCIONADA||'NO').toUpperCase()==='NO'?'selected':''}>No</option>
@@ -11935,9 +11945,10 @@ function extraResumen() {
   // Actividades de custodia (recogida, temprana, tardía) — no aplica % asistencia
   const esCustodia = nom => { const n=sinTildes(nom||''); return n.includes('RECOGIDA')||n.includes('TEMPRANA')||n.includes('TARDIA'); };
 
-  // Actividades extraescolares activas
+  // Actividades extraescolares activas (AMPA: solo las de su centro o sin centro asignado)
   const actExtras = DB.actividades.filter(a =>
-    esExtraescolar(a.LINEA||a.NOMBRE||'') && String(a.ACTIVA||'').toUpperCase().startsWith('S')
+    esExtraescolar(a.LINEA||a.NOMBRE||'') && String(a.ACTIVA||'').toUpperCase().startsWith('S') &&
+    (!isAmpa() || !currentUser?.ampaId || !(a.CENTRO||'').trim() || _centroAmpaMatch(a.CENTRO, currentUser.ampaId))
   );
 
   // Inscripciones activas extraescolares (también incluye via actividad si falta LINEA en inscripción)
@@ -13140,8 +13151,12 @@ function listados() {
   const canEdit = false; // módulo siempre de solo lectura
 
   // Actividades extraescolares activas, ordenadas alfabéticamente
+  // AMPA: solo actividades de su centro o sin centro asignado
   const actsDisp = (DB.actividades || [])
-    .filter(a => esExtraescolar(a.LINEA||'') && String(a.ACTIVO||'S').toUpperCase().startsWith('S'))
+    .filter(a =>
+      esExtraescolar(a.LINEA||'') && String(a.ACTIVO||'S').toUpperCase().startsWith('S') &&
+      (!isAmpa() || !currentUser?.ampaId || !(a.CENTRO||'').trim() || _centroAmpaMatch(a.CENTRO, currentUser.ampaId))
+    )
     .sort((a,b) => (a.NOMBRE||'').localeCompare(b.NOMBRE||'','es'));
 
   // Estado: qué actividades están seleccionadas (por defecto todas)
