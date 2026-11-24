@@ -853,7 +853,7 @@ function loginUser(p) {
     nombre: (String(p.NOMBRE||'') + ' ' + String(p.APELLIDOS||'')).trim(),
     rol:    String(p.ROL || '').toUpperCase(),
     email:  String(p.EMAIL || '').toLowerCase(),
-    ampaId: String(p.ROL || '').toUpperCase() === 'AMPA' ? 'ESCALERITAS' : null,
+    ampaId: (r => r === 'AMPA' || r === 'AMPA_ESCALERITAS' ? 'ESCALERITAS' : r.startsWith('AMPA_') ? r.slice(5) : null)(String(p.ROL||'').toUpperCase()),
     raw:    p,
   };
 
@@ -876,6 +876,7 @@ function loginUser(p) {
   if (currentUser.rol === 'FAMILIA') navigate('portal-familia');
   else if (currentUser.rol === 'MONITOR') navigate('registro-horario');
   else if (currentUser.rol === 'ENTRENADOR') navigate('asistencias-extra');
+  else if (currentUser.ampaId) navigate('ampa-socios');
   else navigate('dashboard');
 }
 
@@ -914,7 +915,7 @@ function isCoordinador()  { return currentUser?.rol === 'COORDINADOR'; }
 function isMonitor()      { return currentUser?.rol === 'MONITOR'; }
 function isEntrenador()   { return currentUser?.rol === 'ENTRENADOR'; }
 function isFamilia()      { return currentUser?.rol === 'FAMILIA'; }
-function isAmpa()         { return currentUser?.rol === 'AMPA'; }
+function isAmpa()         { return currentUser?.rol === 'AMPA' || currentUser?.rol?.startsWith('AMPA_'); }
 
 function _refreshBadgeSolicitudes() {
   const el = document.getElementById('badge-solicitudes');
@@ -929,14 +930,14 @@ function applyRoleVisibility() {
   const adminLike  = ['ADMIN','COORDINADOR'].includes(rol);
   const futbolLike = ['ADMIN','COORDINADOR','ENTRENADOR'].includes(rol);
   const extraLike  = ['ADMIN','COORDINADOR','MONITOR'].includes(rol);
-  const ampaLike   = ['ADMIN','COORDINADOR','AMPA'].includes(rol);
-  const ampaRole   = rol === 'AMPA';
+  const ampaLike   = ['ADMIN','COORDINADOR'].includes(rol) || rol === 'AMPA' || (rol && rol.startsWith('AMPA_'));
+  const ampaRole   = rol === 'AMPA' || (rol && rol.startsWith('AMPA_'));
 
   const vis = {
     'nav-general':      rol !== 'FAMILIA',
     'nav-futbol':       futbolLike,
     'nav-extra':        extraLike || ampaRole,
-    'nav-personal':     adminLike || ['MONITOR','ENTRENADOR'].includes(rol),
+    'nav-personal':     adminLike || ['MONITOR','ENTRENADOR'].includes(rol) || rol === 'AMPA' || (rol && rol.startsWith('AMPA_')),
     'nav-contabilidad': adminLike,
     'nav-ampa':         ampaLike,
     'nav-familia':      rol === 'FAMILIA',
@@ -7487,7 +7488,11 @@ function documentacionSec() {
 
   // Mis documentos personales
   const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
-  const misDocs = _parseDocs(miPer?.DOCS_DRIVE);
+  const _AMPA_DOCS_COMPARTIDOS = {
+    ADARGOMA:    [{ titulo: 'Contrato AMPA Adargoma 2026-2027', url: 'https://docs.google.com/document/d/1NJK85epIdQdOS0mHPp6eVye6PZLEcTj4jxwcYOTJaMY/edit' }],
+    ESCALERITAS: [],
+  };
+  const misDocs = [..._parseDocs(miPer?.DOCS_DRIVE), ...(_AMPA_DOCS_COMPARTIDOS[currentUser?.ampaId] || [])];
   const misDocsHtml = misDocs.length
     ? misDocs.map(d => `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -7500,7 +7505,7 @@ function documentacionSec() {
   // Vista admin: tabla de trabajadores con docs y estado de firmas
   let adminDocsHtml = '';
   if (isAdmin()) {
-    const trabajadores = DB.personal.filter(p => !['AMPA','FAMILIA'].includes(String(p.ROL||'').toUpperCase()));
+    const trabajadores = DB.personal.filter(p => { const r = String(p.ROL||'').toUpperCase(); return r !== 'FAMILIA' && r !== 'AMPA' && !r.startsWith('AMPA_'); });
 
     // Tabla de firmas por protocolo
     const protRequeridos = _PROTOCOLOS_EMPRESA.filter(p => p.firmaRequerida);
