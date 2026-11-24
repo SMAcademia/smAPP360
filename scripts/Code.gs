@@ -194,6 +194,17 @@ function sheetToJSON(book, sheetName) {
 }
 
 // ===========================================================================
+//  Helper: columnas que siempre deben almacenarse como texto plano
+//  (teléfonos, NIFs, IBANs, DNIs empiezan a veces por "+" y Sheets
+//   los interpreta como fórmula si la celda no tiene formato texto)
+// ===========================================================================
+function _isTextCol_(h) {
+  return h.indexOf('HORA') !== -1
+    || h === 'ALUMNOS_PRESENTES'
+    || /^(TELEFONO|NIF|IBAN|DNI|CIF)/.test(h);
+}
+
+// ===========================================================================
 //  APPEND - protegido con LockService para evitar IDs duplicados
 // ===========================================================================
 function appendRow(sheetName, rowObj) {
@@ -238,6 +249,14 @@ function appendRow(sheetName, rowObj) {
       return v;
     });
 
+    // Forzar formato texto ANTES de escribir (teléfonos "+34…", NIFs, IBANs
+    // empiezan por "+" y Sheets los interpreta como fórmula si no hay formato previo)
+    var newRowNum = sheet.getLastRow() + 1;
+    headers.forEach(function(h, i) {
+      if (_isTextCol_(h)) {
+        sheet.getRange(newRowNum, i + 1).setNumberFormat('@STRING@');
+      }
+    });
     sheet.appendRow(newRow);
     return { ok: true, id: rowObj[idCol] || '' };
 
@@ -302,6 +321,12 @@ function appendBatch(sheetName, rows) {
 
     if (matrix.length) {
       var startRow = sheet.getLastRow() + 1;
+      // Forzar formato texto ANTES de escribir
+      headers.forEach(function(h, i) {
+        if (_isTextCol_(h)) {
+          sheet.getRange(startRow, i + 1, matrix.length, 1).setNumberFormat('@STRING@');
+        }
+      });
       sheet.getRange(startRow, 1, matrix.length, matrix[0].length).setValues(matrix);
     }
 
@@ -344,6 +369,12 @@ function updateRow(sheetName, id, rowObj) {
             return rowObj[h];
           }
           return data[i][j];
+        });
+        // Forzar formato texto ANTES de escribir
+        headers.forEach(function(h, j) {
+          if (_isTextCol_(h)) {
+            sheet.getRange(i + 1, j + 1).setNumberFormat('@STRING@');
+          }
         });
         sheet.getRange(i + 1, 1, 1, headers.length).setValues([updatedRow]);
         return { ok: true, id: id };
