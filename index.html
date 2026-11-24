@@ -1390,12 +1390,18 @@ ${htmlBody}
 
 // Formatear fecha ISO a DD/MM/AAAA
 function sinTildes(s) { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); }
-// Comprueba si un centro pertenece al AMPA del usuario actual (o del ampaId dado)
+// Excepciones: ampaId cuyo nombre no coincide con el nombre del centro
+const _AMPA_CENTRO_ALIAS = {
+  ADARGOMA: ['ATLANTIDA', 'ADARGOMA'],
+};
+// Comprueba si un centro pertenece al AMPA del usuario actual (o del ampaId dado).
+// Para nuevos centros basta con que el ampaId coincida como subcadena con el nombre del centro.
 function _centroAmpaMatch(centroStr, ampaId) {
-  const id = ampaId || currentUser?.ampaId;
+  const id = sinTildes(ampaId || currentUser?.ampaId || '');
   if (!id) return true;
   const c = sinTildes(centroStr||'');
-  return id === 'ESCALERITAS' ? c.includes('ESCALERITAS') : c.includes('ATLANTIDA') || c.includes('ADARGOMA');
+  const keywords = _AMPA_CENTRO_ALIAS[id] || [id];
+  return keywords.some(k => c.includes(k));
 }
 const ORDEN_CURSOS = ['INFANTIL 3 AÑOS','INFANTIL 4 AÑOS','INFANTIL 5 AÑOS','1º PRIMARIA','2º PRIMARIA','3º PRIMARIA','4º PRIMARIA','5º PRIMARIA','6º PRIMARIA','1º ESO','2º ESO','3º ESO','4º ESO','AULA ENCLAVE'];
 function cursoOrder(c){ const i=ORDEN_CURSOS.indexOf(c||''); return i===-1?ORDEN_CURSOS.length:i; }
@@ -9760,12 +9766,30 @@ function modalPersonal(p) {
         <input id="per-ape" class="upper" value="${esc(p.APELLIDOS||'')}"></div>
       <div class="field"><label>Rol</label>
         <select id="per-rol">
-          ${['ADMIN','COORDINADOR','MONITOR','ENTRENADOR','AMPA_ESCALERITAS','AMPA_ADARGOMA','FAMILIA'].map(r=>`<option value="${r}" ${p.ROL===r?'selected':''}>${r}</option>`).join('')}
+          ${(() => {
+            const base = ['ADMIN','COORDINADOR','MONITOR','ENTRENADOR','FAMILIA'];
+            const ampaRoles = [...new Set(
+              (DB.personal||[])
+                .map(x => String(x.ROL||'').toUpperCase())
+                .filter(r => r.startsWith('AMPA_'))
+            )].sort();
+            const knownAmpa = ['AMPA_ESCALERITAS','AMPA_ADARGOMA'];
+            knownAmpa.forEach(r => { if (!ampaRoles.includes(r)) ampaRoles.push(r); });
+            const all = [...base.slice(0,4), ...ampaRoles, base[4]];
+            return all.map(r=>`<option value="${r}" ${p.ROL===r?'selected':''}>${r}</option>`).join('');
+          })()}
         </select></div>
       <div class="field"><label>Centro (Extraescolares)</label>
         <select id="per-centro">
           <option value="" ${!p.CENTRO?'selected':''}>— Sin asignar —</option>
-          ${['CEIP ESCALERITAS','CEIP ATLÁNTIDA'].map(c=>`<option value="${c}" ${p.CENTRO===c?'selected':''}>${c}</option>`).join('')}
+          ${(() => {
+            const base = ['CEIP ESCALERITAS','CEIP ATLÁNTIDA'];
+            const extra = [...new Set(
+              (DB.personal||[]).map(x => (x.CENTRO||'').trim()).filter(Boolean)
+            )];
+            extra.forEach(c => { if (!base.includes(c)) base.push(c); });
+            return base.sort().map(c=>`<option value="${c}" ${p.CENTRO===c?'selected':''}>${c}</option>`).join('');
+          })()}
         </select></div>
       <div class="field"><label>Email (para login Gmail)</label>
         <input id="per-email" type="email" value="${esc(p.EMAIL||'')}"></div>
