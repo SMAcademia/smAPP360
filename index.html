@@ -9704,10 +9704,14 @@ function personal(tab) {
         <td><span class="badge badge-blue">${esc(grupo)}</span></td>
         <td style="font-size:12px">${esc(p.EMAIL||'—')}</td>
         <td class="mono" style="font-size:12px">${esc(p.USERNAME||'—')}</td>
+        <td style="font-size:12px">${esc(p.TELÉFONO||'—')}</td>
         <td>${badgeActivo(p.ACTIVO)}</td>
-        <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${pJson})'>Editar</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm" style="background:#25d366;color:#fff;border:none;cursor:pointer;margin-right:4px" onclick='modalCredsWA(${pJson})'>📲 WA</button>
+          <button class="btn btn-sm btn-secondary" onclick='modalPersonal(${pJson})'>Editar</button>
+        </td>
       </tr>`;
-    }).join('') || `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏫</div><p>Sin miembros de AMPA registrados</p></div></td></tr>`;
+    }).join('') || `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🏫</div><p>Sin miembros de AMPA registrados</p></div></td></tr>`;
     contentHtml = `<div class="card" style="padding:14px 20px">
       <div class="table-toolbar">
         <input class="search-input" id="q-ampa" placeholder="Buscar AMPA…" oninput="filterTable('q-ampa','tbl-ampa')">
@@ -9715,7 +9719,7 @@ function personal(tab) {
       </div>
       <div class="table-wrap">
         <table id="tbl-ampa">
-          <thead><tr><th>Nombre</th><th>AMPA</th><th>Email</th><th>Usuario</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Nombre</th><th>AMPA</th><th>Email</th><th>Usuario</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -9751,6 +9755,36 @@ function personal(tab) {
   }
 
   render(tabsHtml + contentHtml);
+}
+
+function modalCredsWA(p) {
+  const appUrl = window.location.origin + window.location.pathname;
+  const usuario = p.USERNAME || p.EMAIL || '';
+  const nombre  = [p.NOMBRE, p.APELLIDOS].filter(Boolean).join(' ');
+  const tel     = String(p.TELÉFONO||'').replace(/[\s\-().+]/g,'').replace(/^0034/,'34').replace(/^00/,'');
+  const grupo   = String(p.ROL||'').replace(/^AMPA_?/i,'') || 'AMPA';
+
+  const msg = `Hola ${nombre} 👋\n\nTe enviamos tus datos de acceso al portal de SM Academia (${grupo}):\n\n🔗 Enlace: ${appUrl}\n👤 Usuario: ${usuario}\n🔑 Contraseña: ${p.PASSWORD||'(consultar con el coordinador)'}\n\nSi tienes cualquier duda estamos a tu disposición. ¡Bienvenid@ al equipo! 🏫`;
+
+  window._waMsg = msg;
+  const msgEnc = encodeURIComponent(msg);
+  const waUrl  = tel ? `https://wa.me/${tel}?text=${msgEnc}` : `https://wa.me/?text=${msgEnc}`;
+  const sinTel = !tel;
+
+  openModal('📲 Enviar credenciales por WhatsApp', `
+    <p style="font-size:13px;color:var(--text2);margin:0 0 10px">
+      Mensaje para <strong>${esc(nombre)}</strong>${p.TELÉFONO?' · '+esc(p.TELÉFONO):''}:
+    </p>
+    <div style="background:var(--bg3,#f3f4f6);border:1px solid var(--border2);border-radius:8px;padding:12px 14px;font-size:13px;white-space:pre-wrap;line-height:1.6;margin-bottom:14px">${esc(msg)}</div>
+    ${sinTel?`<p style="font-size:12px;color:var(--amber,#f59e0b);margin:0 0 12px">⚠️ Sin teléfono registrado. Abre WhatsApp y elige el contacto manualmente o copia el mensaje.</p>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a href="${esc(waUrl)}" target="_blank" rel="noopener"
+        class="btn" style="background:#25d366;color:#fff;text-decoration:none">
+        📱 Abrir WhatsApp</a>
+      <button class="btn btn-secondary"
+        onclick="navigator.clipboard.writeText(window._waMsg).then(()=>showToast('Mensaje copiado al portapapeles'))">
+        📋 Copiar mensaje</button>
+    </div>`);
 }
 
 // cliOrId: ID_CLIENTE (busca en DB.clientes) o {NOMBRE,APELLIDOS,EMAIL} directo
