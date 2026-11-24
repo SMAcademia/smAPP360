@@ -116,6 +116,8 @@ function doPost(e) {
       result = obtenerPdfB64_(body.fileId);
     } else if (action === 'GUARDAR_PDF_FIRMADO_PERSONAL') {
       result = guardarPdfFirmadoPersonal_(body);
+    } else if (action === 'GENERAR_CONTRATO_AMPA') {
+      result = generarContratoAmpa_(body);
     } else if (action === 'SUBIR_CNDS') {
       result = subirCNDS_(body);
     } else if (action === 'SUBIR_NOMINA_PDF') {
@@ -1412,6 +1414,41 @@ function guardarPdfFirmadoPersonal_(body) {
     return { ok: true, url: file.getUrl(), fileId: file.getId(), nombre: nombre };
   } catch(e) {
     return { ok: false, error: e.toString() };
+  }
+}
+
+function generarContratoAmpa_(body) {
+  try {
+    var templateDocId = String(body.templateDocId || '').trim();
+    var nombre        = String(body.nombre        || '').trim();
+    var titulo        = String(body.titulo        || 'Contrato AMPA');
+
+    if (!templateDocId) return { ok: false, error: 'Falta templateDocId' };
+    if (!nombre)        return { ok: false, error: 'Falta el nombre del responsable' };
+
+    var templateFile = DriveApp.getFileById(templateDocId);
+    var copy         = templateFile.makeCopy(titulo + ' - ' + nombre);
+
+    var doc = DocumentApp.openById(copy.getId());
+    doc.getBody().replaceText('\\{\\{NOMBRE_RESPONSABLE\\}\\}', nombre);
+    doc.saveAndClose();
+
+    var pdfBlob = copy.getAs('application/pdf').setName(titulo + '.pdf');
+
+    function getOrCreate(parent, folderName) {
+      var it = parent.getFoldersByName(folderName);
+      return it.hasNext() ? it.next() : parent.createFolder(folderName);
+    }
+    var fRoot   = getOrCreate(DriveApp.getRootFolder(), 'SM Academia');
+    var fAmpa   = getOrCreate(fRoot, 'Contratos AMPA');
+    var pdfFile = fAmpa.createFile(pdfBlob);
+    pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    copy.setTrashed(true);
+
+    return { ok: true, fileId: pdfFile.getId(), nombre: nombre };
+  } catch(e) {
+    return { ok: false, error: e.message };
   }
 }
 

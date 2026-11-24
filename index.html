@@ -8670,6 +8670,53 @@ async function _cargarLibsPDF() {
   }
 }
 
+async function firmarContratoAmpa(templateDocId, titulo, btn) {
+  const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
+  const nombrePre = miPer ? [miPer.NOMBRE, miPer.APELLIDOS].filter(Boolean).join(' ').trim() : (currentUser.nombre || '');
+
+  openModal('✍️ Firmar contrato AMPA', `
+    <p style="font-size:13px;color:var(--text2);margin:0 0 14px">
+      Introduce el nombre completo de la persona responsable que firma en representación del AMPA.
+      Se integrará en el documento antes de la firma.</p>
+    <div class="field">
+      <label>Nombre completo del/la responsable</label>
+      <input id="ampa-nombre-responsable" class="inp" type="text"
+        value="${esc(nombrePre)}" placeholder="Nombre y apellidos completos"
+        style="font-size:15px" autocomplete="name">
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-ampa-generar"
+        onclick="_firmarContratoAmpaConfirmar('${esc(templateDocId)}','${esc(titulo)}')">
+        Generar y firmar →</button>
+    </div>`);
+  setTimeout(() => document.getElementById('ampa-nombre-responsable')?.focus(), 100);
+}
+
+async function _firmarContratoAmpaConfirmar(templateDocId, titulo) {
+  const nombre = (document.getElementById('ampa-nombre-responsable')?.value || '').trim();
+  if (!nombre) { alert('Introduce el nombre completo del responsable.'); return; }
+
+  const btn = document.getElementById('btn-ampa-generar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando PDF…'; }
+
+  try {
+    const raw = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({
+      action: 'GENERAR_CONTRATO_AMPA',
+      templateDocId,
+      nombre,
+      titulo: titulo.replace(/\.pdf$/i, '')
+    })});
+    const res = await raw.json();
+    if (!res.ok) throw new Error(res.error || 'Error al generar el contrato');
+    closeModal();
+    await modalFirmaPDF(res.fileId, titulo);
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generar y firmar →'; }
+    alert('Error: ' + e.message);
+  }
+}
+
 async function modalFirmaPDF(fileId, titulo) {
   _pfSigImg = null; _pfPdfBytes = null; _pfPdfDoc = null;
   _pfPagina = 1; _pfSigPx = 40; _pfSigPy = 40;
@@ -8945,7 +8992,7 @@ function documentacionSec() {
   // Mis documentos personales
   const miPer = DB.personal.find(p => String(p.ID_MONITOR) === String(currentUser.id));
   const _AMPA_DOCS_COMPARTIDOS = {
-    ADARGOMA:    [{ titulo: 'Contrato de Colaboración - AMPA Adargoma y SM Academia (2026-2027).pdf', url: 'https://drive.google.com/file/d/1jab3I8LvJL6w7IPpy8OD7rGgeV6JVLyX/view' }],
+    ADARGOMA:    [{ titulo: 'Contrato de Colaboración - AMPA Adargoma y SM Academia (2026-2027).pdf', url: 'https://drive.google.com/file/d/1jab3I8LvJL6w7IPpy8OD7rGgeV6JVLyX/view', templateDocId: '1NJK85epIdQdOS0mHPp6eVye6PZLEcTj4jxwcYOTJaMY' }],
     ESCALERITAS: [],
   };
   const misDocs = [..._parseDocs(miPer?.DOCS_DRIVE), ...(_AMPA_DOCS_COMPARTIDOS[currentUser?.ampaId] || [])];
@@ -8958,8 +9005,11 @@ function documentacionSec() {
           <span style="font-size:18px">📄</span>
           <span style="flex:1">${esc(d.titulo)}</span>
           <a href="${esc(d.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">↗ Abrir</a>
-          ${esPDF ? `<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none;cursor:pointer"
-            onclick="modalFirmaPDF('${fileId}','${esc(d.titulo)}')">✍️ Firmar</button>` : ''}
+          ${esPDF ? (d.templateDocId
+            ? `<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none;cursor:pointer"
+                onclick="firmarContratoAmpa('${esc(d.templateDocId)}','${esc(d.titulo)}',this)">✍️ Firmar</button>`
+            : `<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none;cursor:pointer"
+                onclick="modalFirmaPDF('${fileId}','${esc(d.titulo)}')">✍️ Firmar</button>`) : ''}
         </div>`;
       }).join('')
     : '<p style="color:var(--text3);margin:0">Sin documentos asignados. Contacta con el coordinador.</p>';
