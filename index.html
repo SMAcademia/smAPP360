@@ -14489,7 +14489,7 @@ async function guardarReserva(id) {
       EMAIL_CLIENTE:    document.getElementById('rv-email')?.value.trim() || '',
       TELEFONO_CLIENTE: document.getElementById('rv-tel')?.value.trim() || '',
       FECHA:          fecha,
-      HORA_INICIO:    _RES_HORA_INI,
+      HORA_INI:       _RES_HORA_INI,
       HORA_FIN:       _RES_HORA_FIN,
       MONITOR:        _RES_MONITOR,
       ESTADO:         document.getElementById('rv-estado')?.value || 'PENDIENTE',
@@ -14505,7 +14505,7 @@ async function guardarReserva(id) {
         email:     row.EMAIL_CLIENTE,
         nombre:    row.NOMBRE_ALUMNO,
         fecha:     row.FECHA,
-        horaIni:   row.HORA_INICIO,
+        horaIni:   row.HORA_INI,
         horaFin:   row.HORA_FIN,
         notas:     row.NOTAS || '',
         idReserva: idCreada
