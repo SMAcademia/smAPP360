@@ -14408,17 +14408,35 @@ function modalReserva(r, fechaDefault) {
     : '';
 
   const aluFutbol = isNew ? (DB.inscripciones||[])
-    .filter(i => String(i.LINEA||'').toUpperCase()==='FUTBOL' && String(i.ESTADO||'').toUpperCase()==='ACTIVA')
+    .filter(i => {
+      const lin = String(i.LINEA||'').toUpperCase();
+      return (lin === 'SM FÚTBOL' || lin === 'FÚTBOL' || lin === 'FUTBOL') && String(i.ESTADO||'').toUpperCase() === 'ACTIVA';
+    })
+    .reduce((acc, i) => {
+      const alu = (DB.alumnos||[]).find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO));
+      if (!alu) return acc;
+      if (acc.some(x => String(x.ID_ALUMNO) === String(alu.ID_ALUMNO))) return acc;
+      const cli = (DB.clientes||[]).find(c => String(c.ID_CLIENTE) === String(alu.ID_CLIENTE));
+      acc.push({
+        ID_ALUMNO: alu.ID_ALUMNO,
+        NOMBRE:    alu.NOMBRE    || i.NOMBRE    || '',
+        APELLIDOS: alu.APELLIDOS || i.APELLIDOS || '',
+        EMAIL:     cli?.EMAIL    || i.EMAIL     || '',
+        TELEFONO:  cli?.TELEFONO || cli?.TELÉFONO || i.TELEFONO || '',
+      });
+      return acc;
+    }, [])
     .sort((a,b)=>((a.NOMBRE||'')+' '+(a.APELLIDOS||'')).localeCompare((b.NOMBRE||'')+' '+(b.APELLIDOS||''),'es'))
     : [];
   if (isNew) _rvAluList = aluFutbol;
-  const selectorAlu = isNew && aluFutbol.length ? `
+  const selectorAlu = isNew ? `
     <div class="field span2">
-      <label>Alumno SM Fútbol (opcional)</label>
+      <label>Jugador inscrito <span class="req">*</span></label>
       <select id="rv-alu-sel" onchange="_rvSelAlumno()">
-        <option value=''>— Externo / escribir manualmente —</option>
+        <option value="">— Selecciona un jugador —</option>
         ${aluFutbol.map((a,i)=>`<option value="${i}">${esc((a.NOMBRE||'')+' '+(a.APELLIDOS||''))}</option>`).join('')}
       </select>
+      ${!aluFutbol.length ? `<p style="font-size:12px;color:var(--amber,#f59e0b);margin:4px 0 0">⚠️ No hay jugadores con inscripción activa en SM Fútbol.</p>` : ''}
     </div>` : '';
   const selectorScript = '';
 
@@ -14455,7 +14473,11 @@ async function guardarReserva(id) {
   try {
     const nombre = document.getElementById('rv-nombre')?.value.trim();
     const fecha  = document.getElementById('rv-fecha')?.value;
-    if (!nombre) throw new Error('El nombre del cliente es obligatorio');
+    if (!id) {
+      const sel = document.getElementById('rv-alu-sel');
+      if (sel && !sel.value) throw new Error('Selecciona un jugador inscrito');
+    }
+    if (!nombre) throw new Error('El nombre del jugador es obligatorio');
     if (!fecha)  throw new Error('La fecha es obligatoria');
     if (!_resFechaEsDisp(fecha)) throw new Error('La fecha debe ser Martes, Jueves o Domingo');
     if (!id) {
