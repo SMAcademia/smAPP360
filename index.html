@@ -9678,7 +9678,10 @@ function personal(tab) {
         <td>${fmtFecha(p.FECHA_ALTA)}</td>
         <td>${_certCell(p.CERTIFICADO_DELITOS)}</td>
         <td>${badgeActivo(p.ACTIVO)}</td>
-        <td><button class="btn btn-sm btn-secondary" onclick='modalPersonal(${pJson})'>Editar</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm" style="background:#25d366;color:#fff;border:none;cursor:pointer;margin-right:4px" onclick='modalCredsWA(${pJson})'>📲 WA</button>
+          <button class="btn btn-sm btn-secondary" onclick='modalPersonal(${pJson})'>Editar</button>
+        </td>
       </tr>`;
     }).join('') || `<tr><td colspan="10"><div class="empty"><div class="empty-icon">👷</div><p>Sin trabajadores registrados</p></div></td></tr>`;
     contentHtml = `<div class="card" style="padding:14px 20px">
@@ -9762,9 +9765,11 @@ function modalCredsWA(p) {
   const usuario = p.USERNAME || p.EMAIL || '';
   const nombre  = [p.NOMBRE, p.APELLIDOS].filter(Boolean).join(' ');
   const tel     = String(p.TELÉFONO||'').replace(/[\s\-().+]/g,'').replace(/^0034/,'34').replace(/^00/,'');
-  const grupo   = String(p.ROL||'').replace(/^AMPA_?/i,'') || 'AMPA';
+  const rol = String(p.ROL||'').toUpperCase();
+  const esAmpa = rol === 'AMPA' || rol.startsWith('AMPA_');
+  const grupo  = esAmpa ? (rol.replace(/^AMPA_?/i,'') || 'AMPA') : (p.ROL || 'equipo');
 
-  const msg = `Hola ${nombre} 👋\n\nTe enviamos tus datos de acceso al portal de SM Academia (${grupo}):\n\n🔗 Enlace: ${appUrl}\n👤 Usuario: ${usuario}\n🔑 Contraseña: ${p.PASSWORD||'(consultar con el coordinador)'}\n\nSi tienes cualquier duda estamos a tu disposición. ¡Bienvenid@ al equipo! 🏫`;
+  const msg = `Hola ${nombre} 👋\n\nTe enviamos tus datos de acceso al portal de SM Academia${esAmpa ? ` (${grupo})` : ''}:\n\n🔗 Enlace: ${appUrl}\n👤 Usuario: ${usuario}\n🔑 Contraseña: ${p.PASSWORD||'(consultar con el coordinador)'}\n\nSi tienes cualquier duda estamos a tu disposición. ¡Bienvenid@ al equipo! 🏫`;
 
   window._waMsg = msg;
   const msgEnc = encodeURIComponent(msg);
