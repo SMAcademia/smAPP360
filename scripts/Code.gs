@@ -2295,22 +2295,12 @@ function enviarConfirmacionCampusNavidad_(body) {
       var precio     = insc.PRECIO_ACORDADO || activ.PRECIO || '';
       var nombreFam  = ((cliente.NOMBRE||'') + ' ' + (cliente.APELLIDOS||'')).trim();
       var nombreNiño = ((alumno.NOMBRE||'')  + ' ' + (alumno.APELLIDOS||'')).trim();
-      var linea      = String(activ.LINEA  || '').toUpperCase().trim();
-      var centro     = String(activ.CENTRO || '').toUpperCase().trim();
-      var stripeUrl  = linea === 'SM FÚTBOL'
-        ? (props.getProperty('STRIPE_CUEVAS_URL')      || props.getProperty('STRIPE_CAMPUS_URL') || '')
-        : centro === 'CEIP ESCALERITAS'
-        ? (props.getProperty('STRIPE_ESCALERITAS_URL') || props.getProperty('STRIPE_CAMPUS_URL') || '')
-        : centro === 'CEIP ATLÁNTIDA'
-        ? (props.getProperty('STRIPE_ATLANTIDA_URL')   || props.getProperty('STRIPE_CAMPUS_URL') || '')
-        : (props.getProperty('STRIPE_CAMPUS_URL') || '');
-
       MailApp.sendEmail({
         to:       email,
         replyTo:  EMAIL_EMPRESA.director,
         name:     'SM Academia · Campus de Navidad',
         subject:  '✅ Plaza confirmada · Campus de Navidad 2026 — SM Academia',
-        htmlBody: _htmlCampus_(nombreFam, nombreNiño, activ, precio, bizum, iban, stripeUrl, insc.ID_INSCRIPCION),
+        htmlBody: _htmlCampus_(nombreFam, nombreNiño, activ, precio, bizum, iban, insc.ID_INSCRIPCION),
       });
       enviados++;
     } catch(err) {
@@ -2321,7 +2311,7 @@ function enviarConfirmacionCampusNavidad_(body) {
   return { ok: true, enviados: enviados, total: campusInsc.length, errores: errores };
 }
 
-function _htmlCampus_(familia, alumno, activ, precio, bizum, iban, stripeUrl, refInsc) {
+function _htmlCampus_(familia, alumno, activ, precio, bizum, iban, refInsc) {
   var nombreAct  = String(activ.NOMBRE  || 'Campus Navidad 2026');
   var linea      = String(activ.LINEA   || '').toUpperCase().trim();
   var centro     = String(activ.CENTRO  || '').toUpperCase().trim();
@@ -2366,8 +2356,9 @@ function _htmlCampus_(familia, alumno, activ, precio, bizum, iban, stripeUrl, re
     + '<code style="background:#f5f5f5;padding:3px 8px;border-radius:4px;font-size:13px">' + iban + '</code><br>'
     + '<span style="font-size:12px;color:#666">Concepto: Campus Navidad 2026 · ' + alumno + '</span></p>'
     : '';
-  var stripeBtn = stripeUrl
-    ? '<p style="margin:12px 0"><a href="' + stripeUrl + '" style="display:inline-block;background:#635bff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">💳 Pagar online (tarjeta)</a></p>'
+  var enlacePago = String(activ.ENLACE_PAGO || '').trim();
+  var stripeBtn  = enlacePago
+    ? '<p style="margin:12px 0"><a href="' + enlacePago + '" style="display:inline-block;background:#635bff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">💳 Pagar ahora</a></p>'
     : '';
   var precioRow = precio
     ? '<tr><td style="padding:5px 10px 5px 0;color:#666">💶 Precio</td><td style="padding:5px 0;font-weight:600;color:#2e7d32">' + precio + ' €</td></tr>'
