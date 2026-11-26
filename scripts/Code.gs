@@ -2363,6 +2363,9 @@ function _htmlCampus_(familia, alumno, activ, precio, bizum, iban, refInsc) {
   var precioRow = precio
     ? '<tr><td style="padding:5px 10px 5px 0;color:#666">💶 Precio</td><td style="padding:5px 0;font-weight:600;color:#2e7d32">' + precio + ' €</td></tr>'
     : '';
+  var bizumRow = bizum
+    ? '<p style="margin:6px 0;font-size:14px"><strong>1. Bizum</strong><br><span style="font-size:18px;font-weight:700;color:#1565c0;letter-spacing:1px">' + bizum + '</span><span style="font-size:12px;color:#666"> · A nombre de <em>SM Academia</em></span></p>'
+    : '';
 
   return '<div style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;color:#222">'
   + '<div style="background:linear-gradient(135deg,#1b5e20 0%,#2e7d32 60%,#43a047 100%);padding:32px;border-radius:12px 12px 0 0;text-align:center">'
@@ -2388,9 +2391,7 @@ function _htmlCampus_(familia, alumno, activ, precio, bizum, iban, refInsc) {
   +   '</div>'
   +   '<div style="background:#fff;border:1px solid #e0e0e0;border-left:4px solid #1565c0;border-radius:6px;padding:20px;margin:0 0 24px">'
   +     '<h3 style="margin:0 0 14px;color:#1565c0;font-size:15px">💳 Formas de pago</h3>'
-  +     (bizum
-  +       ? '<p style="margin:6px 0;font-size:14px"><strong>1. Bizum</strong><br><span style="font-size:18px;font-weight:700;color:#1565c0;letter-spacing:1px">' + bizum + '</span><span style="font-size:12px;color:#666"> · A nombre de <em>SM Academia</em></span></p>'
-  +       : '')
+  +     bizumRow
   +     ibanRow
   +     stripeBtn
   +     '<p style="margin:14px 0 0;font-size:12px;color:#888">Envíanos el justificante a <a href="mailto:direccion@sm-academia.com" style="color:#1565c0">direccion@sm-academia.com</a>.</p>'
