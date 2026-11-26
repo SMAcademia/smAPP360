@@ -8629,8 +8629,8 @@ const _PROTOCOLOS_EMPRESA = [
   {
     docId:      'lgtbiq',
     fileId:     '1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI',
-    titulo:     'Protocolo de Acoso e Igualdad LGTBIQ+',
-    desc:       'Protocolo de actuación ante situaciones de acoso o discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo. Amparado en la Ley 8/2014 de Canarias, LO 10/2022 y LOPIVI.',
+    titulo:     'Protocolo de Acoso e Igualdad LGTBIQ+ y Laboral',
+    desc:       'Protocolo de actuación ante situaciones de acoso sexual, acoso laboral (mobbing/hostigamiento) y discriminación por orientación sexual o identidad de género. De lectura obligatoria para todo el equipo. Amparado en la Ley 8/2014 de Canarias, LO 10/2022 y LOPIVI.',
     icono:      '🏳️‍🌈',
     previewUrl: 'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/preview',
     url:        'https://docs.google.com/document/d/1nev6zQDFju1dDCKaUZc6wtcesD1_sG6UnxqHmWA8XCI/edit',
@@ -8663,6 +8663,15 @@ const _PROTOCOLOS_EMPRESA = [
     firmaRequerida: true,
   },
 ];
+
+function _firmaDeProtocolo(firmas, monitorId, docId) {
+  const id = String(monitorId);
+  if (docId === 'lgtbiq') {
+    return (firmas.find(f => String(f.ID_MONITOR) === id && f.VERSION_DOC === _PROTOCOLO_VERSION) ||
+            firmas.find(f => String(f.ID_MONITOR) === id && f.DOC_ID === docId));
+  }
+  return firmas.find(f => String(f.ID_MONITOR) === id && f.DOC_ID === docId);
+}
 
 function _parseDocs(raw) {
   return String(raw||'').split(';;').map(s => {
@@ -8994,16 +9003,22 @@ function documentacionSec() {
   document.getElementById('topbar-actions').innerHTML = '';
 
   const misFirmas = DB.firmasProtocolo || [];
-  const miId = String(currentUser.id);
+  const miId = String(currentUser.ID_MONITOR || currentUser.id);
 
   const protCards = _PROTOCOLOS_EMPRESA.map(p => {
-    const firma = misFirmas.find(f => String(f.ID_MONITOR) === miId && f.DOC_ID === p.docId);
+    const firma = _firmaDeProtocolo(misFirmas, miId, p.docId);
+    const fechaFirma = firma ? fmtFecha(firma.FECHA_FIRMA || firma.FECHA) : '';
     const estadoHtml = firma
-      ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(fmtFecha(firma.FECHA))}</span>
+      ? `<span class="badge badge-green" style="font-size:12px">✓ Firmado el ${esc(fechaFirma)}</span>
          ${firma.PDF_URL
            ? `<a href="${esc(firma.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📄 Descargar PDF</a>`
-           : `<button class="btn btn-sm btn-secondary" onclick="regenerarPDF('${esc(firma.ID)}','${esc(p.docId)}')">🔄 Generar PDF</button>`}`
+           : ''}`
       : (p.firmaRequerida ? `<span class="badge badge-red" style="font-size:12px">Pendiente de firma</span>` : '');
+    const btnFirmar = firma
+      ? `<a href="${esc(p.previewUrl)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">📖 Leer</a>`
+      : (p.docId === 'lgtbiq'
+          ? `<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none" onclick="modalFirmaProtocolo()">📖 Leer y firmar</button>`
+          : `<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none" onclick="verDocumento('${esc(p.docId)}')">📖 Leer y firmar</button>`);
     return `
     <div class="card" style="display:flex;gap:16px;align-items:flex-start;padding:20px 24px">
       <div style="font-size:32px;line-height:1">${p.icono}</div>
@@ -9014,8 +9029,7 @@ function documentacionSec() {
         </div>
         <p style="margin:0 0 12px;color:var(--text2);font-size:13px">${esc(p.desc)}</p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none"
-            onclick="verDocumento('${esc(p.docId)}')">📖 Leer y firmar</button>
+          ${btnFirmar}
           ${estadoHtml}
         </div>
       </div>
@@ -9059,14 +9073,16 @@ function documentacionSec() {
     const filasFirmas = trabajadores.map(p => {
       const idT = String(p.ID_MONITOR || p.ID || '');
       const celdas = protRequeridos.map(prot => {
-        const f = misFirmas.find(f => String(f.ID_MONITOR) === idT && f.DOC_ID === prot.docId);
+        const f = _firmaDeProtocolo(misFirmas, idT, prot.docId);
+        const fechaF = f ? fmtFecha(f.FECHA_FIRMA || f.FECHA) : '';
+        const horaF  = f ? (f.HORA || '') : '';
         return f
-          ? `<td style="text-align:center"><span class="badge badge-green" title="Firmado el ${esc(f.FECHA)} ${esc(f.HORA)}">✓ ${esc(f.FECHA)}</span></td>`
+          ? `<td style="text-align:center"><span class="badge badge-green" title="Firmado el ${esc(fechaF)}${horaF ? ' ' + esc(horaF) : ''}">✓ ${esc(fechaF)}</span></td>`
           : `<td style="text-align:center"><span class="badge badge-red">Pendiente</span></td>`;
       }).join('');
       const pdfs = protRequeridos.map(prot => {
-        const f = misFirmas.find(f => String(f.ID_MONITOR) === idT && f.DOC_ID === prot.docId && f.PDF_URL);
-        return f ? `<a href="${esc(f.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px;font-size:11px">📄 ${esc(prot.icono)}</a>` : '';
+        const f = _firmaDeProtocolo(misFirmas, idT, prot.docId);
+        return f?.PDF_URL ? `<a href="${esc(f.PDF_URL)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="margin:2px;font-size:11px">📄 ${esc(prot.icono)}</a>` : '';
       }).join('');
       return `<tr>
         <td><strong>${esc(p.NOMBRE)} ${esc(p.APELLIDOS||'')}</strong></td>
@@ -9104,17 +9120,17 @@ function documentacionSec() {
         <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Protocolos obligatorios firmados digitalmente. El botón envía todos los PDFs generados a <strong>info@vgasesoria.es</strong>.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Trabajadora</th><th>Rol</th>${thProts}<th>PDF</th></tr></thead>
+            <thead><tr><th>Trabajador/a</th><th>Rol</th>${thProts}<th>PDF</th></tr></thead>
             <tbody>${filasFirmas}</tbody>
           </table>
         </div>
       </div>
       <div class="card" style="padding:14px 20px">
-        <div class="card-title">Documentos por trabajadora</div>
+        <div class="card-title">Documentos por trabajador/a</div>
         <p style="font-size:12px;color:var(--text3);margin:0 0 12px">Para añadir o editar documentos, pulsa "Editar docs" y rellena el campo <em>Documentos Drive</em> con el formato <code>Título|URL;;Título2|URL2</code>.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Trabajadora</th><th>Rol</th><th>Documentos</th><th></th></tr></thead>
+            <thead><tr><th>Trabajador/a</th><th>Rol</th><th>Documentos</th><th></th></tr></thead>
             <tbody>${filasDoc}</tbody>
           </table>
         </div>
@@ -9676,9 +9692,8 @@ function personal(tab) {
     const rows = trabajadores.map(p => {
       const pJson    = JSON.stringify(p).replace(/'/g,"&#39;");
       const firmado  = _hasFirmadoProtocolo(p.ID_MONITOR);
-      const firmaFecha = firmado
-        ? fmtFecha((DB.firmasProtocolo||[]).find(f=>String(f.ID_MONITOR)===String(p.ID_MONITOR)&&f.VERSION_DOC===_PROTOCOLO_VERSION)?.FECHA_FIRMA||'')
-        : '';
+      const _firmaObj  = firmado ? _firmaDeProtocolo(DB.firmasProtocolo||[], p.ID_MONITOR, 'lgtbiq') : null;
+      const firmaFecha = _firmaObj ? fmtFecha(_firmaObj.FECHA_FIRMA || _firmaObj.FECHA || '') : '';
       const firmaBadge = firmado
         ? `<span class="badge bg" title="Firmado ${firmaFecha}">✅ Firmado</span>`
         : `<span class="badge br" style="cursor:pointer" onclick='_enviarRecordatorioProtocoloWA(${pJson})' title="Sin firma — clic para enviar WA">⚠️ Pendiente</span>`;
@@ -9793,10 +9808,11 @@ const _PROTOCOLO_VERSION = '2026-10-09';
 const _PROTOCOLO_PDF_ID  = '1BUaH1jpgfTa-hlqtNW732vV4A7U3kc92';
 
 function _hasFirmadoProtocolo(monitorId) {
-  const id = monitorId || currentUser?.ID_MONITOR;
+  const id = monitorId || currentUser?.ID_MONITOR || currentUser?.id;
   if (!id) return false;
   return (DB.firmasProtocolo||[]).some(f =>
-    String(f.ID_MONITOR) === String(id) && f.VERSION_DOC === _PROTOCOLO_VERSION
+    String(f.ID_MONITOR) === String(id) &&
+    (f.VERSION_DOC === _PROTOCOLO_VERSION || f.DOC_ID === 'lgtbiq')
   );
 }
 
@@ -9821,7 +9837,7 @@ function modalFirmaProtocolo() {
         <input type="checkbox" id="chk-protocolo" style="margin-top:3px;width:16px;height:16px;flex-shrink:0"
           onchange="document.getElementById('btn-firmar-protocolo').disabled=!this.checked">
         <span style="font-size:13px;color:var(--text2);line-height:1.5">
-          He leído el <strong>Plan Integral de Prevención del Acoso e Igualdad LGTBIQ+</strong>
+          He leído el <strong>Plan Integral de Prevención del Acoso e Igualdad LGTBIQ+ y Laboral</strong>
           de SM Academia (versión ${esc(_PROTOCOLO_VERSION)}) y confirmo su recepción.
         </span>
       </label>
