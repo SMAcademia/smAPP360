@@ -11457,7 +11457,9 @@ function ampaSocios() {
   );
   topbarBtn('+ Nuevo socio', () => modalSocio());
   topbarBtn('↓ Exportar PDF', () => {
-    const socsP = socios;
+    const filtAmpa = document.getElementById('fil-soc-ampa')?.value || '';
+    const socsP = filtAmpa ? socios.filter(s => String(s.AMPA||'').trim() === filtAmpa) : socios;
+    const tituloP = filtAmpa ? `Socios AMPA – ${filtAmpa}` : 'Socios AMPA';
     const activP = socsP.filter(s=>String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').length;
     const bajasP = socsP.length - activP;
     const recP = socsP.filter(s=>String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO').reduce((s,x)=>s+(parseFloat(x.CUOTA_ANUAL)||0),0);
@@ -11472,11 +11474,13 @@ function ampaSocios() {
       <td><strong>${esc(s.NOMBRE||'')} ${esc(s.APELLIDOS||'')}</strong></td>
       <td>${esc(s.EMAIL||'—')}</td>
       <td>${esc(s['TELÉFONO']||s.TELEFONO||'—')}</td>
+      ${isAdmin() ? `<td>${esc(String(s.AMPA||'').trim()||'—')}</td>` : ''}
       <td>${fmtFecha(s.FECHA_ALTA)}</td>
       <td>${fmtEur(s.CUOTA_ANUAL)}</td>
       <td><span class="badge ${String(s.ESTADO||'ACTIVO').toUpperCase()==='ACTIVO'?'bg':'br'}">${esc(s.ESTADO||'ACTIVO')}</span></td>
     </tr>`).join('');
-    exportarPDF('Socios AMPA', kHtml+`<table><thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th></tr></thead><tbody>${filas||'<tr><td colspan="7">Sin datos</td></tr>'}</tbody></table>`);
+    const colspan = isAdmin() ? 8 : 7;
+    exportarPDF(tituloP, kHtml+`<table><thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th>${isAdmin()?'<th>Centro</th>':''}<th>Alta</th><th>Cuota</th><th>Estado</th></tr></thead><tbody>${filas||`<tr><td colspan="${colspan}">Sin datos</td></tr>`}</tbody></table>`);
   }, 'btn-secondary');
 
   const activos = socios.filter(s => String(s.ESTADO||'ACTIVO').toUpperCase() === 'ACTIVO').length;
@@ -11520,16 +11524,17 @@ function ampaSocios() {
   }).join('');
 
   const rows = socios.map(s => `
-    <tr>
+    <tr data-ampa="${esc(String(s.AMPA||'').trim())}">
       <td class="mono">${esc(s.ID_SOCIO||s.ID||'')}</td>
       <td><strong>${esc(s.NOMBRE||'')} ${esc(s.APELLIDOS||'')}</strong></td>
       <td>${esc(s.EMAIL||'—')}</td>
       <td>${esc(s['TELÉFONO']||s.TELEFONO||'—')}</td>
+      ${isAdmin() ? `<td><span class="badge badge-blue" style="font-size:11px">${esc(String(s.AMPA||'').trim()||'—')}</span></td>` : ''}
       <td>${fmtFecha(s.FECHA_ALTA)}</td>
       <td class="mono">${fmtEur(s.CUOTA_ANUAL)}</td>
       <td>${badgeActivo(s.ESTADO||s.ACTIVO)}</td>
       <td><button class="btn btn-sm btn-secondary" onclick='modalSocio(${JSON.stringify(s)})'>Editar</button></td>
-    </tr>`).join('') || `<tr><td colspan="8"><div class="empty"><div class="empty-icon">🏫</div><p>Sin socios registrados</p></div></td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="${isAdmin()?9:8}"><div class="empty"><div class="empty-icon">🏫</div><p>Sin socios registrados</p></div></td></tr>`;
 
   render(`
     <div style="display:grid;gap:16px">
@@ -11562,17 +11567,43 @@ function ampaSocios() {
 
       <div class="card" style="padding:14px 20px">
         <div class="table-toolbar">
-          <input class="search-input" id="q-soc" placeholder="Buscar por nombre, email…" oninput="filterTable('q-soc','tbl-soc')">
-          <span class="text-muted">${socios.length} socios</span>
+          <input class="search-input" id="q-soc" placeholder="Buscar por nombre, email…" oninput="_filterSocios()">
+          ${isAdmin() ? (() => {
+            const ampas = [...new Set(socios.map(s => String(s.AMPA||'').trim()).filter(Boolean))].sort();
+            if (!ampas.length) return '';
+            const opts = ampas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+            return `<select id="fil-soc-ampa" onchange="_filterSocios()" style="min-width:140px">
+              <option value="">Todos los centros</option>${opts}
+            </select>`;
+          })() : ''}
+          <span class="text-muted" id="cnt-soc">${socios.length} socios</span>
         </div>
         <div class="table-wrap">
           <table id="tbl-soc">
-            <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Alta</th><th>Cuota</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th>${isAdmin()?'<th>Centro</th>':''}<th>Alta</th><th>Cuota</th><th>Estado</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
       </div>
     </div>`);
+}
+
+function _filterSocios() {
+  const q     = (document.getElementById('q-soc')?.value || '').toLowerCase();
+  const ampa  = document.getElementById('fil-soc-ampa')?.value || '';
+  const tbody = document.querySelector('#tbl-soc tbody');
+  if (!tbody) return;
+  let visible = 0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const txt = tr.textContent.toLowerCase();
+    const matchQ    = !q    || txt.includes(q);
+    const matchAmpa = !ampa || (tr.dataset.ampa || '') === ampa;
+    const show = matchQ && matchAmpa;
+    tr.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  const cnt = document.getElementById('cnt-soc');
+  if (cnt) cnt.textContent = visible + ' socios';
 }
 
 function modalSocio(s) {
