@@ -138,6 +138,8 @@ function doPost(e) {
       result = crearReservaPendiente_(body);
     } else if (action === 'CONFIRMAR_PAGO_RESERVA') {
       result = confirmarPagoReserva_(body);
+    } else if (action === 'FIRMAR_PROTOCOLO') {
+      result = firmarProtocolo_(body);
     } else if (action === 'ENVIAR_AVISO_RESERVA_ADMIN') {
       result = enviarAvisoReservaAdmin_(body);
     } else if (action === 'STRIPE_WEBHOOK') {
@@ -2236,4 +2238,30 @@ function formatFechaEs_(fecha) {
                'septiembre','octubre','noviembre','diciembre'];
   var d = new Date(fecha + 'T12:00:00');
   return DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()];
+}
+
+// ===========================================================================
+//  FIRMA PROTOCOLO DE ACOSO
+// ===========================================================================
+function firmarProtocolo_(body) {
+  var book  = ss_();
+  var sheet = book.getSheetByName('FIRMAS_PROTOCOLO');
+  if (!sheet) {
+    sheet = book.insertSheet('FIRMAS_PROTOCOLO');
+    sheet.appendRow(['ID_FIRMA','ID_MONITOR','NOMBRE','APELLIDOS','DNI','EMAIL','FECHA_FIRMA','VERSION_DOC','DISPOSITIVO']);
+    sheet.getRange(1,1,1,9).setFontWeight('bold');
+  }
+  var id = 'FP' + Date.now();
+  sheet.appendRow([
+    id,
+    body.id        || '',
+    body.nombre    || '',
+    body.apellidos || '',
+    body.dni       || '',
+    body.email     || '',
+    new Date().toISOString(),
+    body.version   || '2026-10-09',
+    body.dispositivo || ''
+  ]);
+  return { ok: true, id: id };
 }
