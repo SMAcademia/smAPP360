@@ -151,6 +151,8 @@ function doPost(e) {
       } else {
         result = stripeWebhook_(body);
       }
+    } else if (action === 'ENVIAR_CONFIRMACION_CAMPUS') {
+      result = enviarConfirmacionCampusNavidad_(body);
     } else {
       result = { ok: false, error: 'Accion desconocida: ' + action };
     }
@@ -2238,6 +2240,138 @@ function formatFechaEs_(fecha) {
                'septiembre','octubre','noviembre','diciembre'];
   var d = new Date(fecha + 'T12:00:00');
   return DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()];
+}
+
+// ===========================================================================
+//  CAMPUS NAVIDAD 2026 — EMAILS DE CONFIRMACIÓN DE PLAZA
+// ===========================================================================
+function enviarConfirmacionCampusNavidad_(body) {
+  var book = ss_();
+  var actividades   = sheetToJSON(book, 'ACTIVIDADES');
+  var inscripciones = sheetToJSON(book, 'INSCRIPCIONES');
+  var alumnos       = sheetToJSON(book, 'ALUMNOS');
+  var clientes      = sheetToJSON(book, 'CLIENTES');
+
+  // IDs de actividades de tipo CAMPUS (dinámico)
+  var campusActIds = {};
+  actividades.forEach(function(a) {
+    if (String(a.TIPO || '').toUpperCase() === 'CAMPUS') campusActIds[String(a.ID)] = a;
+  });
+
+  var alumnoMap = {};
+  alumnos.forEach(function(a) { alumnoMap[String(a.ID_ALUMNO)] = a; });
+
+  var clienteMap = {};
+  clientes.forEach(function(c) { clienteMap[String(c.ID_CLIENTE)] = c; });
+
+  // Configuración de pago desde Script Properties
+  var props    = PropertiesService.getScriptProperties();
+  var bizum    = props.getProperty('BIZUM_CAMPUS')     || '';
+  var iban     = props.getProperty('IBAN_EMPRESA')     || '';
+  var stripe   = props.getProperty('STRIPE_CAMPUS_URL')|| '';
+
+  // Filtrar inscripciones de campus activas
+  var target = body && body.inscripcionId ? String(body.inscripcionId) : null;
+  var campusInsc = inscripciones.filter(function(i) {
+    if (String(i.ESTADO || '').toUpperCase() === 'BAJA') return false;
+    if (!campusActIds[String(i.ID_ACTIVIDAD)]) return false;
+    if (target) return String(i.ID_INSCRIPCION) === target;
+    return true;
+  });
+
+  if (!campusInsc.length) {
+    return { ok: false, error: 'No hay inscripciones activas al campus navidad' };
+  }
+
+  var enviados = 0, errores = [];
+
+  campusInsc.forEach(function(insc) {
+    try {
+      var alumno  = alumnoMap[String(insc.ID_ALUMNO)] || {};
+      var cliente = clienteMap[String(alumno.ID_CLIENTE || '')] || {};
+      var email   = cliente.EMAIL || '';
+      if (!email) { errores.push('Sin email: ' + insc.ID_INSCRIPCION); return; }
+
+      var activ      = campusActIds[String(insc.ID_ACTIVIDAD)] || {};
+      var modalidad  = activ.NOMBRE || 'Campus Navidad 2026';
+      var precio     = insc.PRECIO_ACORDADO || activ.PRECIO || '';
+      var nombreFam  = ((cliente.NOMBRE||'') + ' ' + (cliente.APELLIDOS||'')).trim();
+      var nombreNiño = ((alumno.NOMBRE||'')  + ' ' + (alumno.APELLIDOS||'')).trim();
+
+      MailApp.sendEmail({
+        to:       email,
+        replyTo:  EMAIL_EMPRESA.director,
+        name:     'SM Academia · Campus de Navidad',
+        subject:  '✅ Plaza confirmada · Campus de Navidad 2026 — SM Academia',
+        htmlBody: _htmlCampus_(nombreFam, nombreNiño, modalidad, precio, bizum, iban, stripe, insc.ID_INSCRIPCION),
+      });
+      enviados++;
+    } catch(err) {
+      errores.push(String(insc.ID_INSCRIPCION) + ': ' + err.message);
+    }
+  });
+
+  return { ok: true, enviados: enviados, total: campusInsc.length, errores: errores };
+}
+
+function _htmlCampus_(familia, alumno, modalidad, precio, bizum, iban, stripeUrl, refInsc) {
+  var esCompleto = /completo/i.test(modalidad);
+  var fechas = esCompleto
+    ? '<tr><td style="padding:5px 10px 5px 0;color:#666">📅 Semana&nbsp;1</td><td style="padding:5px 0;font-weight:600">21 — 24 de diciembre</td></tr>'
+    + '<tr><td style="padding:5px 10px 5px 0;color:#666">📅 Semana&nbsp;2</td><td style="padding:5px 0;font-weight:600">28 — 31 de diciembre</td></tr>'
+    : '<tr><td style="padding:5px 10px 5px 0;color:#666">📅 Fechas</td><td style="padding:5px 0;font-weight:600">21–24 ó 28–31 de diciembre</td></tr>';
+
+  var ibanRow = iban
+    ? '<p style="margin:14px 0 6px;font-size:14px"><strong>2. Transferencia bancaria</strong><br>'
+    + '<code style="background:#f5f5f5;padding:3px 8px;border-radius:4px;font-size:13px">' + iban + '</code><br>'
+    + '<span style="font-size:12px;color:#666">Concepto: Campus Navidad 2026 · ' + alumno + '</span></p>'
+    : '';
+  var stripeBtn = stripeUrl
+    ? '<p style="margin:12px 0"><a href="' + stripeUrl + '" style="display:inline-block;background:#635bff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">💳 Pagar online (tarjeta)</a></p>'
+    : '';
+  var precioRow = precio
+    ? '<tr><td style="padding:5px 10px 5px 0;color:#666">💶 Precio</td><td style="padding:5px 0;font-weight:600;color:#2e7d32">' + precio + ' €</td></tr>'
+    : '';
+
+  return '<div style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;color:#222">'
+  + '<div style="background:linear-gradient(135deg,#1b5e20 0%,#2e7d32 60%,#43a047 100%);padding:32px;border-radius:12px 12px 0 0;text-align:center">'
+  +   '<p style="color:#a5d6a7;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0 0 8px">SM Academia · Campus de Navidad 2026</p>'
+  +   '<h1 style="color:#fff;margin:0;font-size:28px;font-weight:700">🎄 ¡Plaza confirmada!</h1>'
+  + '</div>'
+  + '<div style="background:#fafafa;padding:32px;border:1px solid #e8e8e8;border-top:none;border-radius:0 0 12px 12px">'
+  +   '<p style="font-size:16px;line-height:1.6">Hola, familia <strong>' + familia + '</strong>:</p>'
+  +   '<p style="font-size:15px;line-height:1.6;color:#333">Nos alegra confirmaros que <strong>' + alumno + '</strong> tiene plaza reservada en el <strong>Campus de Navidad 2026</strong>. ¡Gracias por vuestra confianza e interés, es un placer teneros con nosotros!</p>'
+  +   '<div style="background:#fff;border:1px solid #e0e0e0;border-left:4px solid #2e7d32;border-radius:6px;padding:20px;margin:24px 0">'
+  +     '<h3 style="margin:0 0 14px;color:#1b5e20;font-size:15px">📋 Datos del campus</h3>'
+  +     '<table style="border-collapse:collapse;width:100%;font-size:14px">'
+  +       '<tr><td style="padding:5px 10px 5px 0;color:#666">📍 Lugar</td><td style="padding:5px 0;font-weight:600">Cuevas Torres, Las Palmas de Gran Canaria</td></tr>'
+  +       fechas
+  +       '<tr><td style="padding:5px 10px 5px 0;color:#666">⏰ Horario</td><td style="padding:5px 0;font-weight:600">9:00 — 14:00 h</td></tr>'
+  +       '<tr><td style="padding:5px 10px 5px 0;color:#666">🎭 Modalidad</td><td style="padding:5px 0;font-weight:600">' + modalidad + '</td></tr>'
+  +       precioRow
+  +       '<tr><td style="padding:5px 10px 5px 0;color:#666;font-size:12px">🔖 Ref.</td><td style="padding:5px 0;font-size:12px;color:#888">' + refInsc + '</td></tr>'
+  +     '</table>'
+  +   '</div>'
+  +   '<div style="background:#e8f5e9;border-radius:6px;padding:16px 20px;margin:0 0 24px">'
+  +     '<h3 style="margin:0 0 10px;color:#1b5e20;font-size:14px">🎯 ¿Qué vamos a hacer?</h3>'
+  +     '<p style="margin:0;font-size:14px;line-height:1.6;color:#2e7d32"><strong>Baile · Multideporte · Ludoteca</strong><br>Días llenos de movimiento, creatividad y risas en un ambiente seguro y repleto de aprendizaje. ¡Garantizamos que se van a divertir un montón!</p>'
+  +   '</div>'
+  +   '<div style="background:#fff;border:1px solid #e0e0e0;border-left:4px solid #1565c0;border-radius:6px;padding:20px;margin:0 0 24px">'
+  +     '<h3 style="margin:0 0 14px;color:#1565c0;font-size:15px">💳 Formas de pago</h3>'
+  +     (bizum
+  +       ? '<p style="margin:6px 0;font-size:14px"><strong>1. Bizum</strong><br><span style="font-size:18px;font-weight:700;color:#1565c0;letter-spacing:1px">' + bizum + '</span><span style="font-size:12px;color:#666"> · A nombre de <em>SM Academia</em></span></p>'
+  +       : '')
+  +     ibanRow
+  +     stripeBtn
+  +     '<p style="margin:14px 0 0;font-size:12px;color:#888">Envíanos el justificante a <a href="mailto:direccion@sm-academia.com" style="color:#1565c0">direccion@sm-academia.com</a>.</p>'
+  +   '</div>'
+  +   '<p style="font-size:14px;line-height:1.7;color:#555">Este diciembre va a ser especial. Vuestros hijos e hijas van a vivir una experiencia única, con mucha energía, nuevos amigos y aprendizajes que se quedan para siempre. ¡En SM Academia estamos deseando recibirlos! 🌟</p>'
+  +   '<p style="font-size:14px;color:#555">Cualquier duda, estamos en <a href="mailto:direccion@sm-academia.com" style="color:#2e7d32">direccion@sm-academia.com</a>.</p>'
+  +   '<p style="margin-top:28px;font-size:14px"><strong>¡Hasta el 21 de diciembre y felices fiestas! 🎅</strong><br><span style="color:#666">Samy y el equipo de SM Academia</span></p>'
+  +   '<hr style="border:none;border-top:1px solid #e0e0e0;margin:28px 0 16px">'
+  +   '<p style="font-size:11px;color:#aaa;margin:0">SM Academia · Campus de Navidad 2026 · <a href="https://academiasmfutbol.github.io/sistema/" style="color:#aaa">Portal de familias</a></p>'
+  + '</div>'
+  + '</div>';
 }
 
 // ===========================================================================

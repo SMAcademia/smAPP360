@@ -3756,6 +3756,80 @@ async function guardarRegistroCompleto() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  CAMPUS NAVIDAD — CARD Y ENVÍO DE EMAILS
+// ══════════════════════════════════════════════════════════════════════════
+function _campusNavidadCard_() {
+  const campusIds = new Set(
+    (DB.actividades || [])
+      .filter(a => String(a.TIPO || '').toUpperCase() === 'CAMPUS')
+      .map(a => String(a.ID))
+  );
+  if (!campusIds.size) return '';
+
+  const insc = (DB.inscripciones || []).filter(i =>
+    campusIds.has(String(i.ID_ACTIVIDAD)) && String(i.ESTADO || '').toUpperCase() !== 'BAJA'
+  );
+  if (!insc.length) return '';
+
+  const rows = insc.map(i => {
+    const alumno  = (DB.alumnos || []).find(a => String(a.ID_ALUMNO) === String(i.ID_ALUMNO)) || {};
+    const cliente = (DB.clientes || []).find(c => String(c.ID_CLIENTE) === String(alumno.ID_CLIENTE)) || {};
+    const act     = (DB.actividades || []).find(a => String(a.ID) === String(i.ID_ACTIVIDAD)) || {};
+    const nombre  = ((alumno.NOMBRE||'') + ' ' + (alumno.APELLIDOS||'')).trim();
+    const email   = cliente.EMAIL || '';
+    const precio  = i.PRECIO_ACORDADO || act.PRECIO || '';
+    return '<tr>'
+      + '<td><strong>' + esc(nombre || i.ID_ALUMNO) + '</strong>'
+      + (email ? '<br><span style="font-size:11px;color:var(--text3)">' + esc(email) + '</span>' : '<br><span style="font-size:11px;color:#e53935">Sin email</span>') + '</td>'
+      + '<td style="font-size:12px">' + esc(act.NOMBRE || '') + '</td>'
+      + '<td style="font-variant-numeric:tabular-nums">' + (precio ? precio + ' €' : '—') + '</td>'
+      + '<td style="white-space:nowrap">'
+      + (email ? '<button class="btn btn-sm" style="background:#2e7d32;color:#fff;border:none" onclick="enviarEmailCampus(\''+esc(i.ID_INSCRIPCION)+'\',this)">📧 Enviar</button>' : '<span style="font-size:11px;color:var(--text3)">Sin email</span>')
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  return '<div class="card" style="padding:16px 20px;border-left:4px solid #2e7d32">'
+    + '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">'
+    + '<div style="font-size:28px">🎄</div>'
+    + '<div style="flex:1">'
+    + '<div style="font-weight:700;font-size:15px">Campus de Navidad 2026</div>'
+    + '<div style="font-size:13px;color:var(--text3)">' + insc.length + ' inscripción' + (insc.length !== 1 ? 'es' : '') + ' activa' + (insc.length !== 1 ? 's' : '') + ' · 21-24 y 28-31 diciembre</div>'
+    + '</div>'
+    + '<button class="btn" id="btn-campus-todos" onclick="enviarEmailCampusTodos()" style="background:#2e7d32;color:#fff;border:none;white-space:nowrap">📧 Enviar a todos</button>'
+    + '</div>'
+    + '<div class="table-wrap"><table style="font-size:13px">'
+    + '<thead><tr><th>Alumno/a</th><th>Modalidad</th><th>Precio</th><th></th></tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>'
+    + '</div>';
+}
+
+async function enviarEmailCampusTodos() {
+  const btn = document.getElementById('btn-campus-todos');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  const r = await gasPost('ENVIAR_CONFIRMACION_CAMPUS', {});
+  if (btn) { btn.disabled = false; btn.textContent = '📧 Enviar a todos'; }
+  if (r.ok) {
+    toast('✅ ' + r.enviados + ' email' + (r.enviados !== 1 ? 's' : '') + ' enviado' + (r.enviados !== 1 ? 's' : '') + (r.errores?.length ? ' · ' + r.errores.length + ' sin email' : ''), 'success');
+  } else {
+    toast('Error: ' + (r.error || 'desconocido'), 'error');
+  }
+}
+
+async function enviarEmailCampus(inscripcionId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  const r = await gasPost('ENVIAR_CONFIRMACION_CAMPUS', { inscripcionId });
+  if (btn) { btn.disabled = false; btn.textContent = '📧 Enviar'; }
+  if (r.ok) {
+    toast('✅ Email enviado', 'success');
+    if (btn) { btn.textContent = '✓ Enviado'; btn.style.background = '#43a047'; }
+  } else {
+    toast('Error: ' + (r.error || 'desconocido'), 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  MÓDULO: COMUNICACIÓN
 // ══════════════════════════════════════════════════════════════════════════
 let _comFiltros = { linea: 'EXTRAESCOLARES', actIds: new Set(), mes: '' };
@@ -3958,6 +4032,7 @@ function _renderCom() {
     : familias.length+' familias';
 
   render('<div style="display:grid;gap:16px">'
+    + _campusNavidadCard_()
     +'<div class="card" style="padding:16px 20px">'
     // — Tipo de comunicación
     +'<div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">'
