@@ -713,6 +713,14 @@ function nuevaPreinscripcion(data) {
   });
   sheet.appendRow(newRow);
 
+  // Forzar formato texto en columnas que empiezan con '+' (teléfonos, NIF)
+  // para evitar que Sheets los interprete como fórmulas (#ERROR!)
+  var lastRow = sheet.getLastRow();
+  ['TELEFONO_TUTOR1', 'TELEFONO_TUTOR2', 'NIF_TUTOR1', 'NIF_TUTOR2'].forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx >= 0) sheet.getRange(lastRow, idx + 1).setNumberFormat('@');
+  });
+
   return { ok: true, id: id };
 }
 
